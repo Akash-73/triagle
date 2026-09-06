@@ -1,0 +1,238 @@
+[
+  {
+    "source": "entra_id",
+    "client": "Meridian Textiles",
+    "raw": {
+      "id": "signin-701",
+      "createdDateTime": "2026-08-14T08:40:00Z",
+      "riskEventType": "impossibleTravel",
+      "riskLevel": "high",
+      "userPrincipalName": "p.nair@meridiantex.com",
+      "ipAddress": "45.146.10.22",
+      "riskDetail": "Sign-in from Lagos NG, 15 minutes after a sign-in from Kolkata IN.",
+      "location": "Lagos, NG",
+      "riskState": "atRisk",
+      "clientAppUsed": "Browser",
+      "host_hint": "MRD-FIN-07"
+    }
+  },
+  {
+    "source": "crowdstrike_edr",
+    "client": "Meridian Textiles",
+    "raw": {
+      "detection_id": "ldt:aaa100",
+      "created_timestamp": "2026-08-14T08:58:00Z",
+      "name": "Credential dumping via LSASS access",
+      "severity": "high",
+      "hostname": "MRD-FIN-07",
+      "user_name": "p.nair",
+      "description": "Suspicious handle to lsass.exe consistent with credential dumping shortly after risky sign-in.",
+      "tactic": "Credential Access",
+      "technique": "LSASS Memory"
+    }
+  },
+  {
+    "source": "crowdstrike_edr",
+    "client": "Meridian Textiles",
+    "raw": {
+      "detection_id": "ldt:aaa101",
+      "created_timestamp": "2026-08-14T09:12:00Z",
+      "name": "Ransomware behavior detected",
+      "severity": "critical",
+      "hostname": "MRD-FIN-07",
+      "user_name": "p.nair",
+      "description": "Process rapidly encrypting files with known ransomware extension; shadow copies deleted.",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb924",
+      "filename": "svchost32.exe",
+      "cmdline": "vssadmin delete shadows /all /quiet",
+      "tactic": "Impact",
+      "technique": "Data Encrypted for Impact"
+    }
+  },
+  {
+    "source": "fortinet_fw",
+    "client": "Meridian Textiles",
+    "raw": {
+      "logid": "fg-2201",
+      "eventtime": "2026-08-14T09:20:00Z",
+      "attack": "Outbound connection to known C2",
+      "crlevel": "high",
+      "srcip": "MRD-FIN-07",
+      "dstip": "185.220.101.44",
+      "dstport": "8443",
+      "service": "HTTPS",
+      "action": "detected",
+      "msg": "Beaconing pattern to known command and control infrastructure."
+    }
+  },
+  {
+    "source": "crowdstrike_edr",
+    "client": "Northwind Logistics",
+    "raw": {
+      "detection_id": "ldt:bbb200",
+      "created_timestamp": "2026-08-14T10:20:00Z",
+      "name": "Suspicious PowerShell execution",
+      "severity": "medium",
+      "hostname": "NW-HR-14",
+      "user_name": "j.desai",
+      "description": "CyberArk PSM dispatcher launching PowerShell for privileged session management.",
+      "cmdline": "powershell.exe -File C:\\CyberArk\\PSM\\Components\\dispatch.ps1",
+      "tactic": "Execution"
+    }
+  },
+  {
+    "source": "fortinet_fw",
+    "client": "Northwind Logistics",
+    "raw": {
+      "logid": "fg-2202",
+      "eventtime": "2026-08-14T10:35:00Z",
+      "attack": "Port scan detected",
+      "crlevel": "medium",
+      "srcip": "203.0.113.88",
+      "dstip": "NW-DMZ-01",
+      "dstport": "445",
+      "service": "SMB",
+      "action": "detected",
+      "msg": "Multiple connection attempts across sequential ports from external host."
+    }
+  },
+  {
+    "source": "fortinet_fw",
+    "client": "Northwind Logistics",
+    "raw": {
+      "logid": "fg-2203",
+      "eventtime": "2026-08-14T11:00:00Z",
+      "attack": "Traffic allowed",
+      "crlevel": "low",
+      "srcip": "10.0.5.20",
+      "dstip": "8.8.8.8",
+      "dstport": "443",
+      "service": "HTTPS",
+      "action": "accept",
+      "msg": "Routine outbound HTTPS to public DNS resolver."
+    }
+  },
+  {
+    "source": "entra_id",
+    "client": "Northwind Logistics",
+    "raw": {
+      "id": "signin-720",
+      "createdDateTime": "2026-08-14T09:50:00Z",
+      "riskEventType": "passwordSpray",
+      "riskLevel": "high",
+      "userPrincipalName": "multiple@northwindlog.com",
+      "ipAddress": "203.0.113.88",
+      "riskDetail": "Failed sign-ins across 12 accounts from a single external IP within 8 minutes.",
+      "location": "Unknown",
+      "riskState": "atRisk",
+      "clientAppUsed": "Unknown"
+    }
+  },
+  {
+    "source": "entra_id",
+    "client": "Apex Financial",
+    "raw": {
+      "id": "signin-991",
+      "createdDateTime": "2026-08-14T07:40:00Z",
+      "riskEventType": "unfamiliarFeatures",
+      "riskLevel": "low",
+      "userPrincipalName": "r.khan@apexfin.in",
+      "ipAddress": "49.36.11.5",
+      "riskDetail": "Sign-in with slightly unfamiliar properties from the user's usual city.",
+      "location": "Mumbai, IN",
+      "riskState": "atRisk",
+      "clientAppUsed": "Mobile"
+    }
+  },
+  {
+    "source": "crowdstrike_edr",
+    "client": "Apex Financial",
+    "raw": {
+      "detection_id": "ldt:ccc300",
+      "created_timestamp": "2026-08-14T12:15:00Z",
+      "name": "Known admin tool: 1E Tachyon agent",
+      "severity": "low",
+      "hostname": "APX-WKS-09",
+      "user_name": "system",
+      "description": "1E Tachyon agent performing routine scheduled software inventory.",
+      "cmdline": "TachyonAgent.exe --inventory",
+      "tactic": "Discovery"
+    }
+  },
+  {
+    "source": "crowdstrike_edr",
+    "client": "Apex Financial",
+    "raw": {
+      "detection_id": "ldt:ccc301",
+      "created_timestamp": "2026-08-14T13:02:00Z",
+      "name": "HP SoftPaq driver update flagged",
+      "severity": "low",
+      "hostname": "APX-WKS-11",
+      "user_name": "system",
+      "description": "HP SoftPaq download manager updating drivers; matched a generic suspicious-download heuristic.",
+      "cmdline": "HPSoftPaqDownloadManager.exe",
+      "tactic": "Execution"
+    }
+  },
+  {
+    "source": "fortinet_fw",
+    "client": "Apex Financial",
+    "raw": {
+      "logid": "fg-2210",
+      "eventtime": "2026-08-14T14:20:00Z",
+      "attack": "SQL injection attempt",
+      "crlevel": "high",
+      "srcip": "91.240.118.7",
+      "dstip": "APX-WEB-01",
+      "dstport": "443",
+      "service": "HTTPS",
+      "action": "blocked",
+      "msg": "WAF blocked SQL injection attempt against customer portal login."
+    }
+  },
+  {
+    "source": "crowdstrike_edr",
+    "client": "Apex Financial",
+    "raw": {
+      "detection_id": "ldt:noise0",
+      "created_timestamp": "2026-08-14T15:00:00Z",
+      "name": "Known admin tool: 1E Tachyon agent",
+      "severity": "low",
+      "hostname": "APX-WKS-21",
+      "user_name": "system",
+      "description": "1E Tachyon agent performing routine scheduled software inventory.",
+      "cmdline": "TachyonAgent.exe --inventory",
+      "tactic": "Discovery"
+    }
+  },
+  {
+    "source": "crowdstrike_edr",
+    "client": "Apex Financial",
+    "raw": {
+      "detection_id": "ldt:noise1",
+      "created_timestamp": "2026-08-14T15:00:00Z",
+      "name": "Known admin tool: 1E Tachyon agent",
+      "severity": "low",
+      "hostname": "APX-WKS-33",
+      "user_name": "system",
+      "description": "1E Tachyon agent performing routine scheduled software inventory.",
+      "cmdline": "TachyonAgent.exe --inventory",
+      "tactic": "Discovery"
+    }
+  },
+  {
+    "source": "crowdstrike_edr",
+    "client": "Apex Financial",
+    "raw": {
+      "detection_id": "ldt:noise2",
+      "created_timestamp": "2026-08-14T15:00:00Z",
+      "name": "Known admin tool: 1E Tachyon agent",
+      "severity": "low",
+      "hostname": "APX-WKS-40",
+      "user_name": "system",
+      "description": "1E Tachyon agent performing routine scheduled software inventory.",
+      "cmdline": "TachyonAgent.exe --inventory",
+      "tactic": "Discovery"
+    }
+  }
+]

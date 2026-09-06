@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ alert.title }} — Triagle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#0a0e14; --panel:#111722; --panel-2:#161d2b; --line:#222c3d;
+    --text:#dbe4f0; --muted:#7d8ba3; --eye:#38bdf8; --escalate:#ff5d5d;
+    --tp:#ff7a45; --suspicious:#ffb443; --benign:#46d68a; --needs:#a78bfa;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:'Sora',sans-serif; -webkit-font-smoothing:antialiased; }
+  .mono { font-family:'IBM Plex Mono',monospace; }
+  header { padding:18px 28px; border-bottom:1px solid var(--line); }
+  header a { color:var(--eye); text-decoration:none; font-size:14px; font-family:'IBM Plex Mono'; }
+  main { padding:28px; max-width:900px; margin:0 auto; }
+  h1 { font-size:24px; font-weight:700; letter-spacing:-0.01em; margin-bottom:6px; }
+  .sub { color:var(--muted); font-size:14px; margin-bottom:24px; font-family:'IBM Plex Mono'; }
+  .sub .client { color:var(--eye); }
+
+  .verdict-card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:24px; margin-bottom:20px; }
+  .verdict-card.esc { border-color:rgba(255,93,93,0.4); background:linear-gradient(135deg, rgba(255,93,93,0.07), var(--panel)); }
+  .vhead { display:flex; align-items:center; gap:14px; margin-bottom:18px; flex-wrap:wrap; }
+  .disp { font-family:'IBM Plex Mono'; font-size:13px; font-weight:600; padding:6px 12px; border-radius:7px; }
+  .disp.true_positive { background:rgba(255,122,69,0.15); color:var(--tp); }
+  .disp.suspicious { background:rgba(255,180,67,0.15); color:var(--suspicious); }
+  .disp.benign { background:rgba(70,214,138,0.13); color:var(--benign); }
+  .disp.needs_human { background:rgba(167,139,250,0.15); color:var(--needs); }
+  .escflag { font-family:'IBM Plex Mono'; font-size:13px; font-weight:600; color:var(--escalate); }
+  .closedflag { font-family:'IBM Plex Mono'; font-size:13px; color:var(--muted); }
+  .confbox { margin-left:auto; text-align:right; }
+  .confbox .v { font-family:'IBM Plex Mono'; font-size:22px; font-weight:700; color:var(--eye); }
+  .confbox .l { font-size:11px; color:var(--muted); text-transform:uppercase; }
+
+  .summary { font-size:17px; font-weight:600; margin-bottom:16px; line-height:1.45; }
+  .block { margin-bottom:18px; }
+  .block .lbl { font-size:11px; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); font-family:'IBM Plex Mono'; margin-bottom:7px; }
+  .reasoning { font-size:14.5px; line-height:1.6; color:#c3cede; }
+  .actions li { font-size:14px; margin:6px 0 6px 20px; line-height:1.5; }
+  .tuning { background:var(--panel-2); border:1px solid var(--line); border-left:3px solid var(--eye); border-radius:8px; padding:12px 15px; font-size:13.5px; }
+  .tuning b { color:var(--eye); }
+  .closecode { display:inline-block; font-family:'IBM Plex Mono'; font-size:12px; background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:4px 10px; color:var(--muted); }
+
+  .evidence { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px 24px; }
+  .evidence h3 { font-size:13px; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); font-family:'IBM Plex Mono'; margin-bottom:14px; }
+  .kv { display:grid; grid-template-columns:150px 1fr; gap:8px 16px; font-size:13.5px; }
+  .kv .k { color:var(--muted); font-family:'IBM Plex Mono'; }
+  .kv .val { font-family:'IBM Plex Mono'; word-break:break-all; }
+</style>
+</head>
+<body>
+<header><a href="/">← Back to triage queue</a></header>
+<main>
+  <h1>{{ alert.title }}</h1>
+  <div class="sub"><span class="client">{{ alert.client }}</span> · {{ alert.entity }} · {{ alert.source }} · {{ alert.timestamp }}</div>
+
+  <div class="verdict-card {% if verdict.escalate %}esc{% endif %}">
+    <div class="vhead">
+      <span class="disp {{ verdict.disposition }}">{{ verdict.disposition.replace('_',' ')|upper }}</span>
+      {% if verdict.escalate %}<span class="escflag">→ ESCALATED TO HUMAN</span>{% else %}<span class="closedflag">✓ AUTO-CLOSED WITH EVIDENCE</span>{% endif %}
+      <div class="confbox"><div class="v">{{ verdict.confidence }}%</div><div class="l">confidence</div></div>
+    </div>
+
+    <div class="summary">{{ verdict.summary }}</div>
+
+    {% if trail %}
+    <div class="block">
+      <div class="lbl">🔍 Autonomous investigation — {{ trail|length }} steps</div>
+      <div style="border-left:2px solid var(--eye); padding-left:16px; margin-top:8px;">
+        {% for step in trail %}
+        <div style="margin-bottom:12px;">
+          <div style="font-family:'IBM Plex Mono'; font-size:12px; color:var(--eye);">step {{ loop.index }} · called {{ step.tool }}()</div>
+          <div style="font-size:13.5px; color:#c3cede; margin-top:2px;">{{ step.result_summary }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="block">
+      <div class="lbl">Reasoning</div>
+      <div class="reasoning">{{ verdict.reasoning }}</div>
+    </div>
+
+    {% if verdict.closure_code %}
+    <div class="block">
+      <div class="lbl">Closure code</div>
+      <span class="closecode">{{ verdict.closure_code }}</span>
+    </div>
+    {% endif %}
+
+    {% if verdict.recommended_actions %}
+    <div class="block">
+      <div class="lbl">Recommended actions</div>
+      <ul class="actions">
+        {% for a in verdict.recommended_actions %}<li>{{ a }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if verdict.tuning_recommendation %}
+    <div class="block">
+      <div class="lbl">Detection tuning</div>
+      <div class="tuning"><b>Fix the noise:</b> {{ verdict.tuning_recommendation }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if actions %}
+  <div class="verdict-card" style="border-color:rgba(255,180,67,0.35);">
+    <div class="lbl" style="font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--suspicious); font-family:'IBM Plex Mono'; margin-bottom:14px;">⚡ Response actions — human approval required</div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">Triagle staged these containment actions for this threat. Nothing executes until you approve. Actions are reversible.</div>
+    {% for act in actions %}
+    <div style="border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:12px; {% if act.risk_tier=='high_impact' %}border-color:rgba(255,93,93,0.4);{% endif %}">
+      <div style="font-weight:600; font-size:15px; margin-bottom:4px;">
+        {{ act.label }} → <span class="mono" style="color:var(--eye);">{{ act.target }}</span>
+        {% if act.risk_tier=='high_impact' %}<span style="color:var(--escalate); font-size:12px; font-family:'IBM Plex Mono'; margin-left:8px;">⚠ HIGH-IMPACT</span>{% endif %}
+      </div>
+      <div style="font-size:13px; color:#c3cede; margin-bottom:4px;">{{ act.rationale }}</div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Blast radius: {{ act.blast_radius }} · via {{ act.platform }}</div>
+      {% if act.status in ['executed','approved'] %}
+        <div style="color:var(--benign); font-family:'IBM Plex Mono'; font-size:13px;">✓ {{ act.result_message or 'Approved' }}</div>
+      {% elif act.status=='declined' %}
+        <div style="color:var(--escalate); font-family:'IBM Plex Mono'; font-size:13px;">✕ {{ act.result_message or 'Declined' }}</div>
+      {% else %}
+        <form method="post" action="/action/approve" style="display:flex; align-items:center; gap:12px;">
+          <input type="hidden" name="alert_id" value="{{ alert.alert_id }}">
+          <input type="hidden" name="action_id" value="{{ act.action_id }}">
+          {% if act.requires_ack %}
+          <label style="font-size:12px; color:var(--escalate);"><input type="checkbox" name="ack"> I acknowledge the blast radius</label>
+          {% endif %}
+          <button type="submit" style="background:var(--suspicious); color:#1a1200; border:none; border-radius:7px; padding:8px 16px; font-weight:600; cursor:pointer; font-family:'Sora';">Approve &amp; execute</button>
+        </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="evidence">
+    <h3>Raw alert evidence</h3>
+    <div class="kv">
+      <div class="k">alert_id</div><div class="val">{{ alert.alert_id }}</div>
+      <div class="k">source</div><div class="val">{{ alert.source }}</div>
+      <div class="k">raw_severity</div><div class="val">{{ alert.raw_severity }}</div>
+      {% if alert.user %}<div class="k">user</div><div class="val">{{ alert.user }}</div>{% endif %}
+      {% if alert.src_ip %}<div class="k">src_ip</div><div class="val">{{ alert.src_ip }}</div>{% endif %}
+      {% if alert.host %}<div class="k">host</div><div class="val">{{ alert.host }}</div>{% endif %}
+      {% for k, v in alert.indicators.items() %}{% if v %}<div class="k">{{ k }}</div><div class="val">{{ v }}</div>{% endif %}{% endfor %}
+      {% if alert.description %}<div class="k">description</div><div class="val">{{ alert.description }}</div>{% endif %}
+    </div>
+  </div>
+</main>
+</body>
+</html>

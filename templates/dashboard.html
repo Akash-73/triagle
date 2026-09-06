@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Triagle — Triage Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #111722;
+    --panel-2: #161d2b;
+    --line: #222c3d;
+    --text: #dbe4f0;
+    --muted: #7d8ba3;
+    --eye: #38bdf8;         /* Netra — "the eye" — a watchful cyan */
+    --escalate: #ff5d5d;
+    --tp: #ff7a45;
+    --suspicious: #ffb443;
+    --benign: #46d68a;
+    --needs: #a78bfa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Sora', sans-serif; -webkit-font-smoothing: antialiased; }
+  code, .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 28px; border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--panel), var(--bg));
+  }
+  .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 20px; letter-spacing: -0.01em; }
+  .brand .eye {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, var(--eye) 0 22%, #0a0e14 23% 42%, var(--eye) 43% 50%, transparent 51%);
+    box-shadow: 0 0 16px rgba(56,189,248,0.5);
+  }
+  .brand small { color: var(--muted); font-weight: 400; font-size: 12px; font-family: 'IBM Plex Mono'; margin-left: 4px; }
+  .tag { font-family: 'IBM Plex Mono'; font-size: 12px; color: var(--muted); }
+
+  main { padding: 28px; max-width: 1180px; margin: 0 auto; }
+
+  /* metric strip */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .metric .n { font-size: 28px; font-weight: 700; font-family: 'IBM Plex Mono'; }
+  .metric .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+  .metric.hero-metric { background: linear-gradient(135deg, rgba(56,189,248,0.14), var(--panel)); border-color: rgba(56,189,248,0.3); }
+  .metric.hero-metric .n { color: var(--eye); }
+  .metric.danger .n { color: var(--escalate); }
+
+  .banner {
+    background: rgba(255,93,93,0.08); border: 1px solid rgba(255,93,93,0.3);
+    border-radius: 12px; padding: 14px 18px; margin-bottom: 24px;
+    font-size: 14px; color: #ffd0d0; display: flex; align-items: center; gap: 10px;
+  }
+  .banner b { color: #fff; }
+
+  .section-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 26px 0 12px; font-family: 'IBM Plex Mono'; }
+
+  /* incident cards */
+  .incidents { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 8px; }
+  .incident { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 10px; padding: 14px 16px; }
+  .incident.elevated { border-left-color: var(--escalate); }
+  .incident .h { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+  .incident .badge { font-family: 'IBM Plex Mono'; font-size: 10px; padding: 2px 7px; border-radius: 20px; background: rgba(255,93,93,0.15); color: var(--escalate); }
+  .incident .meta { font-size: 12.5px; color: var(--muted); font-family: 'IBM Plex Mono'; }
+
+  /* the queue */
+  .queue { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .qrow { display: grid; grid-template-columns: 120px 1fr 130px 90px; gap: 14px; align-items: center;
+          padding: 14px 18px; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--text); transition: background .12s; }
+  .qrow:last-child { border-bottom: none; }
+  .qrow:hover { background: var(--panel-2); }
+  .qrow.esc { background: rgba(255,93,93,0.045); }
+  .qrow.esc:hover { background: rgba(255,93,93,0.09); }
+
+  .disp { font-family: 'IBM Plex Mono'; font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 6px; text-align: center; white-space: nowrap; }
+  .disp.true_positive { background: rgba(255,122,69,0.15); color: var(--tp); }
+  .disp.suspicious { background: rgba(255,180,67,0.15); color: var(--suspicious); }
+  .disp.benign { background: rgba(70,214,138,0.13); color: var(--benign); }
+  .disp.needs_human { background: rgba(167,139,250,0.15); color: var(--needs); }
+
+  .qmain .title { font-weight: 600; font-size: 14.5px; }
+  .qmain .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .qmain .sub .client { color: var(--eye); }
+  .qmain .src { font-family: 'IBM Plex Mono'; font-size: 11px; color: var(--muted); }
+
+  .conf { text-align: center; }
+  .conf .bar { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 5px; }
+  .conf .bar span { display: block; height: 100%; background: var(--eye); }
+  .conf .v { font-family: 'IBM Plex Mono'; font-size: 13px; font-weight: 600; }
+
+  .action { text-align: right; }
+  .pill-esc { font-family: 'IBM Plex Mono'; font-size: 11px; font-weight: 600; color: var(--escalate); }
+  .pill-closed { font-family: 'IBM Plex Mono'; font-size: 11px; color: var(--muted); }
+
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 30px; font-family: 'IBM Plex Mono'; }
+  @media (max-width: 720px) { .qrow { grid-template-columns: 90px 1fr; } .conf, .action { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="eye"></span> Triagle <small>triage, decided</small></div>
+  <div class="tag"><a href="/tuning" style="color:var(--eye); text-decoration:none; margin-right:16px;">Detection Tuning →</a>MSP triage console · {{ now }}</div>
+</header>
+
+<main>
+  <div class="metrics">
+    <div class="metric hero-metric"><div class="n">{{ metrics.noise_reduced_pct }}%</div><div class="l">Noise auto-cleared</div></div>
+    <div class="metric danger"><div class="n">{{ metrics.escalated }}</div><div class="l">Escalated to you</div></div>
+    <div class="metric"><div class="n">{{ metrics.total }}</div><div class="l">Alerts ingested</div></div>
+    <div class="metric"><div class="n">{{ metrics.elevated_incidents }}</div><div class="l">Multi-tool incidents</div></div>
+    <div class="metric"><div class="n">{{ metrics.staged_actions }}</div><div class="l">Actions staged</div></div>
+    <div class="metric"><div class="n">{{ metrics.flagged_rules }}</div><div class="l">Rules to tune</div></div>
+  </div>
+
+  <div class="banner">
+    🛡 <span><b>Conservative closure is on.</b> Triagle never auto-closes an alert carrying ransomware, credential-theft, or lateral-movement signals — those always reach a human, even at high confidence. {{ metrics.auto_closed }} genuinely benign alerts were cleared with evidence; {{ metrics.escalated }} were escalated rather than guessed.</span>
+  </div>
+
+  {% if incidents %}
+  <div class="section-label">Correlated incidents — related alerts grouped</div>
+  <div class="incidents">
+    {% for inc in incidents %}
+    <a class="incident {% if inc.elevated %}elevated{% endif %}" href="/report/{{ inc.key }}" style="text-decoration:none; color:inherit; display:block;">
+      <div class="h">{{ inc.key }} {% if inc.elevated %}<span class="badge">MULTI-TOOL</span>{% endif %}</div>
+      <div class="meta">{{ inc.size }} alerts · {{ inc.sources | join(', ') }}</div>
+      <div class="meta" style="color:var(--eye); margin-top:6px;">View incident report →</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="section-label">Triage queue — escalated first, each with a verdict</div>
+  <div class="queue">
+    {% for r in rows %}
+    <a class="qrow {% if r.verdict.escalate %}esc{% endif %}" href="/alert/{{ r.alert.alert_id }}">
+      <div><span class="disp {{ r.verdict.disposition }}">{{ r.verdict.disposition.replace('_',' ') }}</span></div>
+      <div class="qmain">
+        <div class="title">{{ r.alert.title }}</div>
+        <div class="sub"><span class="client">{{ r.alert.client }}</span> · {{ r.alert.entity }} · <span class="src">{{ r.alert.source }}</span></div>
+      </div>
+      <div class="conf">
+        <div class="v">{{ r.verdict.confidence }}%</div>
+        <div class="bar"><span style="width: {{ r.verdict.confidence }}%"></span></div>
+      </div>
+      <div class="action">
+        {% if r.verdict.escalate %}<span class="pill-esc">→ ESCALATE</span>{% else %}<span class="pill-closed">✓ {{ r.verdict.closure_code }}</span>{% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</main>
+
+<footer>Triagle · AI SOC analyst · conservative-closure triage for MSPs</footer>
+</body>
+</html>

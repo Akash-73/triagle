@@ -1,0 +1,16 @@
+{
+  "entity_history": {
+    "MRD-FIN-07": [
+      {"time": "2026-08-10", "event": "Normal finance app usage, no prior alerts"},
+      {"time": "2026-08-13", "event": "User p.nair logged in from Kolkata as usual"}
+    ],
+    "NW-HR-14": [
+      {"time": "2026-08-14", "event": "CyberArk PSM sessions are routine on this host (privileged access workstation)"}
+    ]
+  },
+  "threat_intel": {
+    "185.220.101.44": "Known C2 / Tor exit node — flagged by multiple feeds",
+    "e3b0c44298fc1c149afbf4c8996fb924": "Known ransomware loader hash",
+    "203.0.113.88": "Reported scanning/brute-force source"
+  }
+}
