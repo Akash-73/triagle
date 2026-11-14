@@ -20,7 +20,8 @@ import json
 from app.models import Verdict
 from app.agent import tools as toolmod
 from app.agent import backend
-from app.engine.triage import _enforce_guardrails, _has_hard_escalate
+from app.engine.triage import _enforce_guardrails
+from app.engine import signals
 
 MAX_STEPS = 4
 
@@ -64,9 +65,9 @@ def _llm_plan(ctx):
     if not out:
         return None
     try:
-        out = out.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        return json.loads(out)
-    except (json.JSONDecodeError, ValueError):
+        plan = backend.parse_json(out)
+        return plan if isinstance(plan, dict) and plan.get("action") else None
+    except ValueError:
         return None
 
 
@@ -98,8 +99,7 @@ def _llm_determine(ctx):
     if not out:
         return None
     try:
-        out = out.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        p = json.loads(out)
+        p = backend.parse_json(out)
         return Verdict(
             alert_id=ctx.focus_alert["alert_id"],
             disposition=p.get("disposition", "needs_human"),
@@ -113,7 +113,7 @@ def _llm_determine(ctx):
             tuning_recommendation=p.get("tuning_recommendation"),
             used_ai=True,
         )
-    except (json.JSONDecodeError, ValueError, KeyError):
+    except (ValueError, KeyError, TypeError, AttributeError):
         return None
 
 
@@ -124,33 +124,42 @@ def _rule_determine(ctx):
     related = next((e for e in ctx.evidence if e["tool"] == "related_alerts"), {})
     ti = next((e for e in ctx.evidence if e["tool"] == "threat_intel"), {})
     related_count = len(related.get("data", []) or [])
-    ti_hit = bool(ti.get("data", {}).get("match"))
+    ti_data = ti.get("data") or {}
+    ti_hit = bool(ti_data.get("match"))
 
-    hard = _has_hard_escalate_dict(alert)
+    found = signals.hard_signals(alert)
+    hard = bool(found)
 
     if hard or ti_hit:
         conf = 92 if (hard and ti_hit) else 88
         reason_bits = []
         if hard:
-            reason_bits.append("the alert itself carries a high-risk indicator")
+            reason_bits.append("the alert carries a high-risk signal (" + ", ".join(found[:3]) + ")")
         if ti_hit:
-            reason_bits.append(f"an involved indicator matched threat intelligence ({ti['data']['match']})")
+            reason_bits.append(f"{ti_data.get('indicator')} matched threat intelligence ({ti_data['match']})")
         if related_count:
-            reason_bits.append(f"{related_count} related alert(s) corroborate an active pattern")
+            reason_bits.append(f"{related_count} related alert(s) on the same client corroborate an active pattern")
+        # A threat-intel hit alone (an internet scanner touching the perimeter)
+        # is worth a human look but is not a confirmed compromise.
+        confirmed = hard
         return Verdict(
             alert_id=alert["alert_id"],
-            disposition="true_positive",
+            disposition="true_positive" if confirmed else "suspicious",
             closure_code=None,
-            confidence=conf,
-            severity="critical",
+            confidence=conf if confirmed else 75,
+            severity="critical" if confirmed else ("high" if related_count else "medium"),
             escalate=True,
-            summary="Confirmed high-risk activity — escalated with corroborating evidence.",
+            summary=("Confirmed high-risk activity — escalated with corroborating evidence." if confirmed
+                     else "Known-bad source touching this client — escalated for review."),
             reasoning="Investigation concluded this is a real threat: " + "; ".join(reason_bits) + ".",
-            recommended_actions=[
+            recommended_actions=([
                 "Isolate the affected asset/account immediately.",
                 "Preserve volatile evidence before remediation.",
                 "Block corroborated malicious indicators at the perimeter.",
-            ],
+            ] if confirmed else [
+                "Block the source at the perimeter.",
+                "Check whether any connection from this source succeeded.",
+            ]),
             used_ai=False,
         )
 
@@ -170,17 +179,12 @@ def _rule_determine(ctx):
     from app.models import NormalizedAlert
     na = NormalizedAlert(**{k: alert.get(k) for k in
         ["alert_id","source","client","timestamp","title","raw_severity","entity",
-         "src_ip","user","host","description","indicators","raw"] if k in alert})
+         "src_ip","user","host","dst_ip","description","indicators","raw"] if k in alert})
     return _deterministic_verdict(na)
 
 
 def _has_hard_escalate_dict(alert):
-    from app.engine.triage import HARD_ESCALATE_KEYWORDS
-    blob = " ".join(str(v) for v in [
-        alert.get("title"), alert.get("description"),
-        *(alert.get("indicators", {}) or {}).values()
-    ] if v).lower()
-    return any(k in blob for k in HARD_ESCALATE_KEYWORDS)
+    return bool(signals.hard_signals(alert))
 
 
 def investigate(focus_alert, all_alerts, entity_history=None, threat_intel=None):
@@ -194,7 +198,14 @@ def investigate(focus_alert, all_alerts, entity_history=None, threat_intel=None)
         action = plan.get("action")
         if action == "conclude":
             break
-        toolmod.run_tool(action, ctx, plan.get("args", {}))
+        if action not in toolmod.TOOL_REGISTRY:
+            # a model asked for a tool that does not exist; fall back to the fixed path
+            plan = _rule_plan(ctx)
+            action = plan.get("action")
+            if action == "conclude":
+                break
+        args = plan.get("args")
+        toolmod.run_tool(action, ctx, args if isinstance(args, dict) else {})
 
     verdict = (_llm_determine(ctx) if use_llm else None) or _rule_determine(ctx)
 
@@ -202,7 +213,7 @@ def investigate(focus_alert, all_alerts, entity_history=None, threat_intel=None)
     from app.models import NormalizedAlert
     na = NormalizedAlert(**{k: focus_alert.get(k) for k in
         ["alert_id","source","client","timestamp","title","raw_severity","entity",
-         "src_ip","user","host","description","indicators","raw"] if k in focus_alert})
+         "src_ip","user","host","dst_ip","description","indicators","raw"] if k in focus_alert})
     verdict = _enforce_guardrails(verdict, na)
 
     return verdict.to_dict(), ctx.steps

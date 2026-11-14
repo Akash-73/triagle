@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CERT-In draft — {{ d.key }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#12161d; --paper:#fff; --line:#e2e6ec; --muted:#6b7686; --eye:#0e7490; --crit:#c0392b; --warn:#c07a1e; --ok:#2f8a5b; --band:#f4f6f9; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Sora',sans-serif; color:var(--ink); background:#eef1f5; -webkit-font-smoothing:antialiased; }
+  .mono { font-family:'IBM Plex Mono',monospace; }
+  .sheet { max-width:820px; margin:24px auto; background:var(--paper); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .top { padding:26px 34px; border-bottom:2px solid var(--ink); display:flex; justify-content:space-between; align-items:flex-start; }
+  .brand { font-weight:700; font-size:20px; display:flex; align-items:center; gap:10px; }
+  .brand .eye { width:26px; height:26px; border-radius:50%; background:radial-gradient(circle at 50% 50%, var(--eye) 0 22%, #fff 23% 42%, var(--eye) 43% 50%, transparent 51%); }
+  .brand small { color:var(--muted); font-weight:400; font-size:11px; font-family:'IBM Plex Mono'; }
+  .meta { text-align:right; font-size:12px; color:var(--muted); font-family:'IBM Plex Mono'; line-height:1.7; }
+  .body { padding:30px 34px; }
+  h1 { font-size:23px; font-weight:700; margin-bottom:6px; }
+  .verdict-line { display:inline-block; font-family:'IBM Plex Mono'; font-size:12px; font-weight:600; padding:5px 12px; border-radius:20px; margin-bottom:20px; }
+  .verdict-line.crit { background:#fbeae8; color:var(--crit); }
+  .verdict-line.ok { background:#e9f5ee; color:var(--ok); }
+  .lead { font-size:15px; line-height:1.6; color:#33404f; margin-bottom:26px; }
+  .section-t { font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); font-family:'IBM Plex Mono'; margin:24px 0 12px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+
+  .timeline { position:relative; margin-left:8px; }
+  .step { position:relative; padding:0 0 20px 26px; border-left:2px solid var(--line); }
+  .step:last-child { border-left:2px solid transparent; }
+  .step .dot { position:absolute; left:-7px; top:2px; width:12px; height:12px; border-radius:50%; background:var(--eye); border:2px solid #fff; box-shadow:0 0 0 1px var(--line); }
+  .step.crit .dot { background:var(--crit); }
+  .step .time { font-family:'IBM Plex Mono'; font-size:11px; color:var(--muted); }
+  .step .title { font-weight:600; font-size:14.5px; margin:2px 0; }
+  .step .desc { font-size:13px; color:#4a5666; line-height:1.5; }
+  .step .src { font-family:'IBM Plex Mono'; font-size:11px; color:var(--muted); }
+
+  .actions { background:var(--band); border-radius:10px; padding:18px 22px; }
+  .actions li { font-size:14px; margin:8px 0 8px 18px; line-height:1.5; }
+
+  .footer { padding:20px 34px; border-top:1px solid var(--line); font-size:11px; color:var(--muted); font-family:'IBM Plex Mono'; line-height:1.6; }
+  .printbtn { position:fixed; top:16px; right:16px; background:var(--eye); color:#fff; border:none; border-radius:8px; padding:11px 18px; font-family:'Sora'; font-weight:600; font-size:14px; cursor:pointer; }
+  @media print { .printbtn { display:none !important; } body { background:#fff; } .sheet { border:none; margin:0; max-width:100%; } @page { margin:1.4cm; } }
+
+  .draftband { background:#fff7e6; border-bottom:1px solid #f0d9a8; color:#7a5200; padding:10px 34px; font-size:12.5px; font-family:'IBM Plex Mono'; line-height:1.5; }
+  .clock { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:6px 0 22px; }
+  .clock .c { background:var(--band); border-radius:10px; padding:12px 14px; }
+  .clock .c .l { font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-family:'IBM Plex Mono'; }
+  .clock .c .v { font-size:14px; font-weight:600; margin-top:4px; }
+  .clock .c.hot { background:#fbeae8; } .clock .c.hot .v { color:var(--crit); font-family:'IBM Plex Mono'; font-size:18px; }
+  .clock .c.good { background:#e9f5ee; } .clock .c.good .v { color:var(--ok); font-family:'IBM Plex Mono'; font-size:18px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  td, th { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-family:'IBM Plex Mono'; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
+  td.mono { font-family:'IBM Plex Mono'; font-size:12px; word-break:break-all; }
+  .type { margin:0 0 10px; font-size:14px; } .type b { display:block; } .type span { color:var(--muted); font-size:12.5px; }
+  .todo li { font-size:13.5px; margin:6px 0 6px 18px; color:#7a5200; }
+  .plain li { font-size:13.5px; margin:6px 0 6px 18px; }
+  .none { color:var(--muted); font-size:13px; }
+  @media (max-width:700px) { .clock { grid-template-columns:1fr 1fr; } }
+</style>
+</head>
+<body>
+<button class="printbtn" onclick="window.print()">Save as PDF ↓</button>
+<div class="sheet">
+  <div class="top">
+    <div class="brand"><span class="eye"></span> <div>Triagle <br><small>triage, decided</small></div></div>
+    <div class="meta">
+      CERT-In INCIDENT REPORT — DRAFT<br>
+      {{ d.client }} · ref {{ d.reference }}<br>
+      drafted {{ d.generated_at }}
+    </div>
+  </div>
+  <div class="draftband">Draft for review. Triagle filled this from alert evidence; a person must check it, complete the marked fields and send it. Nothing has been filed. Incident-type wording follows CERT-In's Directions of 28 April 2022 — check against the current reporting form.</div>
+
+  {% if metrics.demo_clock %}<div class="draftband" style="background:#eef6fb; border-color:#cfe3ee; color:#0e5a70;">Demo clock is on: each client's sample alert timestamps were shifted to end five minutes ago so the reporting window can be shown running.</div>{% endif %}
+  <div class="body">
+    <h1>Incident centred on {{ d.key }}</h1>
+    <p class="lead" style="margin-bottom:14px;">{{ d.narrative }}</p>
+
+    <div class="clock">
+      <div class="c"><div class="l">Noticed (first escalated alert)</div><div class="v">{{ d.noticed_at }}</div></div>
+      <div class="c"><div class="l">{{ d.window_hours }}-hour window ends</div><div class="v">{{ d.deadline_at }}</div></div>
+      <div class="c {% if d.overdue %}hot{% else %}good{% endif %}"><div class="l">Time left to report</div><div class="v" id="left" data-deadline="{{ d.deadline_iso or '' }}">{% if d.minutes_remaining is none %}unknown{% elif d.overdue %}window passed{% else %}{{ d.minutes_remaining // 60 }}h {{ d.minutes_remaining % 60 }}m{% endif %}</div></div>
+      <div class="c good"><div class="l">Triagle investigation time</div><div class="v">{{ metrics.processing_ms }} ms</div></div>
+    </div>
+
+    <div class="section-t">1 · Type of incident</div>
+    {% for t in d.incident_types %}
+    <p class="type"><b>☑ {{ t.type }}</b><span>based on: {{ t.basis | join('; ') }}</span></p>
+    {% else %}<p class="none">No incident type could be assigned from the evidence. Select one manually.</p>{% endfor %}
+
+    <div class="section-t">2 · Date and time</div>
+    <table>
+      <tr><th style="width:38%">Earliest related activity</th><td>{{ d.occurred_at }}</td></tr>
+      <tr><th>Incident noticed</th><td>{{ d.noticed_at }} <span class="none">— correct this if your team noticed it at a different time</span></td></tr>
+    </table>
+
+    <div class="section-t">3 · Affected systems</div>
+    {% if d.systems %}
+    <table><tr><th>System</th><th>Seen by</th><th>Accounts involved</th></tr>
+      {% for s in d.systems %}<tr><td class="mono">{{ s.name }}</td><td>{{ s.seen_by | join(', ') }}</td><td class="mono">{{ s.users | join(', ') or '—' }}</td></tr>{% endfor %}
+    </table>{% else %}<p class="none">No internal system identified in the alerts.</p>{% endif %}
+
+    <div class="section-t">4 · What was observed</div>
+    <div class="timeline">
+      {% for e in d.timeline %}
+      <div class="step {% if e.escalated %}crit{% endif %}"><span class="dot"></span>
+        <div class="time">{{ e.time }}</div><div class="title">{{ e.title }}</div>
+        <div class="desc">{{ e.detail }}</div><div class="src">source: {{ e.source }}</div></div>
+      {% endfor %}
+    </div>
+
+    <div class="section-t">5 · Indicators</div>
+    {% if d.indicators %}
+    <table><tr><th style="width:18%">Kind</th><th>Value</th><th style="width:34%">Threat intelligence</th></tr>
+      {% for i in d.indicators %}<tr><td>{{ i.kind }}</td><td class="mono">{{ i.value }}</td><td>{{ i.intel or '—' }}</td></tr>{% endfor %}
+    </table>{% else %}<p class="none">None recorded.</p>{% endif %}
+
+    <div class="section-t">6 · Actions</div>
+    <table>
+      <tr><th style="width:38%">Taken (approved by an analyst)</th><td>{% if d.actions_done %}<ul class="plain">{% for a in d.actions_done %}<li>{{ a }}</li>{% endfor %}</ul>{% else %}<span class="none">None yet.</span>{% endif %}</td></tr>
+      <tr><th>Proposed, awaiting approval</th><td>{% if d.actions_pending %}<ul class="plain">{% for a in d.actions_pending %}<li>{{ a }}</li>{% endfor %}</ul>{% else %}<span class="none">None.</span>{% endif %}</td></tr>
+    </table>
+
+    <div class="section-t">7 · Personal data — points to check for a DPDP breach assessment</div>
+    {% if d.data_exposure_signals %}
+    <p class="type">The evidence includes signals that data may have been accessed or taken: <b style="display:inline">{{ d.data_exposure_signals | join(', ') }}</b>.</p>
+    {% else %}<p class="type">No signal of data being accessed or taken was seen in these alerts. That is not proof none was.</p>{% endif %}
+    <ul class="todo">
+      <li>Do the affected systems hold personal data? Which kinds, and of how many people?</li>
+      <li>Was any of it read, copied, altered or made unavailable?</li>
+      <li>If so, the organisation's data-protection lead decides on notification under the DPDP Act and Rules.</li>
+    </ul>
+
+    <div class="section-t">To complete before sending</div>
+    <ul class="todo">{% for t in d.to_complete %}<li>{{ t }}</li>{% endfor %}</ul>
+  </div>
+
+  <div class="footer">
+    Draft prepared by Triagle · {{ d.generated_at }} · ref {{ d.reference }}<br>
+    Every statement above comes from the alerts listed in section 4. Triagle does not send this report.
+  </div>
+</div>
+<script>
+(function(){
+  var el=document.getElementById('left'); var iso=el && el.dataset.deadline; if(!iso) return;
+  function tick(){ var ms=new Date(iso)-new Date(); if(ms<=0){ el.textContent='window passed'; return; }
+    var s=Math.floor(ms/1000); el.textContent=Math.floor(s/3600)+'h '+String(Math.floor(s%3600/60)).padStart(2,'0')+'m '+String(s%60).padStart(2,'0')+'s'; }
+  tick(); setInterval(tick,1000);
+})();
+</script>
+</body>
+</html>

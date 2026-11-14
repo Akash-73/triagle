@@ -1,5 +1,5 @@
 """
-Netrix — triage engine.
+Triagle — triage engine.
 
 This is the product's core and its differentiator. For each NormalizedAlert
 it produces a Verdict. The governing principle, in priority order:
@@ -18,57 +18,64 @@ it produces a Verdict. The governing principle, in priority order:
 The engine works in two modes:
   - Deterministic rule reasoner (always on, no API key needed): applies a
     transparent rule set. Good enough to demo and genuinely useful.
-  - AI reasoner (when ANTHROPIC_API_KEY set): deeper narrative reasoning,
-    but constrained by the SAME conservative-closure guardrails so the AI
-    can never be *less* cautious than the rules — it can escalate more, but
-    never auto-close something the rules would have escalated.
+  - AI reasoner (when a model backend is configured): deeper narrative
+    reasoning, but constrained by the SAME conservative-closure guardrails so
+    the AI can never be *less* cautious than the rules — it can escalate more,
+    but never auto-close something the rules would have escalated.
 """
-import os
 import json
-
-import requests
+import re
 
 from app.models import Verdict, CLOSURE_CODES
-
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-ANTHROPIC_MODEL = os.environ.get("NETRIX_AI_MODEL", "claude-sonnet-4-6")
+from app.engine import signals
 
 # Confidence below this can NEVER result in an auto-close. Hard floor.
 AUTO_CLOSE_CONFIDENCE_FLOOR = 85
 
-# Signals that force escalation regardless of anything else.
-HARD_ESCALATE_KEYWORDS = [
-    "ransomware", "ransom", "encrypt", "exfiltration", "data theft",
-    "domain admin", "credential dump", "lsass", "mimikatz", "cobalt strike",
-    "lateral movement", "privilege escalation", "c2", "command and control",
+# Kept for callers that import it; the matching itself lives in signals.py.
+HARD_ESCALATE_KEYWORDS = signals.TERMS
+
+_SEV_RANK = {"informational": 0, "info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+
+# Known administrative tools. A match needs the COMMAND LINE to have the
+# tool's own shape — not just the tool's name somewhere in the alert text,
+# which an attacker controls (a binary called sccm_update.exe, a dump written
+# to C:\\CyberArk\\). It also needs the source severity to be at or below the
+# cap and no risk signal on the alert.
+#
+# Honest limit: a command line can still be imitated. In production this
+# check should also require the EDR's signer / hash-reputation verdict.
+KNOWN_TOOLS = [
+    {"name": "1E Tachyon agent", "max_severity": "low",
+     "cmdline": r"^tachyonagent\.exe(\s+--?[\w-]+)*$"},
+    {"name": "HP SoftPaq download manager", "max_severity": "low",
+     "cmdline": r"^hpsoftpaqdownloadmanager\.exe(\s+[/-][\w-]+)*$"},
+    {"name": "CyberArk PSM dispatcher", "max_severity": "medium",
+     "cmdline": r"^powershell(\.exe)?\s+-file\s+c:\\cyberark\\psm\\components\\[\w.-]+\.ps1$"},
 ]
+_KNOWN_TOOL_RE = [(t, re.compile(t["cmdline"], re.I)) for t in KNOWN_TOOLS]
 
 
 def _text_blob(alert):
-    parts = [alert.title, alert.description]
-    parts += [str(v) for v in alert.indicators.values() if v]
-    return " ".join(p for p in parts if p).lower()
+    return signals.human_text(alert)
 
 
 def _known_benign_signal(alert):
-    """Transparent allowlist logic. Returns (is_benign, closure_code, why) or
-    (False, None, None). Deliberately narrow — we only call something benign
-    when we can point at WHY, and even then only for low-risk sources."""
-    blob = _text_blob(alert)
-
-    # Known admin/security tooling on EDR — a classic false positive class,
-    # but ONLY benign if severity is low/medium AND no hard-escalate signal.
-    known_tools = ["cyberark", "1e tachyon", "hp softpaq", "psexec (sccm)", "sccm"]
-    for tool in known_tools:
-        if tool in blob and not _has_hard_escalate(alert):
-            return True, "BENIGN_KNOWN_TOOL", f"Matches known administrative tool pattern: {tool}."
-
+    """Returns (is_benign, closure_code, why) or (False, None, None)."""
+    if _has_hard_escalate(alert):
+        return False, None, None
+    cmd = signals.command_line(alert).strip()
+    sev = _SEV_RANK.get(str(alert.raw_severity).lower(), 2)
+    for tool, rx in _KNOWN_TOOL_RE:
+        if cmd and rx.match(cmd) and sev <= _SEV_RANK[tool["max_severity"]]:
+            return True, "BENIGN_KNOWN_TOOL", (
+                f"Command line matches the known administrative tool {tool['name']} "
+                f"and the source severity is {alert.raw_severity}.")
     return False, None, None
 
 
 def _has_hard_escalate(alert):
-    blob = _text_blob(alert)
-    return any(k in blob for k in HARD_ESCALATE_KEYWORDS)
+    return bool(signals.hard_signals(alert))
 
 
 def _deterministic_verdict(alert):
@@ -78,7 +85,7 @@ def _deterministic_verdict(alert):
     # 1. Hard-escalate signals: always escalate, never close. This is the
     #    anti-false-negative guardrail doing its job.
     if escalate_signal:
-        matched = next((k for k in HARD_ESCALATE_KEYWORDS if k in blob), "high-risk indicator")
+        matched = ", ".join(signals.hard_signals(alert)[:3]) or "high-risk indicator"
         return Verdict(
             alert_id=alert.alert_id,
             disposition="true_positive" if alert.raw_severity in ("high", "critical") else "suspicious",
@@ -87,7 +94,7 @@ def _deterministic_verdict(alert):
             severity="critical",
             escalate=True,
             summary=f"High-risk activity ({matched}) — escalated, not auto-closed.",
-            reasoning=(f"The alert contains a high-risk indicator ('{matched}'). Netrix never "
+            reasoning=(f"The alert contains a high-risk indicator ({matched}). Triagle never "
                        f"auto-closes alerts carrying indicators of hands-on-keyboard or destructive "
                        f"activity, even if other signals look benign. Routed to a human analyst."),
             recommended_actions=[
@@ -130,7 +137,7 @@ def _deterministic_verdict(alert):
             escalate=True,
             summary="Suspicious — insufficient certainty to close, escalated for review.",
             reasoning=("The alert shows suspicious characteristics but the available evidence isn't "
-                       "conclusive. Rather than risk a wrong closure, Netrix escalates. This is the "
+                       "conclusive. Rather than risk a wrong closure, Triagle escalates. This is the "
                        "conservative-closure principle: uncertainty routes to a human, never to auto-close."),
             recommended_actions=[
                 "Review the entity's recent activity for corroborating signals.",
@@ -141,6 +148,27 @@ def _deterministic_verdict(alert):
 
     # 4. Low-severity, no signal, unremarkable -> still NOT auto-closed unless
     #    confidence is high. Defaults to needs_human at modest confidence.
+    sensitive = signals.sensitive_terms(alert)
+    if sensitive and alert.raw_severity in ("low", "informational", "info"):
+        return Verdict(
+            alert_id=alert.alert_id,
+            disposition="needs_human",
+            closure_code=None,
+            confidence=60,
+            severity="medium",
+            escalate=True,
+            summary="Sensitive change reported at low severity — sent for review, not closed.",
+            reasoning=(f"The source tool rated this low, but it describes a sensitive change "
+                       f"({', '.join(sensitive[:3])}). These are routine on most days and an early "
+                       f"step of account or host takeover on others, so Triagle does not close "
+                       f"them on severity alone."),
+            recommended_actions=[
+                "Confirm the change against a ticket or with the account owner.",
+                "Check the same user or host for sign-in or endpoint alerts in the last 24 hours.",
+            ],
+            used_ai=False,
+        )
+
     if alert.raw_severity in ("low", "informational", "info"):
         return Verdict(
             alert_id=alert.alert_id,
@@ -165,7 +193,7 @@ def _deterministic_verdict(alert):
         severity="medium",
         escalate=True,
         summary="Undetermined — escalated rather than guessed.",
-        reasoning=("Netrix could not reach a high-confidence disposition from the available evidence. "
+        reasoning=("Triagle could not reach a high-confidence disposition from the available evidence. "
                    "Consistent with conservative closure, it escalates to a human instead of assigning "
                    "a low-confidence verdict that might wrongly close a real threat."),
         recommended_actions=["Analyst review needed to reach a disposition."],
@@ -186,6 +214,14 @@ def _enforce_guardrails(verdict, alert):
             verdict.disposition = "suspicious"
             verdict.reasoning += (" [Guardrail: a high-risk indicator was present, so this alert "
                                   "cannot be closed as benign regardless of other reasoning.]")
+    if verdict.closure_code and verdict.closure_code not in CLOSURE_CODES:
+        verdict.closure_code = None
+        verdict.escalate = True
+        verdict.reasoning += " [Guardrail: unrecognised closure code discarded; escalated.]"
+    if not verdict.escalate and not verdict.closure_code:
+        # nothing may leave the queue without a closure code
+        verdict.escalate = True
+        verdict.reasoning += " [Guardrail: no valid closure code, so the alert stays open.]"
     if verdict.closure_code and verdict.confidence < AUTO_CLOSE_CONFIDENCE_FLOOR:
         # not confident enough to close — force it open
         verdict.escalate = True
@@ -195,7 +231,7 @@ def _enforce_guardrails(verdict, alert):
     return verdict
 
 
-AI_SYSTEM_PROMPT = """You are Netrix, an AI SOC analyst that triages security \
+AI_SYSTEM_PROMPT = """You are Triagle, an AI SOC analyst that triages security \
 alerts for MSPs. For the given alert produce a JSON verdict with keys: \
 disposition (one of true_positive, benign, suspicious, needs_human), \
 closure_code (one of TP_CONFIRMED, TP_LIKELY, BENIGN_EXPECTED, \
@@ -219,29 +255,14 @@ Output ONLY the JSON object, no other text."""
 
 
 def _ai_verdict(alert):
-    if not ANTHROPIC_API_KEY:
+    from app.agent import backend
+    if not backend.is_llm_enabled():
+        return None
+    text = backend.complete(AI_SYSTEM_PROMPT, json.dumps(alert.to_dict(), default=str))
+    if not text:
         return None
     try:
-        resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": ANTHROPIC_MODEL,
-                "max_tokens": 800,
-                "system": AI_SYSTEM_PROMPT,
-                "messages": [{"role": "user", "content": json.dumps(alert.to_dict(), default=str)}],
-            },
-            timeout=25,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        text = "".join(b["text"] for b in data.get("content", []) if b.get("type") == "text")
-        text = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        parsed = json.loads(text)
+        parsed = backend.parse_json(text)
         return Verdict(
             alert_id=alert.alert_id,
             disposition=parsed.get("disposition", "needs_human"),
@@ -255,13 +276,13 @@ def _ai_verdict(alert):
             tuning_recommendation=parsed.get("tuning_recommendation"),
             used_ai=True,
         )
-    except (requests.RequestException, json.JSONDecodeError, ValueError, KeyError):
+    except (ValueError, KeyError, TypeError, AttributeError):
         return None
 
 
 def triage(alert):
     """Produce a guardrail-enforced Verdict for one alert."""
-    verdict = _ai_verdict(alert) if ANTHROPIC_API_KEY else None
+    verdict = _ai_verdict(alert)
     if verdict is None:
         verdict = _deterministic_verdict(alert)
     return _enforce_guardrails(verdict, alert)

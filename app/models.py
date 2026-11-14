@@ -1,5 +1,5 @@
 """
-Netrix — core data structures.
+Triagle — core data structures.
 
 A NormalizedAlert is what every connector produces, regardless of source
 tool (EDR, firewall, identity provider). The triage engine only ever sees
@@ -47,6 +47,7 @@ class NormalizedAlert:
     src_ip: Optional[str] = None
     user: Optional[str] = None
     host: Optional[str] = None
+    dst_ip: Optional[str] = None
     description: str = ""
     indicators: dict = field(default_factory=dict)   # hashes, domains, ports, etc.
     raw: dict = field(default_factory=dict)
