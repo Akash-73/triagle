@@ -5,8 +5,8 @@
 Triagle is an agentic AI SOC analyst built for MSPs. For every alert it runs
 an autonomous investigation — planning which evidence to gather, calling
 investigative tools, reasoning over what it finds, and reaching an auditable
-determination — with one guarantee the field's incumbents break: **it never
-wrongly closes a real threat.**
+determination — built around one rule: **an alert carrying a risk signal is
+never closed automatically, whatever the model says.**
 
 ## Agentic, not just AI-assisted
 
@@ -37,12 +37,18 @@ closure structurally impossible:
 
 - Alerts carrying ransomware / credential-theft / lateral-movement / C2 /
   exfiltration signals are **always escalated, never auto-closed** — even at
-  99% model confidence (verified by test).
+  99% model confidence (`tests/test_triagle.py`).
+- Signals are matched two ways: words in the alert's title/description, and
+  command-line behaviour (shadow-copy deletion, comsvcs MiniDump, encoded
+  PowerShell, PsExec...) so a quietly titled "low" alert is still caught.
+- The admin-tool allowlist matches the tool's command line, not its name in
+  free text, so `sccm_update.exe` or a dump written to `C:\CyberArk\` does
+  not buy an attacker a closure.
 - No closure below the confidence floor.
 - Noise is dismissed **with evidence and a tuning recommendation**, not hidden.
 
-This means Triagle can run on a cheaper/weaker model and still never miss a
-real threat — the guardrails are the safety net.
+The guardrails are a floor under the model, not a proof. See "Measured" below
+for what has and has not been tested.
 
 ## Model-agnostic by design
 
@@ -52,6 +58,7 @@ context and investigation logic are the moat. Set `TRIAGLE_LLM_BACKEND`:
 | Backend | Env vars | Notes |
 |---|---|---|
 | `deterministic` (default) | none | rule-based planner, zero cost, always works |
+| `gemini` | `GEMINI_API_KEY` | Google Gemini API; default model `gemini-3.8-flash`, override with `TRIAGLE_MODEL` |
 | `anthropic` | `ANTHROPIC_API_KEY` | Claude — top reasoning quality |
 | `deepseek` | `DEEPSEEK_API_KEY` | cheap, strong reasoning |
 | `nvidia` | `NVIDIA_API_KEY` | NIM free-tier hosted open models |
@@ -60,6 +67,50 @@ context and investigation logic are the moat. Set `TRIAGLE_LLM_BACKEND`:
 The agent loop, tools, and guardrails are identical across all backends.
 Running fully local (Ollama) is a **data-privacy selling point** for
 security buyers in India / EMEA.
+
+## Personal data never leaves in the clear
+
+Every prompt is masked before it goes to a model API and unmasked on the way
+back: Aadhaar (with check-digit validation), PAN, UPI IDs, Indian mobile
+numbers and email addresses become placeholders like `<AADHAAR_1>`. Pattern
+matching only — it does not find names or addresses. `TRIAGLE_MASK_PII=false`
+turns it off for a model running on the same machine.
+
+## CERT-In report draft
+
+Each escalated incident has a draft at `/certin/<entity>`: incident type,
+times, affected systems, timeline, indicators, actions taken and proposed,
+points to check for a DPDP breach assessment, and the 6-hour reporting clock.
+It is a draft for a person to complete and send. Nothing is filed, and
+fields Triagle cannot know are listed, not guessed. Check the incident-type
+wording against CERT-In's current Directions before relying on it.
+
+`TRIAGLE_DEMO_CLOCK=true` shifts the sample alerts' timestamps to end five
+minutes ago so the clock can be shown running.
+
+## Measured
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -q                 # 45 tests, no network or key needed
+python eval/build_dataset.py        # regenerate the labelled set
+python -m eval.run_benchmark        # or open /benchmark in the app
+```
+
+`eval/dataset.json` is 38 simulated, labelled alerts across five clients:
+loud and quiet ransomware, phishing-to-account-takeover, brute force,
+attackers hiding behind allowlisted tool names, routine admin noise, and
+harmless alerts that contain alarming words.
+
+| Deterministic engine | v0.1 | v0.2 |
+|---|---|---|
+| Real threats missed | 3 of 21 | 0 of 21 |
+| Benign alerts sent to a human | 4 of 15 | 1 of 15 |
+
+What this does not show: the alerts are simulated and written by the engine's
+author, so it is a regression check on known attack shapes, not evidence of
+accuracy in a real environment. The model backends are covered by stubbed
+tests only; no live model run is included in these numbers.
 
 ## Quick start
 
@@ -91,8 +142,11 @@ export TRIAGLE_AGENTIC=false   # single-pass triage instead of investigation loo
 ```
 app/
   connectors/sources.py   normalize EDR/firewall/identity alerts
+  engine/signals.py       risk terms + command-line behaviours
   engine/triage.py        conservative-closure verdict + guardrails
-  engine/correlate.py     link alerts into incidents (entity resolution)
+  engine/correlate.py     link a client's alerts into incidents (never across clients)
+  engine/certin.py        CERT-In report draft + 6-hour clock
+  privacy.py              Aadhaar / PAN / UPI / mobile / email masking
   agent/
     tools.py              investigative tools the agent can call
     backend.py            model-agnostic LLM interface (5 backends)
@@ -100,6 +154,8 @@ app/
   orchestrator.py         batch processing, agentic or fast mode
 templates/                console, alert detail (with trail), incident report
 samples/                  synthetic multi-client alerts + investigation env
+eval/                     labelled simulated dataset + benchmark
+tests/                    test suite
 ```
 
 ## Roadmap
@@ -107,6 +163,9 @@ samples/                  synthetic multi-client alerts + investigation env
 - [x] Detection self-tuning — flags noisy rules for tuning (never auto-suppresses)
 
 - [x] Response actions (isolate host, disable account) with human sign-off gates
+- [x] Gemini backend, personal-data masking, CERT-In draft, benchmark
+- [ ] Live run of the benchmark on a model backend
+- [ ] Sign-in on the console and an audit log of approvals
 - [ ] Analyst feedback loop — learn per-client "normal"
 - [ ] Live connectors (API/webhook) for real tools
 - [ ] Vector-DB context store for richer investigation

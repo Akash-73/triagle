@@ -1,5 +1,5 @@
 """
-Netrix — source connectors.
+Triagle — source connectors.
 
 Each connector takes a raw alert (as the source tool emits it) and returns
 a NormalizedAlert. In production these would pull from tool APIs/webhooks;
@@ -8,6 +8,26 @@ what proves the normalization layer actually works across heterogeneous
 sources — the exact "tool sprawl" pain MSPs have.
 """
 from app.models import NormalizedAlert
+
+
+def _is_public_ip(value):
+    import ipaddress
+    try:
+        ip = ipaddress.ip_address(str(value))
+    except ValueError:
+        return False          # a hostname, so an internal asset name
+    # the documentation ranges (RFC 5737) are "private" to Python but stand in
+    # for internet addresses in sample data, so treat them as public
+    doc = any(ip in ipaddress.ip_network(n) for n in
+              ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"))
+    return doc or ip.is_global
+
+
+def _internal_side(src, dst):
+    for v in (dst, src):
+        if v and not _is_public_ip(v):
+            return v
+    return None
 
 
 def from_crowdstrike(raw, client):
@@ -45,7 +65,9 @@ def from_fortinet(raw, client):
         raw_severity=str(raw.get("crlevel", raw.get("level", "medium"))).lower(),
         entity=raw.get("srcip", "unknown"),
         src_ip=raw.get("srcip"),
-        host=raw.get("dstip"),
+        dst_ip=raw.get("dstip"),
+        # the internal asset is whichever side is not a public address
+        host=_internal_side(raw.get("srcip"), raw.get("dstip")),
         description=raw.get("msg", ""),
         indicators={
             "dstport": raw.get("dstport"),

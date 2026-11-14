@@ -122,8 +122,10 @@ def propose_actions(alert, verdict):
 
     # C2/beaconing: isolate the internal host, BLOCK the external dst IP.
     if any(k in title for k in ["c2", "command and control", "beacon"]):
-        internal = alert.get("src_ip") or host      # in these alerts src is the internal host
-        external = alert.get("dst_ip")              # dst is the external C2
+        internal = host or alert.get("src_ip")      # the internal asset
+        external = alert.get("dst_ip")              # the external C2
+        if external == internal:
+            external = None
         if internal:
             add("isolate_host", internal,
                 "Host is beaconing to known C2; isolating cuts the channel.",

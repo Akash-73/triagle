@@ -41,11 +41,27 @@ GENERIC_ENTITIES = {"system", "admin", "administrator", "n/a", "unknown", "-",
 
 def _entity_values(alert):
     vals = set()
-    for k in ("host", "user", "src_ip", "entity"):
+    for k in ("host", "user", "src_ip", "dst_ip", "entity"):
         v = alert.get(k)
         if v and str(v).strip().lower() not in GENERIC_ENTITIES:
-            vals.add(str(v))
+            vals.add(str(v).lower())
     return vals
+
+
+def _same_tenant(ctx):
+    """Alerts belonging to the same client as the focus alert. One client's
+    data is never used to investigate another's."""
+    client = ctx.focus_alert.get("client")
+    return [a for a in ctx.all_alerts if a.get("client") == client]
+
+
+def _indicators_to_check(alert):
+    ind = alert.get("indicators", {}) or {}
+    out = []
+    for v in (ind.get("sha256"), ind.get("domain"), alert.get("dst_ip"), alert.get("src_ip")):
+        if v and v not in out:
+            out.append(v)
+    return out
 
 
 # ---- The tools -----------------------------------------------------------
@@ -54,7 +70,7 @@ def tool_related_alerts(ctx, args):
     """Find other alerts in the environment sharing an entity with the focus."""
     focus_entities = _entity_values(ctx.focus_alert)
     related = []
-    for a in ctx.all_alerts:
+    for a in _same_tenant(ctx):
         if a["alert_id"] == ctx.focus_alert["alert_id"]:
             continue
         if _entity_values(a) & focus_entities:
@@ -83,18 +99,23 @@ def tool_entity_history(ctx, args):
 
 
 def tool_threat_intel(ctx, args):
-    """Check an indicator (IP / hash / domain) against threat intelligence."""
-    indicator = args.get("indicator")
-    if not indicator:
-        # try to pull one from the focus alert
-        ind = ctx.focus_alert.get("indicators", {})
-        indicator = ind.get("sha256") or ctx.focus_alert.get("src_ip")
-    hit = ctx.threat_intel.get(indicator)
+    """Check the alert's indicators (hash / domain / IPs) against threat intelligence."""
+    wanted = [args["indicator"]] if args.get("indicator") else _indicators_to_check(ctx.focus_alert)
+    checked = []
+    for indicator in wanted:
+        checked.append(indicator)
+        hit = ctx.threat_intel.get(indicator)
+        if hit:
+            return {
+                "tool": "threat_intel",
+                "summary": f"Threat intel MATCH on {indicator}: {hit}",
+                "data": {"indicator": indicator, "match": hit, "checked": checked},
+            }
     return {
         "tool": "threat_intel",
-        "summary": (f"Threat intel MATCH on {indicator}: {hit}" if hit
-                    else f"No threat-intel match for {indicator}."),
-        "data": {"indicator": indicator, "match": hit},
+        "summary": ("No threat-intel match for " + ", ".join(checked) + "." if checked
+                    else "No indicators on this alert to check."),
+        "data": {"indicator": None, "match": None, "checked": checked},
     }
 
 
@@ -102,7 +123,7 @@ def tool_timeline(ctx, args):
     """Build a chronological timeline of the focus + related alerts."""
     focus_entities = _entity_values(ctx.focus_alert)
     events = []
-    for a in ctx.all_alerts:
+    for a in _same_tenant(ctx):
         if _entity_values(a) & focus_entities:
             events.append({"timestamp": a.get("timestamp"), "title": a["title"], "source": a["source"]})
     events.sort(key=lambda e: e.get("timestamp") or "")

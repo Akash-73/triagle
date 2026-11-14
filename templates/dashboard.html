@@ -70,7 +70,7 @@
 
   /* the queue */
   .queue { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .qrow { display: grid; grid-template-columns: 120px 1fr 130px 90px; gap: 14px; align-items: center;
+  .qrow { display: grid; grid-template-columns: 120px 1fr 130px 170px; gap: 14px; align-items: center;
           padding: 14px 18px; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--text); transition: background .12s; }
   .qrow:last-child { border-bottom: none; }
   .qrow:hover { background: var(--panel-2); }
@@ -104,7 +104,7 @@
 <body>
 <header>
   <div class="brand"><span class="eye"></span> Triagle <small>triage, decided</small></div>
-  <div class="tag"><a href="/tuning" style="color:var(--eye); text-decoration:none; margin-right:16px;">Detection Tuning →</a>MSP triage console · {{ now }}</div>
+  <div class="tag"><a href="/benchmark" style="color:var(--eye); text-decoration:none; margin-right:16px;">Benchmark →</a><a href="/tuning" style="color:var(--eye); text-decoration:none; margin-right:16px;">Detection Tuning →</a>MSP triage console · {{ now }}</div>
 </header>
 
 <main>
@@ -115,6 +115,7 @@
     <div class="metric"><div class="n">{{ metrics.elevated_incidents }}</div><div class="l">Multi-tool incidents</div></div>
     <div class="metric"><div class="n">{{ metrics.staged_actions }}</div><div class="l">Actions staged</div></div>
     <div class="metric"><div class="n">{{ metrics.flagged_rules }}</div><div class="l">Rules to tune</div></div>
+    <div class="metric"><div class="n">{{ metrics.processing_ms }}<span style="font-size:14px"> ms</span></div><div class="l">To investigate all · {{ metrics.backend }}</div></div>
   </div>
 
   <div class="banner">
@@ -125,11 +126,14 @@
   <div class="section-label">Correlated incidents — related alerts grouped</div>
   <div class="incidents">
     {% for inc in incidents %}
-    <a class="incident {% if inc.elevated %}elevated{% endif %}" href="/report/{{ inc.key }}" style="text-decoration:none; color:inherit; display:block;">
+    <div class="incident {% if inc.elevated %}elevated{% endif %}">
       <div class="h">{{ inc.key }} {% if inc.elevated %}<span class="badge">MULTI-TOOL</span>{% endif %}</div>
-      <div class="meta">{{ inc.size }} alerts · {{ inc.sources | join(', ') }}</div>
-      <div class="meta" style="color:var(--eye); margin-top:6px;">View incident report →</div>
-    </a>
+      <div class="meta">{{ inc.client }} · {{ inc.size }} alerts · {{ inc.sources | join(', ') }}</div>
+      <div class="meta" style="margin-top:8px;">
+        <a href="/report/{{ inc.key }}" style="color:var(--eye); text-decoration:none;">Client report →</a>
+        {% if inc.reportable %}<a href="/certin/{{ inc.key }}" style="color:var(--escalate); text-decoration:none; margin-left:14px;">CERT-In draft →</a>{% endif %}
+      </div>
+    </div>
     {% endfor %}
   </div>
   {% endif %}
