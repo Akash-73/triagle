@@ -114,7 +114,8 @@
   {% if actions %}
   <div class="verdict-card" style="border-color:rgba(255,180,67,0.35);">
     <div class="lbl" style="font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--suspicious); font-family:'IBM Plex Mono'; margin-bottom:14px;">⚡ Response actions — human approval required</div>
-    <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">Triagle staged these containment actions for this threat. Nothing executes until you approve. Actions are reversible.</div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">Triagle staged these containment actions for this threat. Nothing executes until an analyst approves. Every decision is recorded with the analyst's name. Actions are reversible.</div>
+    {% if notice %}<div style="border:1px solid rgba(255,93,93,0.5); background:rgba(255,93,93,0.08); color:var(--escalate); border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:14px;">{{ notice }}</div>{% endif %}
     {% for act in actions %}
     <div style="border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:12px; {% if act.risk_tier=='high_impact' %}border-color:rgba(255,93,93,0.4);{% endif %}">
       <div style="font-weight:600; font-size:15px; margin-bottom:4px;">
@@ -125,16 +126,23 @@
       <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Blast radius: {{ act.blast_radius }} · via {{ act.platform }}</div>
       {% if act.status in ['executed','approved'] %}
         <div style="color:var(--benign); font-family:'IBM Plex Mono'; font-size:13px;">✓ {{ act.result_message or 'Approved' }}</div>
+        {% if act.decided_by %}<div style="color:var(--muted); font-family:'IBM Plex Mono'; font-size:11.5px; margin-top:4px;">decided by {{ act.decided_by }} · {{ act.decided_at }}</div>{% endif %}
       {% elif act.status=='declined' %}
         <div style="color:var(--escalate); font-family:'IBM Plex Mono'; font-size:13px;">✕ {{ act.result_message or 'Declined' }}</div>
+        {% if act.decided_at %}<div style="color:var(--muted); font-family:'IBM Plex Mono'; font-size:11.5px; margin-top:4px;">{{ act.decided_at }}</div>{% endif %}
+      {% elif not can_approve %}
+        <div style="color:var(--muted); font-family:'IBM Plex Mono'; font-size:12.5px;">Awaiting an analyst's decision. Your account is view-only.</div>
       {% else %}
-        <form method="post" action="/action/approve" style="display:flex; align-items:center; gap:12px;">
+        <form method="post" action="/action/approve" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="alert_id" value="{{ alert.alert_id }}">
           <input type="hidden" name="action_id" value="{{ act.action_id }}">
           {% if act.requires_ack %}
           <label style="font-size:12px; color:var(--escalate);"><input type="checkbox" name="ack"> I acknowledge the blast radius</label>
           {% endif %}
-          <button type="submit" style="background:var(--suspicious); color:#1a1200; border:none; border-radius:7px; padding:8px 16px; font-weight:600; cursor:pointer; font-family:'Sora';">Approve &amp; execute</button>
+          <button type="submit" name="decision" value="approve" style="background:var(--suspicious); color:#1a1200; border:none; border-radius:7px; padding:8px 16px; font-weight:600; cursor:pointer; font-family:'Sora';">Approve &amp; execute</button>
+          <button type="submit" name="decision" value="decline" style="background:none; color:var(--muted); border:1px solid var(--line); border-radius:7px; padding:8px 14px; cursor:pointer; font-family:'Sora';">Decline</button>
+          <input type="text" name="reason" maxlength="200" placeholder="reason (optional, recorded)" style="flex:1; min-width:180px; background:var(--panel-2); border:1px solid var(--line); border-radius:7px; padding:8px 10px; color:var(--text); font-family:'Sora'; font-size:12.5px;">
         </form>
       {% endif %}
     </div>

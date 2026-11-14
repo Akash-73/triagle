@@ -137,10 +137,14 @@ def build_draft(incident, members, actions_by_alert, threat_intel=None, now=None
     for m in members:
         for act in actions_by_alert.get(m["alert"]["alert_id"], []):
             line = f"{act['label']} — {act['target']}"
+            if act.get("status") == "declined":
+                continue
+            if act.get("status") == "executed" and act.get("decided_by"):
+                line += f" (approved by {act['decided_by']}, {_fmt(_parse(act.get('decided_at')))})"
             bucket = done if act.get("status") == "executed" else pending
             if line not in bucket:
                 bucket.append(line)
-    pending = [p for p in pending if p not in done]
+    pending = [p for p in pending if not any(d.startswith(p) for d in done)]
 
     types = classify(members)
     exposure = sorted({h for m in escalated for h in DATA_EXPOSURE_HINTS if h in _evidence_text(m["alert"])})

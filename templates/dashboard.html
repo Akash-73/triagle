@@ -104,7 +104,8 @@
 <body>
 <header>
   <div class="brand"><span class="eye"></span> Triagle <small>triage, decided</small></div>
-  <div class="tag"><a href="/benchmark" style="color:var(--eye); text-decoration:none; margin-right:16px;">Benchmark →</a><a href="/tuning" style="color:var(--eye); text-decoration:none; margin-right:16px;">Detection Tuning →</a>MSP triage console · {{ now }}</div>
+  <div class="tag">{% if user.role == 'analyst' %}<a href="/audit" style="color:var(--eye); text-decoration:none; margin-right:16px;">Audit log →</a>{% endif %}<a href="/benchmark" style="color:var(--eye); text-decoration:none; margin-right:16px;">Benchmark →</a><a href="/tuning" style="color:var(--eye); text-decoration:none; margin-right:16px;">Detection Tuning →</a>MSP triage console · {{ now }}
+    {% if auth_on %}<form method="post" action="/logout" style="display:inline; margin-left:16px;"><input type="hidden" name="csrf" value="{{ csrf }}"><span style="color:var(--text);">{{ user.name }}</span> <span style="opacity:.7">({{ user.role }})</span> <button type="submit" style="background:none; border:1px solid var(--line); color:var(--muted); border-radius:6px; padding:3px 9px; margin-left:6px; cursor:pointer; font-family:inherit; font-size:12px;">Sign out</button></form>{% else %}<span style="color:var(--escalate); margin-left:16px;">sign-in is OFF</span>{% endif %}</div>
 </header>
 
 <main>

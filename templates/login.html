@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in — Triagle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0a0e14; --panel:#111722; --panel2:#161d2b; --line:#222c3d; --text:#dbe4f0;
+    --muted:#7d8ba3; --eye:#38bdf8; --escalate:#ff5d5d; --flag:#ffb443; --benign:#46d68a; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:'Sora',sans-serif; -webkit-font-smoothing:antialiased; }
+  .mono { font-family:'IBM Plex Mono',monospace; }
+  header { display:flex; align-items:center; justify-content:space-between; padding:18px 28px; border-bottom:1px solid var(--line); }
+  header a { color:var(--eye); text-decoration:none; font-size:14px; font-family:'IBM Plex Mono'; }
+  .brand { display:flex; align-items:center; gap:11px; font-weight:700; font-size:20px; }
+  .brand .eye { width:28px; height:28px; border-radius:50%; background:radial-gradient(circle at 50% 50%, var(--eye) 0 22%, #0a0e14 23% 42%, var(--eye) 43% 50%, transparent 51%); box-shadow:0 0 16px rgba(56,189,248,0.5); }
+  main { padding:28px; max-width:1000px; margin:0 auto; }
+  h1 { font-size:24px; margin-bottom:6px; }
+  .sub { color:var(--muted); font-size:14px; margin-bottom:24px; max-width:640px; }
+  .rule { background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--muted); border-radius:10px; padding:16px 18px; margin-bottom:12px; }
+  .rule.flagged { border-left-color:var(--flag); background:linear-gradient(135deg, rgba(255,180,67,0.06), var(--panel)); }
+  .rname { font-weight:600; font-size:14.5px; margin-bottom:8px; font-family:'IBM Plex Mono'; }
+  .bars { display:flex; gap:20px; font-size:13px; color:var(--muted); margin-bottom:8px; }
+  .bars b { font-family:'IBM Plex Mono'; }
+  .signal { color:var(--benign); } .noise { color:var(--flag); }
+  .flagpill { display:inline-block; font-family:'IBM Plex Mono'; font-size:11px; padding:2px 9px; border-radius:20px; background:rgba(255,180,67,0.15); color:var(--flag); margin-left:8px; }
+  .rec { font-size:13px; color:#c3cede; background:var(--panel2); border-radius:8px; padding:11px 14px; margin-top:8px; }
+
+  .box { max-width:380px; margin:12vh auto 0; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:30px 28px; }
+  .box h1 { font-size:22px; margin-bottom:4px; } .box p { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-family:'IBM Plex Mono'; margin:14px 0 6px; }
+  input[type=text], input[type=password] { width:100%; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:11px 12px; color:var(--text); font-family:'Sora'; font-size:14px; }
+  input:focus { outline:2px solid var(--eye); outline-offset:1px; }
+  button { width:100%; margin-top:22px; background:var(--eye); color:#04121c; border:none; border-radius:8px; padding:12px; font-weight:600; font-family:'Sora'; font-size:14px; cursor:pointer; }
+  .err { background:rgba(255,93,93,0.1); border:1px solid rgba(255,93,93,0.45); color:var(--escalate); border-radius:8px; padding:10px 12px; font-size:13px; margin-bottom:6px; }
+</style>
+</head>
+<body>
+<main>
+  <form class="box" method="post" action="/login" autocomplete="on">
+    <h1>Triagle</h1>
+    <p>Sign in to the triage console.</p>
+    {% if error %}<div class="err" role="alert">{{ error }}</div>{% endif %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label for="u">Username</label>
+    <input id="u" type="text" name="username" autocomplete="username" autofocus required>
+    <label for="p">Password</label>
+    <input id="p" type="password" name="password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+  </form>
+</main>
+</body>
+</html>

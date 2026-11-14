@@ -88,11 +88,42 @@ wording against CERT-In's current Directions before relying on it.
 `TRIAGLE_DEMO_CLOCK=true` shifts the sample alerts' timestamps to end five
 minutes ago so the clock can be shown running.
 
+## Sign-in and the audit log
+
+Nobody reaches the console without signing in.
+
+| Variable | What it does |
+|---|---|
+| `TRIAGLE_ADMIN_PASSWORD` | Password for the built-in user `admin` (an analyst) |
+| `TRIAGLE_USERS` | More users: `name:role:hash,name:role:hash`. Role is `analyst` (can approve and decline actions, sees the audit log) or `viewer` (read only). Make a hash with `python -m app.auth hash` |
+| `TRIAGLE_SECRET` | Signs session cookies. Set it, or everyone is signed out when the app restarts |
+| `TRIAGLE_SESSION_HOURS` | Session length, default 8 |
+| `TRIAGLE_AUDIT_LOG` | Where the audit log is written, default `data/audit.jsonl` |
+| `TRIAGLE_AUTH=off` | Turns sign-in off. Laptop demos only; the dashboard shows a red "sign-in is OFF" |
+
+If no user is configured the app does not run open: it creates `admin` with
+a random password and prints it once in the server log.
+
+Five wrong passwords lock that username and address out for five minutes.
+Approve, decline and sign-out forms carry a token tied to the session.
+
+Every sign-in, failed sign-in, approval and decline is written to the audit
+log with the user's name, the alert, the action and its target. Entries are
+chained by hash; `/audit` shows the log and whether the chain is intact.
+The chain detects edited or removed lines. It does not stop someone with
+server access from deleting the file, so ship it off the box for anything
+that matters. On a host with an ephemeral disk (Render's free tier) the log
+is lost on redeploy unless you mount a disk.
+
+Not yet: password reset, per-client access (every user sees every client),
+single sign-on, two-factor. Who approved an action is kept in the audit log,
+but the action's status on the page resets when the app restarts.
+
 ## Measured
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 45 tests, no network or key needed
+python -m pytest -q                 # 80 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```
@@ -117,10 +148,11 @@ tests only; no live model run is included in these numbers.
 ```bash
 pip install -r requirements.txt
 # default: agentic mode, deterministic planner (no keys needed)
+export TRIAGLE_ADMIN_PASSWORD='choose-one'     # Windows cmd: set TRIAGLE_ADMIN_PASSWORD=choose-one
 uvicorn app.main:app --reload --port 8000
 ```
 
-Open `http://localhost:8000`. Click the ransomware alert to watch the agent's
+Open `http://localhost:8000` and sign in as `admin`. Click the ransomware alert to watch the agent's
 autonomous investigation trail and its evidence-backed determination.
 
 ### Turn on a real model
@@ -147,6 +179,8 @@ app/
   engine/correlate.py     link a client's alerts into incidents (never across clients)
   engine/certin.py        CERT-In report draft + 6-hour clock
   privacy.py              Aadhaar / PAN / UPI / mobile / email masking
+  auth.py                 sign-in, roles, sessions, form tokens
+  audit.py                append-only, hash-chained audit log
   agent/
     tools.py              investigative tools the agent can call
     backend.py            model-agnostic LLM interface (5 backends)
@@ -165,7 +199,8 @@ tests/                    test suite
 - [x] Response actions (isolate host, disable account) with human sign-off gates
 - [x] Gemini backend, personal-data masking, CERT-In draft, benchmark
 - [ ] Live run of the benchmark on a model backend
-- [ ] Sign-in on the console and an audit log of approvals
+- [x] Sign-in with roles and a hash-chained audit log of approvals
+- [ ] Per-client access control; storage so action status survives a restart
 - [ ] Analyst feedback loop — learn per-client "normal"
 - [ ] Live connectors (API/webhook) for real tools
 - [ ] Vector-DB context store for richer investigation
