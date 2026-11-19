@@ -273,12 +273,31 @@ def test_no_draft_for_benign_incident():
 
 # ---- web app -----------------------------------------------------------------
 
-@pytest.fixture(scope="module")
-def client():
+@pytest.fixture(autouse=True)
+def _isolated_audit_log(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRIAGLE_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+
+
+def _csrf(page):
+    import re
+    return re.search(r'name="csrf" value="([0-9a-f]+)"', page).group(1)
+
+
+def _signed_in(username="admin", password="correct horse", users=""):
     from fastapi.testclient import TestClient
-    from app import main
+    from app import main, auth
+    auth.load_config({"TRIAGLE_ADMIN_PASSWORD": "correct horse", "TRIAGLE_SECRET": "test-secret",
+                      "TRIAGLE_USERS": users})
     main._CACHE.clear()
-    return TestClient(main.app)
+    c = TestClient(main.app)
+    r = c.post("/login", data={"username": username, "password": password}, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    return c
+
+
+@pytest.fixture
+def client():
+    return _signed_in()
 
 @pytest.mark.parametrize("path", ["/", "/tuning", "/benchmark", "/alert/ldt:aaa101",
                                   "/report/MRD-FIN-07", "/report/p.nair", "/certin/MRD-FIN-07", "/healthz"])
@@ -292,12 +311,14 @@ def test_unknown_ids_are_404_not_500(client, path):
 def test_approval_flow_and_draft_reflects_it(client):
     page = client.get("/certin/MRD-FIN-07").text
     assert "None yet." in page
-    r = client.post("/action/approve", data={"alert_id": "ldt:aaa101",
+    token = _csrf(client.get("/alert/ldt:aaa101").text)
+    r = client.post("/action/approve", data={"alert_id": "ldt:aaa101", "csrf": token,
                                              "action_id": "ldt:aaa101:isolate_host:MRD-FIN-07"},
                     follow_redirects=False)
     assert r.status_code == 303
     assert "[SIMULATED]" in client.get("/alert/ldt:aaa101").text
-    assert "Isolate host from network — MRD-FIN-07" in client.get("/certin/MRD-FIN-07").text
+    draft = client.get("/certin/MRD-FIN-07").text
+    assert "Isolate host from network — MRD-FIN-07 (approved by admin" in draft
 
 
 # ---- the benchmark itself -----------------------------------------------------
@@ -314,9 +335,8 @@ def test_demo_clock_keeps_order_and_puts_window_in_the_future(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
     monkeypatch.setenv("TRIAGLE_DEMO_CLOCK", "true")
-    main._CACHE.clear()
     try:
-        c = TestClient(main.app)
+        c = _signed_in()
         page = c.get("/certin/MRD-FIN-07").text
         assert "Demo clock is on" in page and ">window passed<" not in page and 'class="c good"><div class="l">Time left' in page
         times = [a["timestamp"] for a in main._CACHE["result"]["alerts"] if a["client"] == "Meridian Textiles"]
