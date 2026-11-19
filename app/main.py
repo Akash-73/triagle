@@ -12,6 +12,7 @@ import os
 import json
 import time
 import datetime
+import hmac
 
 from urllib.parse import quote
 
@@ -86,7 +87,8 @@ def _is_https(request: Request):
 def _ctx(request: Request, user, **extra):
     """Things every page needs: who is signed in and the form token."""
     base = {"user": user, "csrf": auth.csrf_token(_session_token(request)),
-            "auth_on": auth.enabled()}
+            "auth_on": auth.enabled(),
+            "demo_mode": os.environ.get("TRIAGLE_DEMO", "false").lower() == "true"}
     base.update(extra)
     return base
 
@@ -148,22 +150,53 @@ def audit_page(request: Request, user=Depends(require_analyst)):
 # process the sample batch once at startup for the demo; in production this
 # would be a live queue fed by connectors.
 _CACHE = {}
+_INGEST_LIMIT = 200          # keep the in-memory queue bounded
+
+
+def _seed_raw():
+    """The queue starts from the sample file (optionally time-shifted for the
+    demo clock). Live alerts from /ingest and /demo/fire are appended to it."""
+    with open(os.environ.get("TRIAGLE_ALERTS", SAMPLE_PATH)) as f:
+        raw = json.load(f)
+    if os.environ.get("TRIAGLE_DEMO_CLOCK", "false").lower() == "true":
+        raw = _rebase_times(raw)
+    return raw
+
+
+def _reprocess():
+    """Rebuild the decided queue from the current raw alerts. Cheap (ms)."""
+    raw = _CACHE["raw"]
+    t0 = time.perf_counter()
+    result = process_batch(raw)
+    result["metrics"]["demo_clock"] = os.environ.get("TRIAGLE_DEMO_CLOCK", "false").lower() == "true"
+    result["metrics"]["processing_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+    result["metrics"]["backend"] = backend.BACKEND
+    result["metrics"]["live_alerts"] = _CACHE.get("live_count", 0)
+    _CACHE["result"] = result
+    return result
 
 
 def _load_result():
+    if "raw" not in _CACHE:
+        _CACHE["raw"] = _seed_raw()
+        _CACHE["live_count"] = 0
     if "result" not in _CACHE:
-        with open(os.environ.get("TRIAGLE_ALERTS", SAMPLE_PATH)) as f:
-            raw = json.load(f)
-        demo_clock = os.environ.get("TRIAGLE_DEMO_CLOCK", "false").lower() == "true"
-        if demo_clock:
-            raw = _rebase_times(raw)
-        t0 = time.perf_counter()
-        result = process_batch(raw)
-        result["metrics"]["demo_clock"] = demo_clock
-        result["metrics"]["processing_ms"] = round((time.perf_counter() - t0) * 1000, 1)
-        result["metrics"]["backend"] = backend.BACKEND
-        _CACHE["result"] = result
+        _reprocess()
     return _CACHE["result"]
+
+
+def _add_alerts(items):
+    """Append raw ingest items to the live queue and reprocess. Returns the
+    number accepted."""
+    _load_result()                       # ensure seeded
+    accepted = [it for it in items if isinstance(it, dict) and it.get("source") and it.get("raw")]
+    if not accepted:
+        return 0
+    _CACHE["raw"].extend(accepted)
+    _CACHE["raw"] = _CACHE["raw"][-_INGEST_LIMIT:]
+    _CACHE["live_count"] = _CACHE.get("live_count", 0) + len(accepted)
+    _reprocess()
+    return len(accepted)
 
 
 _TIME_KEYS = ("created_timestamp", "eventtime", "createdDateTime")
@@ -353,6 +386,71 @@ def benchmark_page(request: Request, user=Depends(require_user)):
         "rows": rows, "summary": summary, "ms": round(elapsed * 1000),
         "backend": backend.BACKEND,
     })
+
+
+INGEST_KEY = os.environ.get("TRIAGLE_INGEST_KEY", "")
+
+
+def _ingest_authorized(request: Request):
+    """A SIEM webhook authenticates with the X-Triagle-Key header; a person
+    on the console authenticates with their analyst session. Either is fine."""
+    key = request.headers.get("x-triagle-key", "")
+    if INGEST_KEY and hmac.compare_digest(key, INGEST_KEY):
+        return "siem-webhook"
+    user = current_user(request)
+    if user and (not auth.enabled() or user["role"] == "analyst"):
+        return user["name"]
+    return None
+
+
+@app.post("/ingest")
+async def ingest(request: Request):
+    """Receive one alert, or a list, from a SIEM/EDR webhook or a script.
+    Body: a single {source, client, raw} object or a JSON list of them.
+    This is how a real SIEM pushes to Triagle; the demo script uses it too."""
+    who = _ingest_authorized(request)
+    if not who:
+        raise HTTPException(status_code=401, detail="Provide a valid X-Triagle-Key header or sign in as an analyst.")
+    try:
+        body = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Body must be JSON.")
+    items = body if isinstance(body, list) else [body]
+    if len(items) > 50:
+        raise HTTPException(status_code=413, detail="Send at most 50 alerts per request.")
+    accepted = _add_alerts(items)
+    if accepted:
+        audit.record("alerts ingested", who, count=accepted, ip=_client_ip(request))
+    return {"accepted": accepted, "received": len(items), "queue": len(_CACHE.get("raw", []))}
+
+
+@app.post("/demo/fire")
+def demo_fire(request: Request, csrf: str = Form(default=""), benign: str = Form(default="on"),
+              user=Depends(require_analyst)):
+    """Inject a fresh live attack chain (and one benign alert) so a demo
+    audience watches Triagle investigate in real time. Analyst-only."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    from app import demo_attack
+    items = demo_attack.fresh_attack()
+    if benign == "on":
+        items += demo_attack.fresh_benign()
+    accepted = _add_alerts(items)
+    audit.record("demo attack fired", user["name"], count=accepted, ip=_client_ip(request))
+    # land on the new incident so the judge sees the investigation immediately
+    return RedirectResponse(url=f"/report/{quote(demo_attack.HOST, safe='')}", status_code=303)
+
+
+@app.post("/demo/reset")
+def demo_reset(request: Request, csrf: str = Form(default=""), user=Depends(require_analyst)):
+    """Drop all live alerts, back to the seed queue. Analyst-only."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    _CACHE["raw"] = _seed_raw()
+    _CACHE["live_count"] = 0
+    _reprocess()
+    audit.record("demo queue reset", user["name"], ip=_client_ip(request))
+    return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/healthz")
