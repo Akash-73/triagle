@@ -57,6 +57,9 @@
     font-size: 14px; color: #ffd0d0; display: flex; align-items: center; gap: 10px;
   }
   .banner b { color: #fff; }
+  .intro { background: linear-gradient(135deg, rgba(56,189,248,0.10), var(--panel)); border:1px solid rgba(56,189,248,0.25); border-radius:12px; padding:14px 18px; margin-bottom:16px; font-size:14.5px; line-height:1.55; color:var(--text); }
+  .intro b { color: var(--eye); }
+  .intro .dot { font-size:12px; } .intro .rk { color: var(--escalate); } .intro .gk { color: var(--muted); }
 
   .section-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 26px 0 12px; font-family: 'IBM Plex Mono'; }
 
@@ -110,6 +113,7 @@
 </header>
 
 <main>
+  <div class="intro">Triagle is an <b>AI security analyst</b>. It watches the alerts from your security tools, investigates every one, and flags the real attacks — so a human only sees what matters. <span class="dot rk">●</span> red = needs attention &nbsp; <span class="dot gk">●</span> grey = cleared noise.</div>
   {% if demo_mode and user.role == 'analyst' %}
   <div style="display:flex; align-items:center; gap:14px; background:linear-gradient(90deg, rgba(255,93,93,0.10), transparent); border:1px solid rgba(255,93,93,0.3); border-radius:12px; padding:12px 18px; margin-bottom:18px;">
     <span style="font-family:'IBM Plex Mono'; font-size:12px; color:var(--escalate); text-transform:uppercase; letter-spacing:.08em;">● Live demo</span>
@@ -145,7 +149,7 @@
     {% for inc in incidents %}
     <div class="incident {% if inc.elevated %}elevated{% endif %}">
       <div class="h">{{ inc.key }} {% if inc.elevated %}<span class="badge">MULTI-TOOL</span>{% endif %}</div>
-      <div class="meta">{{ inc.client }} · {{ inc.size }} alerts · {{ inc.sources | join(', ') }}</div>
+      <div class="meta">{{ inc.client }} · {{ inc.size }} alerts · {{ source_list(inc.sources) }}</div>
       <div class="meta" style="margin-top:8px;">
         <a href="/report/{{ inc.key }}" style="color:var(--eye); text-decoration:none;">Client report →</a>
         {% if inc.reportable %}<a href="/certin/{{ inc.key }}" style="color:var(--escalate); text-decoration:none; margin-left:14px;">CERT-In draft →</a>{% endif %}
@@ -159,10 +163,10 @@
   <div class="queue">
     {% for r in rows %}
     <a class="qrow {% if r.verdict.escalate %}esc{% endif %}" href="/alert/{{ r.alert.alert_id }}">
-      <div><span class="disp {{ r.verdict.disposition }}">{{ r.verdict.disposition.replace('_',' ') }}</span></div>
+      <div><span class="disp {{ r.verdict.disposition }}">{{ verdict_label(r.verdict.disposition) }}</span></div>
       <div class="qmain">
         <div class="title">{{ r.alert.title }}</div>
-        <div class="sub"><span class="client">{{ r.alert.client }}</span> · {{ r.alert.entity }} · <span class="src">{{ r.alert.source }}</span></div>
+        <div class="sub"><span class="client">{{ r.alert.client }}</span> · {{ r.alert.entity }} · <span class="src">{{ source_full(r.alert.source) }}</span></div>
       </div>
       <div class="conf">
         <div class="v">{{ r.verdict.confidence }}%</div>

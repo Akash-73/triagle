@@ -25,12 +25,19 @@ from app.engine.response import execute_action
 from app.engine import certin
 from app.agent import backend
 from app import auth, audit
+from app.engine import sources_meta, worknotes
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
 app = FastAPI(title="Triagle", version="0.3.0", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+templates.env.globals.update(
+    source_name=sources_meta.source_name,
+    source_full=sources_meta.source_full,
+    source_list=sources_meta.source_list,
+    verdict_label=sources_meta.verdict_label,
+)
 
 
 # ---- sign-in ---------------------------------------------------------------
@@ -150,6 +157,7 @@ def audit_page(request: Request, user=Depends(require_analyst)):
 # process the sample batch once at startup for the demo; in production this
 # would be a live queue fed by connectors.
 _CACHE = {}
+_WORKNOTES = {}        # incident alert-id tuple -> (notes text, by_gemini)
 _INGEST_LIMIT = 200          # keep the in-memory queue bounded
 
 
@@ -348,12 +356,19 @@ def incident_report(request: Request, entity: str, user=Depends(require_user)):
 
     any_escalated = any(m["verdict"].get("escalate") for m in members)
 
+    notes_key = tuple(incident["alert_ids"])
+    if notes_key not in _WORKNOTES:
+        _WORKNOTES[notes_key] = worknotes.work_notes(incident, members)
+    notes_text, notes_by_gemini = _WORKNOTES[notes_key]
+
     return templates.TemplateResponse(request, "report.html", {
         "incident": incident,
         "members": members,
         "client_name": client_name,
         "any_escalated": any_escalated,
         "reportable": certin.is_reportable_candidate(members),
+        "work_notes": notes_text,
+        "work_notes_by_gemini": notes_by_gemini,
         "now": datetime.datetime.now().strftime("%d %b %Y, %H:%M"),
     })
 

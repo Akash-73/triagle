@@ -23,7 +23,12 @@
   .verdict-line { display:inline-block; font-family:'IBM Plex Mono'; font-size:12px; font-weight:600; padding:5px 12px; border-radius:20px; margin-bottom:20px; }
   .verdict-line.crit { background:#fbeae8; color:var(--crit); }
   .verdict-line.ok { background:#e9f5ee; color:var(--ok); }
-  .lead { font-size:15px; line-height:1.6; color:#33404f; margin-bottom:26px; }
+  .lead { font-size:15px; line-height:1.6; color:#33404f; margin-bottom:22px; }
+  .ai-badge { font-family:'IBM Plex Mono'; font-size:10px; padding:2px 9px; border-radius:20px; background:#e8f0fe; color:#1a56db; margin-left:8px; vertical-align:middle; letter-spacing:0.03em; }
+  .ai-badge.muted { background:#eef1f4; color:#6b7280; }
+  .worknotes { background:#f6f9ff; border:1px solid #dce6f5; border-left:3px solid #1a56db; border-radius:8px; padding:12px 18px; margin-bottom:24px; }
+  .worknotes p { font-size:14px; line-height:1.6; color:#2c3a4b; margin:5px 0; }
+  .worknotes p:first-child { margin-top:0; } .worknotes p:last-child { margin-bottom:0; }
   .section-t { font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); font-family:'IBM Plex Mono'; margin:24px 0 12px; padding-bottom:6px; border-bottom:1px solid var(--line); }
 
   .timeline { position:relative; margin-left:8px; }
@@ -75,6 +80,9 @@
       {% endif %}
     </p>
 
+    <div class="section-t">AI analyst work notes {% if work_notes_by_gemini %}<span class="ai-badge">✦ written by Gemini</span>{% else %}<span class="ai-badge muted">automated summary</span>{% endif %}</div>
+    <div class="worknotes">{% for line in work_notes.split('\n') %}{% if line.strip() %}<p>{{ line }}</p>{% endif %}{% endfor %}</div>
+
     <div class="section-t">What happened — timeline</div>
     <div class="timeline">
       {% for m in members %}
@@ -83,7 +91,7 @@
         <div class="time">{{ m.alert.timestamp }}</div>
         <div class="title">{{ m.alert.title }}</div>
         <div class="desc">{{ m.alert.description or m.verdict.summary }}</div>
-        <div class="src">source: {{ m.alert.source }} · asset: {{ m.alert.entity }}</div>
+        <div class="src">source: {{ source_full(m.alert.source) }} · asset: {{ m.alert.entity }}</div>
       </div>
       {% endfor %}
     </div>
