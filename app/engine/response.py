@@ -23,6 +23,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 from app.engine import reputation
+from app.engine import action_tools
 
 
 # --- The automation policy -------------------------------------------------
@@ -93,6 +94,7 @@ class ProposedAction:
     result_message: str = ""  # populated when auto-executed
     decided_by: Optional[str] = None
     decided_at: Optional[str] = None
+    tool_call: Optional[dict] = None   # the exact vendor API call behind this action
 
     def to_dict(self):
         return asdict(self)
@@ -170,13 +172,14 @@ def propose_actions(alert, verdict):
             policy=policy,
             policy_reason=reason,
         )
+        act.tool_call = action_tools.build_call(action_type, target, spec["platform"])
         if policy == "auto":
             stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+            disp = action_tools.dispatch(act.to_dict(), approver="Triagle · auto-policy")
             act.status = "auto_executed"
             act.decided_by = "Triagle · auto-policy"
             act.decided_at = stamp
-            act.result_message = (f"[SIMULATED] {spec['label']} on {target} executed automatically "
-                                  f"via {spec['platform']} under auto-containment policy. Reversible.")
+            act.result_message = disp["message"]
         actions.append(act)
 
     # Host containment for endpoint threats.
@@ -222,17 +225,13 @@ def propose_actions(alert, verdict):
 
 def execute_action(proposed_action_dict, approver="analyst"):
     """
-    'Execute' an approved action. In this build it's simulated — it returns
-    a result record as if the platform API had been called. In production
-    this dispatches to the real EDR/IdP/firewall API. It refuses to execute
-    anything not explicitly approved.
+    Execute an approved action by dispatching it through the Action Gateway,
+    which resolves the vendor connector and calls the real EDR/IdP/firewall API
+    (or, in dry-run, returns the exact call without sending it). Refuses to
+    execute anything not explicitly approved.
     """
     if proposed_action_dict.get("status") != "approved":
         return {"ok": False, "message": "Action not approved — refusing to execute."}
-    return {
-        "ok": True,
-        "message": (f"[SIMULATED] {proposed_action_dict['label']} on "
-                    f"{proposed_action_dict['target']} executed via "
-                    f"{proposed_action_dict['platform']}, approved by {approver}."),
-        "reversible": True,
-    }
+    result = action_tools.dispatch(proposed_action_dict, approver=approver)
+    return {"ok": result["ok"], "message": result["message"],
+            "call": result.get("call"), "mode": result.get("mode"), "reversible": True}

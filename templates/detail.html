@@ -82,6 +82,13 @@
   .corr { font-size:13px; color:#c3cede; line-height:1.6; background:var(--panel-2); border:1px solid var(--line); border-left:3px solid var(--eye); border-radius:8px; padding:12px 15px; margin-top:16px; }
   .plug { font-size:11.5px; color:var(--muted); font-family:'IBM Plex Mono'; margin-top:14px; }
 
+  .toolcall { background:#0b1119; border:1px solid var(--line); border-radius:8px; padding:11px 13px; margin:10px 0 2px; font-family:'IBM Plex Mono'; font-size:11.5px; }
+  .toolcall .tc-h { color:var(--eye); margin-bottom:6px; letter-spacing:.02em; }
+  .toolcall .tc-row { color:var(--muted); line-height:1.75; word-break:break-all; }
+  .toolcall .m { color:var(--suspicious); font-weight:600; }
+  .toolcall .u { color:#c3cede; }
+  .toolcall pre { color:#9fb3c8; white-space:pre-wrap; word-break:break-all; margin:5px 0 2px; font-size:11px; }
+
   .evidence { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px 24px; }
   .evidence h3 { font-size:13px; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); font-family:'IBM Plex Mono'; margin-bottom:14px; }
   .kv { display:grid; grid-template-columns:150px 1fr; gap:8px 16px; font-size:13.5px; }
@@ -156,12 +163,15 @@
       <span class="node det">conservative-closure guardrail</span><span class="arrow">→</span>
       <span class="node det">correlate</span><span class="arrow">→</span>
       <span class="node det">response policy (rules)</span><span class="arrow">→</span>
+      <span class="node det">Action Gateway → vendor API</span>
+      <span class="arrow">·</span>
       <span class="node ai">Gemini · narrative only</span>
     </div>
     <div class="fences">
       <span class="fence">🔒 The model can't auto-close an alert carrying a risk signal</span>
       <span class="fence">🎯 Isolation target comes from normalized fields, never the model</span>
       <span class="fence">✋ Destructive actions always require a human</span>
+      <span class="fence">⛓ Actions only run through the gateway — typed tools, never an improvised API call</span>
       <span class="fence">🧼 PII masked before any model call</span>
     </div>
   </div>
@@ -209,7 +219,7 @@
   {% if actions %}
   <div class="verdict-card" style="border-color:rgba(255,180,67,0.35);">
     <div class="lbl" style="font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--suspicious); font-family:'IBM Plex Mono'; margin-bottom:14px;">⚡ Response actions — tiered automation</div>
-    <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">Triagle tiers containment by blast radius. Reversible, low-impact actions on confirmed-malicious indicators run <b style="color:var(--benign);">automatically</b> so the attacker loses access in seconds. Anything that could disrupt production or lock out a real user — isolating a host, disabling an account — <b style="color:var(--suspicious);">always waits for a human</b>. Everything, auto or approved, is reversible and logged.</div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">Triagle tiers containment by blast radius. Reversible, low-impact actions on confirmed-malicious indicators run <b style="color:var(--benign);">automatically</b> so the attacker loses access in seconds. Anything that could disrupt production or lock out a real user — isolating a host, disabling an account — <b style="color:var(--suspicious);">always waits for a human</b>. Every action runs through the <b style="color:var(--eye);">Action Gateway</b> — it resolves the vendor connector (Defender / CrowdStrike / Entra / Fortinet), re-checks policy and approval, and logs a signed audit entry. The exact API call is shown below each action.</div>
     {% if notice %}<div style="border:1px solid rgba(255,93,93,0.5); background:rgba(255,93,93,0.08); color:var(--escalate); border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:14px;">{{ notice }}</div>{% endif %}
     {% for act in actions %}
     <div style="border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:12px; {% if act.policy=='auto' %}border-color:rgba(70,214,138,0.4);{% elif act.risk_tier=='high_impact' %}border-color:rgba(255,93,93,0.4);{% endif %}">
@@ -220,7 +230,15 @@
       </div>
       <div style="font-size:13px; color:#c3cede; margin-bottom:4px;">{{ act.rationale }}</div>
       <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Blast radius: {{ act.blast_radius }} · via {{ act.platform }}</div>
-      {% if act.policy_reason %}<div style="font-size:12px; color:{% if act.policy=='auto' %}var(--benign){% else %}var(--muted){% endif %}; margin-bottom:10px; font-family:'IBM Plex Mono';">⟶ {{ act.policy_reason }}</div>{% endif %}
+      {% if act.policy_reason %}<div style="font-size:12px; color:{% if act.policy=='auto' %}var(--benign){% else %}var(--muted){% endif %}; margin-bottom:6px; font-family:'IBM Plex Mono';">⟶ {{ act.policy_reason }}</div>{% endif %}
+      {% if act.tool_call %}
+      <div class="toolcall">
+        <div class="tc-h">⛓ Tool call via Action Gateway → {{ act.tool_call.vendor }}</div>
+        <div class="tc-row"><span class="m">{{ act.tool_call.method }}</span> <span class="u">{{ act.tool_call.endpoint }}</span></div>
+        {% if act.tool_call.body %}<pre>{{ act.tool_call.body | tojson(indent=2) }}</pre>{% endif %}
+        <div class="tc-row">auth: {{ act.tool_call.auth }} · resolves: {{ act.tool_call.resolves }} · {{ act.tool_call.doc }}</div>
+      </div>
+      {% endif %}
       {% if act.status=='auto_executed' %}
         <div style="color:var(--benign); font-family:'IBM Plex Mono'; font-size:13px;">✓ {{ act.result_message }}</div>
         <div style="color:var(--muted); font-family:'IBM Plex Mono'; font-size:11.5px; margin-top:4px;">by {{ act.decided_by }} · {{ act.decided_at }} · a human can roll this back</div>
