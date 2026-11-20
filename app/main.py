@@ -439,14 +439,21 @@ def incident_report(request: Request, entity: str, user=Depends(require_user)):
                         and "auto-policy" not in (a.get("decided_by") or "")]
     declined_actions = [a for a in inc_actions if a.get("status") == "declined"]
     done = len(auto_actions) + len(approved_actions)
-    if inc_actions and not pending_actions:
-        outcome = f"Contained — {done} response action(s) completed, incident handled."
-    elif done and pending_actions:
-        outcome = f"Partly contained — {done} done, {len(pending_actions)} awaiting your approval."
-    elif pending_actions:
-        outcome = f"Response staged — {len(pending_actions)} action(s) awaiting your approval."
-    else:
+    pending = len(pending_actions)
+    declined = len(declined_actions)
+    bits = []
+    if done:
+        bits.append(f"{done} contained")
+    if declined:
+        bits.append(f"{declined} declined by analyst")
+    if pending:
+        bits.append(f"{pending} awaiting your approval")
+    if not inc_actions:
         outcome = "No containment actions required for this incident."
+    elif pending:
+        outcome = "Partly contained — " + ", ".join(bits) + "."
+    else:
+        outcome = "Resolved — " + ", ".join(bits) + "."
     intel_summary = {
         "indicators": indicators,
         "malicious_count": sum(1 for r in indicators if r["verdict"] == "malicious"),

@@ -114,6 +114,11 @@
 
 <main>
   <div class="intro">Triagle is an <b>AI security analyst</b>. It watches the alerts from your security tools, investigates every one, and flags the real attacks — so a human only sees what matters. <span class="dot rk">●</span> red = needs attention &nbsp; <span class="dot gk">●</span> grey = cleared noise.</div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-family:'IBM Plex Mono';font-size:12px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;">
+    <span style="color:var(--eye);">⇅ Log sources</span>
+    <span>Alerts arrive live by webhook from your SIEM / EDR → <span style="color:var(--text);">POST /ingest</span>. Connectors normalize each vendor's native format into one alert.</span>
+    <span style="margin-left:auto;color:var(--text);">CrowdStrike EDR · Fortinet Firewall · Microsoft Entra ID</span>
+  </div>
   {% if demo_mode and user.role == 'analyst' %}
   <div style="display:flex; align-items:center; gap:14px; background:linear-gradient(90deg, rgba(255,93,93,0.10), transparent); border:1px solid rgba(255,93,93,0.3); border-radius:12px; padding:12px 18px; margin-bottom:18px;">
     <span style="font-family:'IBM Plex Mono'; font-size:12px; color:var(--escalate); text-transform:uppercase; letter-spacing:.08em;">● Live demo</span>
