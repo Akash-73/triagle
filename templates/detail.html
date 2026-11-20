@@ -97,7 +97,7 @@
 </style>
 </head>
 <body>
-<header><a href="/">← Back to triage queue</a></header>
+<header style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><a href="/">← Back to triage queue</a>{% if report_key %}<a href="/report/{{ report_key | urlencode }}" style="color:var(--eye);font-weight:600;">View incident case file →</a>{% endif %}</header>
 <main>
   <h1>{{ alert.title }}</h1>
   <div class="sub"><span class="client">{{ alert.client }}</span> · {{ alert.entity }} · {{ alert.source }} · {{ alert.timestamp }}</div>
@@ -265,6 +265,14 @@
       {% endif %}
     </div>
     {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if report_key %}
+  <div style="background:linear-gradient(100deg,rgba(56,189,248,.08),transparent);border:1px solid var(--line);border-left:3px solid var(--eye);border-radius:12px;padding:18px 22px;margin-bottom:20px;">
+    <div style="font-weight:600;font-size:15px;margin-bottom:4px;">{% if just_decided %}✓ Decision recorded. {% endif %}Full incident case file</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:13px;">The analyst work notes (Gemini), the correlated timeline, what Triagle contained and what you approved, plus the CERT-In regulatory draft — the record you forward to the client.</div>
+    <a href="/report/{{ report_key | urlencode }}" style="display:inline-block;background:var(--eye);color:#06222e;font-weight:600;border-radius:8px;padding:9px 16px;text-decoration:none;font-size:14px;">Open incident case file →</a>
   </div>
   {% endif %}
 

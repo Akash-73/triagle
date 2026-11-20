@@ -329,8 +329,11 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
     trail = result.get("trails", {}).get(alert_id, [])
     actions = result.get("actions", {}).get(alert_id, [])
     intel = _investigation(result, alert)
+    report_key = next((inc["key"] for inc in result["incidents"] if alert_id in inc["alert_ids"]), None)
+    just_decided = any(a.get("status") in ("executed", "approved", "auto_executed", "declined") for a in actions)
     return templates.TemplateResponse(request, "detail.html", _ctx(
         request, user, alert=alert, verdict=verdict, trail=trail, actions=actions, intel=intel,
+        report_key=report_key, just_decided=just_decided,
         notice=NOTICES.get(notice, ""), can_approve=user["role"] == "analyst",
         now=datetime.datetime.now().strftime("%d %b %Y, %H:%M")))
 
@@ -418,16 +421,40 @@ def incident_report(request: Request, entity: str, user=Depends(require_user)):
             if r["indicator"].lower() not in seen:
                 seen.add(r["indicator"].lower())
                 indicators.append(r)
-    inc_actions = [a for aid, acts in result.get("actions", {}).items()
-                   if aid in member_ids for a in acts]
+    raw_inc_actions = [a for aid, acts in result.get("actions", {}).items()
+                       if aid in member_ids for a in acts]
+    # one action per (type, target) for the incident ledger — several alerts on
+    # the same host each propose isolating it; show the most-progressed one.
+    _rank = {"auto_executed": 3, "executed": 3, "approved": 3, "declined": 1, "pending": 0}
+    _best = {}
+    for a in raw_inc_actions:
+        k = (a.get("action_type"), a.get("target"))
+        if k not in _best or _rank.get(a.get("status"), 0) > _rank.get(_best[k].get("status"), 0):
+            _best[k] = a
+    inc_actions = list(_best.values())
     auto_actions = [a for a in inc_actions if a.get("policy") == "auto"]
     pending_actions = [a for a in inc_actions if a.get("status") == "pending"]
+    approved_actions = [a for a in inc_actions
+                        if a.get("status") in ("executed", "approved")
+                        and "auto-policy" not in (a.get("decided_by") or "")]
+    declined_actions = [a for a in inc_actions if a.get("status") == "declined"]
+    done = len(auto_actions) + len(approved_actions)
+    if inc_actions and not pending_actions:
+        outcome = f"Contained — {done} response action(s) completed, incident handled."
+    elif done and pending_actions:
+        outcome = f"Partly contained — {done} done, {len(pending_actions)} awaiting your approval."
+    elif pending_actions:
+        outcome = f"Response staged — {len(pending_actions)} action(s) awaiting your approval."
+    else:
+        outcome = "No containment actions required for this incident."
     intel_summary = {
         "indicators": indicators,
         "malicious_count": sum(1 for r in indicators if r["verdict"] == "malicious"),
         "sources_consulted": sorted({s[0] for r in indicators for s in r.get("sources", [])}),
         "auto_actions": auto_actions,
         "pending_count": len(pending_actions),
+        "actions": inc_actions,
+        "outcome": outcome,
     }
 
     return templates.TemplateResponse(request, "report.html", {

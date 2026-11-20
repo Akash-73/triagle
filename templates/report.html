@@ -41,6 +41,19 @@
   .ioc .v { font-family:'IBM Plex Mono'; font-size:12.5px; word-break:break-all; }
   .ioc .tag { font-family:'IBM Plex Mono'; font-size:10px; font-weight:600; text-transform:uppercase; padding:2px 8px; border-radius:20px; background:#fbeae8; color:var(--crit); }
   .ioc .sc { color:var(--muted); font-size:11.5px; font-family:'IBM Plex Mono'; margin-left:auto; }
+  .outcome { font-size:14.5px; font-weight:600; padding:12px 16px; border-radius:9px; margin-bottom:16px; }
+  .outcome.done { background:#e9f5ee; border:1px solid #cce8d6; color:#1f5d3d; }
+  .outcome.wait { background:#fff6e9; border:1px solid #f0e0c0; color:#8a5a1e; }
+  .act { display:flex; align-items:center; gap:10px; font-size:13px; padding:10px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .act:last-child { border-bottom:none; }
+  .act .st { font-family:'IBM Plex Mono'; font-size:10px; font-weight:600; padding:3px 9px; border-radius:20px; text-transform:uppercase; white-space:nowrap; }
+  .act .st.auto { background:#e9f5ee; color:var(--ok); }
+  .act .st.appr { background:#e8f0fe; color:#1a56db; }
+  .act .st.wait { background:#fff1dd; color:#8a5a1e; }
+  .act .st.dec { background:#f0f0f2; color:#777; }
+  .act .lbl2 { font-weight:600; }
+  .act .vend { color:var(--muted); font-family:'IBM Plex Mono'; font-size:11px; }
+  .act .who { color:var(--muted); font-family:'IBM Plex Mono'; font-size:11px; margin-left:auto; }
   .autoline { background:#e9f5ee; border:1px solid #cce8d6; border-left:3px solid var(--ok); border-radius:8px; padding:11px 15px; font-size:13.5px; color:#1f5d3d; margin-top:12px; }
   .autoline b { color:var(--ok); }
   .plug2 { font-size:11px; color:var(--muted); font-family:'IBM Plex Mono'; margin-top:10px; }
@@ -98,7 +111,8 @@
     <div class="worknotes">{% for line in work_notes.split('\n') %}{% if line.strip() %}<p>{{ line }}</p>{% endif %}{% endfor %}</div>
 
     {% if intel %}
-    <div class="section-t">Intelligence &amp; automated response</div>
+    <div class="section-t">Intelligence &amp; response</div>
+    {% if intel.outcome %}<div class="outcome {% if intel.actions and intel.pending_count==0 %}done{% elif intel.pending_count %}wait{% endif %}">{{ intel.outcome }}</div>{% endif %}
     <div class="istrip">
       <div class="istat"><div class="n">{{ intel.indicators|length }}</div><div class="l">indicators checked</div></div>
       <div class="istat"><div class="n bad">{{ intel.malicious_count }}</div><div class="l">confirmed malicious</div></div>
@@ -112,10 +126,21 @@
       <span class="sc">{{ r.category }} · {% for s in r.sources %}{{ s[0] }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
     </div>
     {% endif %}{% endfor %}
-    {% if intel.auto_actions %}
-    <div class="autoline"><b>✓ Auto-contained:</b> {% for a in intel.auto_actions %}{{ a.label }} on {{ a.target }}{% if not loop.last %}; {% endif %}{% endfor %}. Reversible, low-impact containment Triagle ran automatically. Anything that could disrupt production or lock out a user was held for your approval.</div>
+    {% if intel.actions %}
+    <div class="intel-sub" style="margin:18px 0 6px;font-family:'IBM Plex Mono';font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);">Response actions · {{ intel.actions|length }}</div>
+    {% for a in intel.actions %}
+    <div class="act">
+      {% if a.status=='auto_executed' %}<span class="st auto">auto-contained</span>
+      {% elif a.status in ['executed','approved'] %}<span class="st appr">approved · executed</span>
+      {% elif a.status=='declined' %}<span class="st dec">declined</span>
+      {% else %}<span class="st wait">awaiting approval</span>{% endif %}
+      <span class="lbl2">{{ a.label }} → {{ a.target }}</span>
+      {% if a.tool_call %}<span class="vend">{{ a.tool_call.vendor }}</span>{% endif %}
+      {% if a.decided_by %}<span class="who">{{ a.decided_by }}{% if a.decided_at %} · {{ a.decided_at }}{% endif %}</span>{% endif %}
+    </div>
+    {% endfor %}
     {% endif %}
-    <div class="plug2">Reputation from Triagle's offline intel pack for this demo — in production, live VirusTotal / AbuseIPDB / GreyNoise / Talos lookups.</div>
+    <div class="plug2">Reputation from Triagle's offline intel pack for this demo — in production, live VirusTotal / AbuseIPDB / GreyNoise / Talos lookups. Containment calls run through the Action Gateway (dry-run in demo).</div>
     {% endif %}
 
     <div class="section-t">What happened — timeline</div>
