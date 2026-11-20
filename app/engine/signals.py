@@ -24,9 +24,10 @@ import re
 TERMS = [
     "ransomware", "ransom note", "files encrypted for impact", "data encrypted for impact",
     "encrypting files", "shadow copies deleted", "exfiltration", "data theft",
-    "domain admin", "credential dump", "credential dumping", "lsass", "mimikatz",
+    "domain admin", "credential dump", "credential dumping", "credential theft", "lsass", "mimikatz",
     "cobalt strike", "lateral movement", "privilege escalation", "c2",
     "command and control", "beaconing", "golden ticket", "dcsync", "pass the hash",
+    "token theft", "session hijack", "adversary-in-the-middle",
 ]
 _TERM_RE = [(t, re.compile(r"(?<![a-z0-9])" + re.escape(t) + r"(?![a-z0-9])")) for t in TERMS]
 

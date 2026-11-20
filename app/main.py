@@ -25,12 +25,13 @@ from app.engine.response import execute_action
 from app.engine import certin
 from app.agent import backend
 from app import auth, audit
-from app.engine import sources_meta, worknotes
+from app.engine import sources_meta, worknotes, reputation
+from app.engine.correlate import GENERIC_ENTITIES
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.3.0", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.7.0", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 templates.env.globals.update(
     source_name=sources_meta.source_name,
@@ -246,6 +247,53 @@ def _incident_members(result, incident):
     return members
 
 
+def _entity_set(alert):
+    vals = set()
+    for k in ("host", "user", "src_ip", "dst_ip", "entity"):
+        v = alert.get(k)
+        if v and str(v).strip().lower() not in GENERIC_ENTITIES:
+            vals.add(str(v).lower())
+    return vals
+
+
+def _investigation(result, alert):
+    """Build the 'what Triagle checked and found' intelligence view for one
+    alert: indicator reputation, related alerts on the same client, and the
+    correlation reasoning. Pure read over the already-computed result, so it
+    never touches the triage pipeline."""
+    indicators = reputation.enrich(alert)
+    malicious = [r for r in indicators if r["verdict"] == "malicious"]
+
+    focus = _entity_set(alert)
+    related = []
+    for a in result["alerts"]:
+        if a["alert_id"] == alert["alert_id"] or a.get("client") != alert.get("client"):
+            continue
+        shared = focus & _entity_set(a)
+        if shared:
+            related.append({"alert": a,
+                            "verdict": result["verdicts"].get(a["alert_id"], {}),
+                            "shared": sorted(shared)})
+    related.sort(key=lambda r: r["alert"].get("timestamp", ""))
+
+    sources_consulted = sorted({s[0] for r in indicators for s in r.get("sources", [])})
+    if related:
+        linked_by = sorted({s for r in related for s in r["shared"]})
+        corr = (f"Linked to {len(related)} other alert(s) on {alert.get('client')} through "
+                f"shared {', '.join(linked_by)}. Correlation stays within this client — "
+                f"one tenant's data is never used to investigate another's.")
+    else:
+        corr = "No other alerts on this client share an entity with this one; treated on its own."
+
+    return {
+        "indicators": indicators,
+        "malicious_count": len(malicious),
+        "related": related,
+        "sources_consulted": sources_consulted,
+        "correlation_note": corr,
+    }
+
+
 def _find_incident(result, entity):
     e = entity.lower()
     for i in result["incidents"]:
@@ -280,8 +328,9 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
     verdict = result["verdicts"].get(alert_id)
     trail = result.get("trails", {}).get(alert_id, [])
     actions = result.get("actions", {}).get(alert_id, [])
+    intel = _investigation(result, alert)
     return templates.TemplateResponse(request, "detail.html", _ctx(
-        request, user, alert=alert, verdict=verdict, trail=trail, actions=actions,
+        request, user, alert=alert, verdict=verdict, trail=trail, actions=actions, intel=intel,
         notice=NOTICES.get(notice, ""), can_approve=user["role"] == "analyst",
         now=datetime.datetime.now().strftime("%d %b %Y, %H:%M")))
 
@@ -361,6 +410,26 @@ def incident_report(request: Request, entity: str, user=Depends(require_user)):
         _WORKNOTES[notes_key] = worknotes.work_notes(incident, members)
     notes_text, notes_by_gemini = _WORKNOTES[notes_key]
 
+    # incident-level intelligence + containment summary
+    member_ids = set(incident["alert_ids"])
+    seen, indicators = set(), []
+    for m in members:
+        for r in reputation.enrich(m["alert"]):
+            if r["indicator"].lower() not in seen:
+                seen.add(r["indicator"].lower())
+                indicators.append(r)
+    inc_actions = [a for aid, acts in result.get("actions", {}).items()
+                   if aid in member_ids for a in acts]
+    auto_actions = [a for a in inc_actions if a.get("policy") == "auto"]
+    pending_actions = [a for a in inc_actions if a.get("status") == "pending"]
+    intel_summary = {
+        "indicators": indicators,
+        "malicious_count": sum(1 for r in indicators if r["verdict"] == "malicious"),
+        "sources_consulted": sorted({s[0] for r in indicators for s in r.get("sources", [])}),
+        "auto_actions": auto_actions,
+        "pending_count": len(pending_actions),
+    }
+
     return templates.TemplateResponse(request, "report.html", {
         "incident": incident,
         "members": members,
@@ -369,6 +438,7 @@ def incident_report(request: Request, entity: str, user=Depends(require_user)):
         "reportable": certin.is_reportable_candidate(members),
         "work_notes": notes_text,
         "work_notes_by_gemini": notes_by_gemini,
+        "intel": intel_summary,
         "now": datetime.datetime.now().strftime("%d %b %Y, %H:%M"),
     })
 

@@ -46,6 +46,32 @@
   .tuning b { color:var(--eye); }
   .closecode { display:inline-block; font-family:'IBM Plex Mono'; font-size:12px; background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:4px 10px; color:var(--muted); }
 
+  .intel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px 24px; margin-bottom:20px; }
+  .intel h3 { font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-family:'IBM Plex Mono'; margin-bottom:6px; }
+  .intel .lead2 { font-size:13px; color:var(--muted); margin-bottom:18px; }
+  .ind { border:1px solid var(--line); border-radius:10px; padding:13px 15px; margin-bottom:10px; background:var(--panel-2); }
+  .ind-top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
+  .ind-val { font-family:'IBM Plex Mono'; font-size:13.5px; word-break:break-all; color:var(--text); }
+  .ind-type { font-family:'IBM Plex Mono'; font-size:10.5px; color:var(--muted); text-transform:uppercase; border:1px solid var(--line); border-radius:5px; padding:1px 6px; }
+  .rep { font-family:'IBM Plex Mono'; font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; text-transform:uppercase; letter-spacing:.03em; }
+  .rep.malicious { background:rgba(255,93,93,0.15); color:var(--escalate); }
+  .rep.suspicious { background:rgba(255,180,67,0.15); color:var(--suspicious); }
+  .rep.clean { background:rgba(70,214,138,0.13); color:var(--benign); }
+  .rep.internal { background:var(--panel); color:var(--muted); border:1px solid var(--line); }
+  .rep.unknown { background:var(--panel); color:var(--muted); border:1px solid var(--line); }
+  .ind-bar { height:5px; border-radius:3px; background:var(--panel); overflow:hidden; margin:7px 0; }
+  .ind-bar > span { display:block; height:100%; background:linear-gradient(90deg,var(--suspicious),var(--escalate)); }
+  .ind-note { font-size:13px; color:#c3cede; margin-bottom:6px; }
+  .ind-src { font-family:'IBM Plex Mono'; font-size:11.5px; color:var(--muted); line-height:1.7; }
+  .ind-src b { color:var(--eye); font-weight:500; }
+  .intel-sub { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-family:'IBM Plex Mono'; margin:20px 0 10px; }
+  .relrow { display:flex; align-items:center; gap:10px; font-size:13px; padding:8px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .relrow:last-child { border-bottom:none; }
+  .relrow a { color:var(--eye); text-decoration:none; }
+  .relrow .rt { font-family:'IBM Plex Mono'; font-size:11px; color:var(--muted); }
+  .corr { font-size:13px; color:#c3cede; line-height:1.6; background:var(--panel-2); border:1px solid var(--line); border-left:3px solid var(--eye); border-radius:8px; padding:12px 15px; margin-top:16px; }
+  .plug { font-size:11.5px; color:var(--muted); font-family:'IBM Plex Mono'; margin-top:14px; }
+
   .evidence { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px 24px; }
   .evidence h3 { font-size:13px; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); font-family:'IBM Plex Mono'; margin-bottom:14px; }
   .kv { display:grid; grid-template-columns:150px 1fr; gap:8px 16px; font-size:13.5px; }
@@ -111,20 +137,65 @@
     {% endif %}
   </div>
 
+  {% if intel %}
+  <div class="intel">
+    <h3>Investigation — what Triagle checked</h3>
+    <div class="lead2">The evidence behind the verdict: every indicator was looked up against reputation intelligence, and related activity on the same client was pulled in.</div>
+
+    {% if intel.indicators %}
+    <div class="intel-sub">Indicator reputation · {{ intel.indicators|length }} checked · {{ intel.malicious_count }} malicious</div>
+    {% for r in intel.indicators %}
+    <div class="ind">
+      <div class="ind-top">
+        <span class="ind-val">{{ r.indicator }}</span>
+        <span class="ind-type">{{ r.type }}</span>
+        <span class="rep {{ r.verdict }}">{{ r.verdict }}</span>
+        <span class="rt" style="margin-left:auto; font-family:'IBM Plex Mono'; font-size:11px; color:var(--muted);">{{ r.category }}</span>
+      </div>
+      {% if r.score %}<div class="ind-bar"><span style="width:{{ r.score }}%;"></span></div>{% endif %}
+      <div class="ind-note">{{ r.note }}</div>
+      {% if r.sources %}<div class="ind-src">{% for s in r.sources %}<b>{{ s[0] }}</b>: {{ s[1] }}{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="lead2">No external indicators (IP / hash / domain) on this alert to reputation-check — it concerns an internal asset only.</div>
+    {% endif %}
+
+    {% if intel.related %}
+    <div class="intel-sub">Correlated activity · {{ intel.related|length }} related alert(s) on {{ alert.client }}</div>
+    {% for rel in intel.related %}
+    <div class="relrow">
+      <a href="/alert/{{ rel.alert.alert_id | urlencode }}">{{ rel.alert.title }}</a>
+      <span class="rt">{{ source_full(rel.alert.source) }} · {{ rel.alert.timestamp }}</span>
+      <span class="rt" style="margin-left:auto;">linked by {{ rel.shared | join(', ') }}</span>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <div class="corr">{{ intel.correlation_note }}</div>
+    <div class="plug">Reputation resolves against Triagle's offline intel pack for this demo — in production these are live VirusTotal / AbuseIPDB / GreyNoise / Talos lookups.</div>
+  </div>
+  {% endif %}
+
   {% if actions %}
   <div class="verdict-card" style="border-color:rgba(255,180,67,0.35);">
-    <div class="lbl" style="font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--suspicious); font-family:'IBM Plex Mono'; margin-bottom:14px;">⚡ Response actions — human approval required</div>
-    <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">Triagle staged these containment actions for this threat. Nothing executes until an analyst approves. Every decision is recorded with the analyst's name. Actions are reversible.</div>
+    <div class="lbl" style="font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--suspicious); font-family:'IBM Plex Mono'; margin-bottom:14px;">⚡ Response actions — tiered automation</div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">Triagle tiers containment by blast radius. Reversible, low-impact actions on confirmed-malicious indicators run <b style="color:var(--benign);">automatically</b> so the attacker loses access in seconds. Anything that could disrupt production or lock out a real user — isolating a host, disabling an account — <b style="color:var(--suspicious);">always waits for a human</b>. Everything, auto or approved, is reversible and logged.</div>
     {% if notice %}<div style="border:1px solid rgba(255,93,93,0.5); background:rgba(255,93,93,0.08); color:var(--escalate); border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:14px;">{{ notice }}</div>{% endif %}
     {% for act in actions %}
-    <div style="border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:12px; {% if act.risk_tier=='high_impact' %}border-color:rgba(255,93,93,0.4);{% endif %}">
+    <div style="border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:12px; {% if act.policy=='auto' %}border-color:rgba(70,214,138,0.4);{% elif act.risk_tier=='high_impact' %}border-color:rgba(255,93,93,0.4);{% endif %}">
       <div style="font-weight:600; font-size:15px; margin-bottom:4px;">
         {{ act.label }} → <span class="mono" style="color:var(--eye);">{{ act.target }}</span>
+        {% if act.policy=='auto' %}<span style="color:var(--benign); font-size:11px; font-family:'IBM Plex Mono'; margin-left:8px; border:1px solid rgba(70,214,138,0.4); border-radius:5px; padding:1px 7px;">AUTO-CONTAINED</span>{% else %}<span style="color:var(--suspicious); font-size:11px; font-family:'IBM Plex Mono'; margin-left:8px; border:1px solid rgba(255,180,67,0.4); border-radius:5px; padding:1px 7px;">NEEDS YOU</span>{% endif %}
         {% if act.risk_tier=='high_impact' %}<span style="color:var(--escalate); font-size:12px; font-family:'IBM Plex Mono'; margin-left:8px;">⚠ HIGH-IMPACT</span>{% endif %}
       </div>
       <div style="font-size:13px; color:#c3cede; margin-bottom:4px;">{{ act.rationale }}</div>
-      <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Blast radius: {{ act.blast_radius }} · via {{ act.platform }}</div>
-      {% if act.status in ['executed','approved'] %}
+      <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Blast radius: {{ act.blast_radius }} · via {{ act.platform }}</div>
+      {% if act.policy_reason %}<div style="font-size:12px; color:{% if act.policy=='auto' %}var(--benign){% else %}var(--muted){% endif %}; margin-bottom:10px; font-family:'IBM Plex Mono';">⟶ {{ act.policy_reason }}</div>{% endif %}
+      {% if act.status=='auto_executed' %}
+        <div style="color:var(--benign); font-family:'IBM Plex Mono'; font-size:13px;">✓ {{ act.result_message }}</div>
+        <div style="color:var(--muted); font-family:'IBM Plex Mono'; font-size:11.5px; margin-top:4px;">by {{ act.decided_by }} · {{ act.decided_at }} · a human can roll this back</div>
+      {% elif act.status in ['executed','approved'] %}
         <div style="color:var(--benign); font-family:'IBM Plex Mono'; font-size:13px;">✓ {{ act.result_message or 'Approved' }}</div>
         {% if act.decided_by %}<div style="color:var(--muted); font-family:'IBM Plex Mono'; font-size:11.5px; margin-top:4px;">decided by {{ act.decided_by }} · {{ act.decided_at }}</div>{% endif %}
       {% elif act.status=='declined' %}

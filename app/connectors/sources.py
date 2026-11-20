@@ -47,6 +47,8 @@ def from_crowdstrike(raw, client):
             "sha256": raw.get("sha256"),
             "filename": raw.get("filename"),
             "cmdline": raw.get("cmdline"),
+            "domain": raw.get("domain"),
+            "url_host": raw.get("url_host"),
             "tactic": raw.get("tactic"),
             "technique": raw.get("technique"),
         },

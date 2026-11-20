@@ -18,8 +18,31 @@ it executes. Nothing auto-executes. This is deliberate:
 Each proposed action carries: what it does, why, its blast-radius note, and
 its risk tier — so the human approves with eyes open.
 """
+import datetime
 from dataclasses import dataclass, field, asdict
 from typing import Optional
+
+from app.engine import reputation
+
+
+# --- The automation policy -------------------------------------------------
+#
+# Triagle does NOT auto-run everything, and it does NOT gate everything behind
+# a human either. It tiers by blast radius, exactly like a real SOAR playbook:
+#
+#   AUTO  — reversible, low-blast-radius containment that a mature SOC already
+#           automates: block a *confirmed-malicious* indicator at the
+#           perimeter, or revoke a compromised account's live sessions/tokens.
+#           Done immediately so the attacker loses access in seconds, and fully
+#           reversible if wrong.
+#   HUMAN — anything that can disrupt production or lock out a real person:
+#           isolating a host (above all a server/DC) or disabling an account.
+#           These ALWAYS wait for an analyst, regardless of confidence.
+#
+# Auto actions still need the verdict to clear a high confidence bar.
+AUTO_EXECUTE_FLOOR = 90
+AUTO_ELIGIBLE_ACTIONS = {"block_indicator", "revoke_sessions"}
+ALWAYS_HUMAN_ACTIONS = {"isolate_host", "disable_account"}
 
 
 # Action catalogue: what Triagle can propose. Each maps (in production) to a
@@ -63,8 +86,13 @@ class ProposedAction:
     rationale: str            # why this action, tied to the verdict
     blast_radius: str         # what approving this affects
     risk_tier: str            # "standard" | "high_impact"
-    status: str = "pending"   # pending | approved | executed | declined
+    status: str = "pending"   # pending | approved | executed | declined | auto_executed
     requires_ack: bool = False
+    policy: str = "approval"  # "auto" | "approval" — who is allowed to run it
+    policy_reason: str = ""   # why it is auto-eligible, or why it needs a human
+    result_message: str = ""  # populated when auto-executed
+    decided_by: Optional[str] = None
+    decided_at: Optional[str] = None
 
     def to_dict(self):
         return asdict(self)
@@ -93,13 +121,40 @@ def propose_actions(alert, verdict):
     indicators = alert.get("indicators", {}) or {}
     title = (alert.get("title") or "").lower()
     aid = alert.get("alert_id")
+    confidence = int(verdict.get("confidence", 0) or 0)
+
+    def _policy_for(action_type, target, risk_tier):
+        """Decide whether this action may auto-run or must wait for a human.
+        Returns (policy, reason)."""
+        if action_type in ALWAYS_HUMAN_ACTIONS or risk_tier != "standard":
+            if action_type == "isolate_host":
+                return "approval", "Isolating a host can disrupt production — a human decides."
+            if action_type == "disable_account":
+                return "approval", "Disabling an account can lock out a real user — a human decides."
+            return "approval", "High-impact action — a human decides."
+        if action_type not in AUTO_ELIGIBLE_ACTIONS:
+            return "approval", "Requires analyst review."
+        if confidence < AUTO_EXECUTE_FLOOR:
+            return "approval", (f"Confidence {confidence}% is below the {AUTO_EXECUTE_FLOOR}% bar "
+                                f"for automatic action — a human decides.")
+        if action_type == "block_indicator" and not reputation.is_confirmed_malicious(target):
+            return "approval", "Indicator is not confirmed malicious — a human decides before blocking."
+        if action_type == "block_indicator":
+            return "auto", (f"Indicator is confirmed malicious and confidence is {confidence}%. "
+                            f"Blocking at the perimeter is reversible and low-impact, so Triagle "
+                            f"blocks it automatically and logs it for you.")
+        return "auto", (f"Confidence is {confidence}%. Revoking the compromised account's live "
+                        f"sessions is reversible and contains the attacker immediately, so Triagle "
+                        f"does it automatically and logs it for you.")
 
     def add(action_type, target, rationale, blast):
         if not target:
             return
         spec = ACTION_CATALOG[action_type]
         high = action_type == "isolate_host" and _is_high_impact(target)
-        actions.append(ProposedAction(
+        risk_tier = "high_impact" if high else "standard"
+        policy, reason = _policy_for(action_type, target, risk_tier)
+        act = ProposedAction(
             action_id=f"{aid}:{action_type}:{target}",
             alert_id=aid,
             action_type=action_type,
@@ -110,9 +165,19 @@ def propose_actions(alert, verdict):
             blast_radius=(f"HIGH IMPACT — {target} looks like shared infrastructure; "
                           f"isolating it may disrupt many users/services. Confirm before approving."
                           if high else blast),
-            risk_tier="high_impact" if high else "standard",
+            risk_tier=risk_tier,
             requires_ack=high,
-        ))
+            policy=policy,
+            policy_reason=reason,
+        )
+        if policy == "auto":
+            stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+            act.status = "auto_executed"
+            act.decided_by = "Triagle · auto-policy"
+            act.decided_at = stamp
+            act.result_message = (f"[SIMULATED] {spec['label']} on {target} executed automatically "
+                                  f"via {spec['platform']} under auto-containment policy. Reversible.")
+        actions.append(act)
 
     # Host containment for endpoint threats.
     if host and any(k in title for k in ["ransomware", "credential", "lsass", "malware", "lateral"]):
@@ -138,7 +203,7 @@ def propose_actions(alert, verdict):
     # Account containment — skip placeholder/generic principals.
     GENERIC_PRINCIPALS = {"multiple", "unknown", "n/a", "-", "various", "several"}
     real_user = user if (user and str(user).strip().lower() not in GENERIC_PRINCIPALS) else None
-    if real_user and any(k in title for k in ["impossibletravel", "impossible travel", "password", "signin", "sign-in", "account", "identity"]):
+    if real_user and any(k in title for k in ["impossibletravel", "impossible travel", "password", "signin", "sign-in", "account", "identity", "token", "phish", "aitm", "compromise", "hijack", "session"]):
         add("disable_account", real_user,
             "Identity shows likely compromise; disabling blocks further attacker use.",
             f"Blocks sign-in for {real_user}. Reversible.")

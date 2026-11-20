@@ -11,6 +11,11 @@
   "threat_intel": {
     "185.220.101.44": "Known C2 / Tor exit node — flagged by multiple feeds",
     "e3b0c44298fc1c149afbf4c8996fb924": "Known ransomware loader hash",
-    "203.0.113.88": "Reported scanning/brute-force source"
+    "203.0.113.88": "Reported scanning/brute-force source",
+    "45.146.10.22": "Anonymising VPN exit used for credential stuffing",
+    "91.240.118.7": "Source of web-application attacks (SQL injection)",
+    "cloudflare-verify.lol": "ClickFix fake human-verification lure domain",
+    "b6d91f4c2e7a8035cc1aa9f0e2d4b7619a3c5f82d0e1b4a6c7f9028d3e5a1b4c": "Lumma infostealer payload (ClickFix campaigns)",
+    "104.21.9.130": "Adversary-in-the-middle phishing relay"
   }
 }
