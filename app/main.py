@@ -408,7 +408,7 @@ def incident_report(request: Request, entity: str, user=Depends(require_user)):
     notes_key = tuple(incident["alert_ids"])
     if notes_key not in _WORKNOTES:
         _WORKNOTES[notes_key] = worknotes.work_notes(incident, members)
-    notes_text, notes_by_gemini = _WORKNOTES[notes_key]
+    notes_text, notes_by_gemini, notes_provider = _WORKNOTES[notes_key]
 
     # incident-level intelligence + containment summary
     member_ids = set(incident["alert_ids"])
@@ -438,6 +438,7 @@ def incident_report(request: Request, entity: str, user=Depends(require_user)):
         "reportable": certin.is_reportable_candidate(members),
         "work_notes": notes_text,
         "work_notes_by_gemini": notes_by_gemini,
+        "work_notes_provider": notes_provider,
         "intel": intel_summary,
         "now": datetime.datetime.now().strftime("%d %b %Y, %H:%M"),
     })

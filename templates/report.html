@@ -94,7 +94,7 @@
       {% endif %}
     </p>
 
-    <div class="section-t">AI analyst work notes {% if work_notes_by_gemini %}<span class="ai-badge">✦ written by Gemini</span>{% else %}<span class="ai-badge muted">automated summary</span>{% endif %}</div>
+    <div class="section-t">AI analyst work notes {% if work_notes_by_gemini %}<span class="ai-badge">✦ written by {{ work_notes_provider }}</span>{% else %}<span class="ai-badge muted">automated summary</span>{% endif %}</div>
     <div class="worknotes">{% for line in work_notes.split('\n') %}{% if line.strip() %}<p>{{ line }}</p>{% endif %}{% endfor %}</div>
 
     {% if intel %}

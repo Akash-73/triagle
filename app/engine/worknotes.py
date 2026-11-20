@@ -12,11 +12,8 @@ rules guarantee safety, Gemini adds reasoning.
 
 Every prompt is PII-masked (app.privacy) before it leaves the process.
 """
-import os
-
-import requests
-
 from app import privacy
+from app.engine import genai
 
 SYSTEM = (
     "You are a senior SOC (security operations) analyst writing work notes for "
@@ -28,32 +25,6 @@ SYSTEM = (
     "steps). Keep the whole note under 160 words. Base every statement only on "
     "the alerts provided. Do not invent indicators, hostnames or IPs."
 )
-
-
-def _gemini_prose(system, user):
-    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not key:
-        return None
-    model = os.environ.get("TRIAGLE_MODEL", "gemini-3.8-flash")
-    base = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
-    try:
-        resp = requests.post(
-            f"{base}/models/{model}:generateContent",
-            headers={"x-goog-api-key": key, "Content-Type": "application/json"},
-            json={"system_instruction": {"parts": [{"text": system}]},
-                  "contents": [{"role": "user", "parts": [{"text": user}]}],
-                  "generationConfig": {"maxOutputTokens": 1024, "temperature": 0.2}},
-            timeout=45,
-        )
-        resp.raise_for_status()
-        cands = resp.json().get("candidates") or []
-        if not cands:
-            return None
-        parts = (cands[0].get("content") or {}).get("parts") or []
-        text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
-        return text.strip() or None
-    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
-        return None
 
 
 def _user_prompt(incident, members):
@@ -90,12 +61,13 @@ def _fallback(incident, members):
 
 
 def work_notes(incident, members):
-    """Returns (text, by_gemini: bool). Never raises."""
+    """Returns (text, by_gemini: bool, provider_label: str). Never raises.
+    provider_label is 'Gemini on Vertex AI', 'Gemini', or 'automated summary'."""
     user = _user_prompt(incident, members)
     mapping = {}
     system_m, mapping = privacy.mask(SYSTEM, mapping)
     user_m, mapping = privacy.mask(user, mapping)
-    text = _gemini_prose(system_m, user_m)
+    text, provider = genai.generate_prose(system_m, user_m, max_tokens=1024, temperature=0.2)
     if text:
-        return privacy.unmask(text, mapping), True
-    return _fallback(incident, members), False
+        return privacy.unmask(text, mapping), True, genai.PROVIDER_LABEL.get(provider, "Gemini")
+    return _fallback(incident, members), False, "automated summary"
