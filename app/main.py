@@ -577,34 +577,6 @@ def demo_reset(request: Request, csrf: str = Form(default=""), user=Depends(requ
     return RedirectResponse(url="/", status_code=303)
 
 
-@app.get("/debug/model")
-def debug_model(request: Request, user=Depends(require_user)):
-    """Temporary diagnostic: shows exactly why the Vertex/Gemini call behaves
-    as it does. Returns the real HTTP status/body from Vertex."""
-    import requests as _rq
-    from app.engine import genai
-    info = {"vertex_configured": genai._vertex_configured(), "project": genai._project(),
-            "location": genai._location(), "model": genai._vertex_model()}
-    try:
-        tok = genai._access_token()
-        info["have_token"] = bool(tok)
-    except Exception as e:
-        info["token_error"] = str(e)[:200]
-        tok = None
-    if info.get("have_token"):
-        url = (f"https://{genai._location()}-aiplatform.googleapis.com/v1/projects/{genai._project()}"
-               f"/locations/{genai._location()}/publishers/google/models/{genai._vertex_model()}:generateContent")
-        info["url"] = url
-        try:
-            r = _rq.post(url, headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
-                         json=genai._body("You are a test.", "say hi in 3 words", 64, 0.2), timeout=30)
-            info["vertex_status"] = r.status_code
-            info["vertex_body"] = r.text[:500]
-        except Exception as e:
-            info["vertex_exc"] = str(e)[:300]
-    return info
-
-
 @app.get("/healthz")
 def healthz(request: Request):
     """Public: just enough for an uptime check. Details only when signed in."""
