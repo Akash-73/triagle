@@ -15,11 +15,14 @@ Only the standard library is required.
 """
 import argparse
 import json
+import os
 import sys
 import time
+import urllib.error
 import urllib.request
 
-from app import demo_attack
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # run from anywhere
+from app import demo_attack  # noqa: E402
 
 
 def post(url, key, payload):
@@ -37,16 +40,19 @@ def main():
     ap.add_argument("--key", default="", help="ingest key (TRIAGLE_INGEST_KEY on the server)")
     ap.add_argument("--slow", action="store_true", help="send one alert at a time, 2s apart")
     ap.add_argument("--benign", action="store_true", help="also send one benign alert")
+    ap.add_argument("--scenario", default=demo_attack.DEFAULT, choices=sorted(demo_attack.SCENARIOS),
+                    help="bank (default) or power, which adds a control command to an RTU")
     args = ap.parse_args()
 
-    items = demo_attack.fresh_attack()
+    items = demo_attack.fresh_attack(scenario=args.scenario)
     if args.benign:
-        items += demo_attack.fresh_benign()
+        items += demo_attack.fresh_benign(scenario=args.scenario)
 
     try:
         if args.slow:
             for i, it in enumerate(items, 1):
-                name = it["raw"].get("name") or it["raw"].get("attack") or it["raw"].get("riskEventType")
+                name = (it["raw"].get("name") or it["raw"].get("attack") or it["raw"].get("riskEventType")
+                        or it["raw"].get("alert"))
                 res = post(args.url, args.key, it)
                 print(f"  [{i}/{len(items)}] {name:42}  -> queue {res['queue']}")
                 if i < len(items):

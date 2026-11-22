@@ -593,7 +593,7 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
     trail = result.get("trails", {}).get(alert_id, [])
     actions = result.get("actions", {}).get(alert_id, [])
     intel = _investigation(result, alert)
-    report_key = next((inc["key"] for inc in result["incidents"] if alert_id in inc["alert_ids"]), None)
+    report_key = next((inc["id"] for inc in result["incidents"] if alert_id in inc["alert_ids"]), None)
     just_decided = any(a.get("status") in ("executed", "approved", "auto_executed", "declined") for a in actions)
     return templates.TemplateResponse(request, "detail.html", _ctx(
         request, user, alert=alert, verdict=verdict, trail=trail, actions=actions, intel=intel,
@@ -657,7 +657,7 @@ def _decide(request, alert_id, action_id, ack, decision, reason, user):
                decided_at=stamp, result_message=res["message"])
     remember()
     audit.record("action approved", user["name"], acknowledged_blast_radius=bool(act.get("requires_ack")),
-                 executed=res["ok"], simulated=res.get("mode") != "live", **common)
+                 executed=res["ok"], simulated=res.get("mode") == "dry_run", mode=res.get("mode"), **common)
     return RedirectResponse(url=back, status_code=303)
 
 
@@ -962,23 +962,24 @@ def api_state(request: Request, user=Depends(require_user)):
 
 @app.post("/demo/fire")
 def demo_fire(request: Request, csrf: str = Form(default=""), benign: str = Form(default="on"),
-              user=Depends(require_analyst)):
+              scenario: str = Form(default=""), user=Depends(require_analyst)):
     """Inject a fresh live attack chain (and one benign alert) so a demo
     audience watches Triagle investigate in real time. Analyst-only."""
     if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
         raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
     from app import demo_attack
+    scenario = scenario if scenario in demo_attack.SCENARIOS else demo_attack.DEFAULT
     # each fire is ONE clean incident: clear the previous demo attack first so
     # repeated clicks never pile up into a single doubled-up incident. Alerts
     # from a real feed are left alone.
-    _drop_live(keep=lambda item: item.get("client") != demo_attack.DEFAULT_CLIENT)
-    items = demo_attack.fresh_attack()
+    _drop_live(keep=lambda item: item.get("client") not in demo_attack.CLIENTS)
+    items = demo_attack.fresh_attack(scenario=scenario)
     if benign == "on":
-        items += demo_attack.fresh_benign()
+        items += demo_attack.fresh_benign(scenario=scenario)
     accepted = _add_alerts(items)
-    audit.record("demo attack fired", user["name"], count=accepted, ip=_client_ip(request))
+    audit.record("demo attack fired", user["name"], count=accepted, scenario=scenario, ip=_client_ip(request))
     # land on the new incident so the judge sees the investigation immediately
-    return RedirectResponse(url=f"/report/{quote(demo_attack.HOST, safe='')}", status_code=303)
+    return RedirectResponse(url=f"/report/{quote(demo_attack.SCENARIOS[scenario]['host'], safe='')}", status_code=303)
 
 
 @app.post("/demo/reset")

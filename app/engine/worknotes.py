@@ -13,7 +13,7 @@ rules guarantee safety, Gemini adds reasoning.
 Every prompt is PII-masked (app.privacy) before it leaves the process.
 """
 from app import privacy
-from app.engine import genai
+from app.engine import genai, ot, signals
 
 SYSTEM = (
     "You are a senior SOC (security operations) analyst writing work notes for "
@@ -23,7 +23,10 @@ SYSTEM = (
     "attack story), TECHNIQUES (the MITRE ATT&CK techniques involved), WHY "
     "ESCALATED (why a human must look), NEXT ACTIONS (the immediate containment "
     "steps). Keep the whole note under 160 words. Base every statement only on "
-    "the alerts provided. Do not invent indicators, hostnames or IPs."
+    "the alerts provided. Do not invent indicators, hostnames or IPs. If an alert "
+    "involves operational technology (a PLC, RTU, HMI, SCADA or other plant "
+    "system), never recommend isolating, restarting or reloading it: recommend "
+    "calling the control room and containing on the IT side of the boundary."
 )
 
 
@@ -45,18 +48,34 @@ def _user_prompt(incident, members):
 
 
 def _fallback(incident, members):
+    """Notes built from the evidence alone, for when no model is reachable."""
     escalated = [m for m in members if m["verdict"].get("escalate")]
     titles = "; ".join(m["alert"]["title"] for m in escalated) or "no escalations"
+    seen = []
+    for m in escalated:
+        for sig in signals.hard_signals(m["alert"]):
+            if sig not in seen:
+                seen.append(sig)
+    if seen:
+        why = ("these alerts carried risk signals that are never closed automatically: "
+               + ", ".join(seen[:6]) + ".")
+    else:
+        why = ("no single alert was conclusive, but together they form a pattern on the same "
+               "asset or account, so a person should decide.")
+    plant = sorted({name for m in members for name in ot.assets(m["alert"])})
+    if plant:
+        nxt = (f"call the control room first. Do not isolate, restart or reload {', '.join(plant[:3])}. "
+               f"Contain on the IT side of the boundary, preserve evidence, and reset the credentials involved.")
+    else:
+        nxt = ("isolate the affected asset, preserve evidence, reset involved credentials, "
+               "and block external indicators at the perimeter.")
     return (
         f"SUMMARY: Triagle correlated {len(members)} related alerts across "
         f"{len(incident.get('sources', []))} security tools into one incident on "
         f"{incident.get('key')}. {len(escalated)} were escalated for review.\n"
         f"WHAT FIRED: {titles}.\n"
-        f"WHY ESCALATED: one or more alerts carried high-risk signals "
-        f"(credential theft, lateral movement, ransomware or C2), which are never "
-        f"auto-closed.\n"
-        f"NEXT ACTIONS: isolate the affected asset, preserve evidence, reset "
-        f"involved credentials, and block external indicators at the perimeter."
+        f"WHY ESCALATED: {why}\n"
+        f"NEXT ACTIONS: {nxt}"
     )
 
 

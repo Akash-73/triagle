@@ -100,6 +100,35 @@ ACTION_TOOLS = {
     },
 }
 
+# OT containment. Never an action on the controller or the operator station
+# itself: a deny rule on the IT side of the boundary, and a phone call.
+ACTION_TOOLS["segment_ot_boundary"] = {
+    "boundary_fw": {
+        "vendor": "IT/OT boundary firewall (FortiGate)",
+        "method": "POST",
+        "endpoint": "https://{ot_firewall}/api/v2/cmdb/firewall/policy",
+        "body": {"name": "triagle_ot_contain_{target}", "srcaddr": [{"name": "{target}"}],
+                 "dstaddr": [{"name": "IT-network-and-internet"}], "action": "deny",
+                 "schedule": "always", "service": [{"name": "ALL"}],
+                 "comments": "Triagle OT containment — approved by {approver}"},
+        "auth": "API key · firewall admin (OT boundary only)",
+        "resolves": "{target} → address object on the boundary firewall",
+        "doc": "FortiOS REST API — firewall policy",
+    },
+}
+ACTION_TOOLS["ot_notify"] = {
+    "manual": {
+        "vendor": "Manual step — no system call",
+        "method": "CALL",
+        "endpoint": "control room / OT shift in charge for {target}",
+        "body": {"say": "Security incident involving {target}. Do not restart, reload or isolate it. "
+                        "Confirm the process state and stand by."},
+        "auth": "none",
+        "resolves": "{target} → the plant or substation that owns it",
+        "doc": "Site emergency contact list",
+    },
+}
+
 # Which connector a platform label prefers. Falls back to the first declared.
 _PLATFORM_HINT = {
     "edr (crowdstrike / defender)": "crowdstrike",
@@ -141,7 +170,8 @@ def build_call(action_type, target, platform_label, approver="pending"):
         return None
     mapping = {"target": target, "device_id": f"<id:{target}>",
                "machine_id": f"<id:{target}>", "user_id": target,
-               "firewall": "fw.client.local", "approver": approver}
+               "firewall": "fw.client.local", "ot_firewall": "ot-boundary-fw.client.local",
+               "approver": approver}
     return {
         "connector": conn_name,
         "vendor": conn["vendor"],
@@ -169,6 +199,12 @@ def dispatch(action_dict, approver="analyst"):
     if not call:
         return {"ok": False, "mode": execute_mode(),
                 "message": f"No connector registered for {action_type}.", "call": None}
+
+    if call["connector"] == "manual":
+        # a step a person carries out; Triagle only records that they did
+        return {"ok": True, "mode": "manual", "call": call,
+                "message": (f"Recorded: {approver} confirmed the control room was told about "
+                            f"{target}. No system call is made for this step.")}
 
     mode = execute_mode()
     # Gateway checkpoint: this is where request screening (Vertex AI Model Armor

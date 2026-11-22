@@ -26,6 +26,7 @@ from typing import Optional
 from app.engine import reputation
 from app.engine import action_tools
 from app.engine import signals
+from app.engine import ot
 
 
 # --- The automation policy -------------------------------------------------
@@ -45,7 +46,7 @@ from app.engine import signals
 # Auto actions still need the verdict to clear a high confidence bar.
 AUTO_EXECUTE_FLOOR = 90
 AUTO_ELIGIBLE_ACTIONS = {"block_indicator", "revoke_sessions"}
-ALWAYS_HUMAN_ACTIONS = {"isolate_host", "disable_account"}
+ALWAYS_HUMAN_ACTIONS = {"isolate_host", "disable_account", "segment_ot_boundary", "ot_notify"}
 
 
 # Action catalogue: what Triagle can propose. Each maps (in production) to a
@@ -69,6 +70,17 @@ ACTION_CATALOG = {
     "block_indicator": {
         "label": "Block indicator (IP / hash / domain) at perimeter",
         "platform": "Firewall / EDR",
+        "reversible": True,
+    },
+    # OT containment: on the IT side of the boundary, never on the asset.
+    "segment_ot_boundary": {
+        "label": "Cut off at the IT/OT boundary firewall",
+        "platform": "IT/OT boundary firewall",
+        "reversible": True,
+    },
+    "ot_notify": {
+        "label": "Call the control room",
+        "platform": "People (control room)",
         "reversible": True,
     },
 }
@@ -124,6 +136,8 @@ def propose_actions(alert, verdict, decided=None):
         return []
 
     actions = []
+    proposed = set()                       # (action, target) already staged for this alert
+    ot_involved = ot.involved(alert)
     host = alert.get("host")
     user = alert.get("user")
     src_ip = alert.get("src_ip")
@@ -140,12 +154,19 @@ def propose_actions(alert, verdict, decided=None):
                 return "approval", "Isolating a host can disrupt production — a human decides."
             if action_type == "disable_account":
                 return "approval", "Disabling an account can lock out a real user — a human decides."
+            if action_type == "segment_ot_boundary":
+                return "approval", "This changes what an OT asset can reach — an engineer who knows the plant decides."
+            if action_type == "ot_notify":
+                return "approval", "A step for a person: Triagle records that the call was made."
             return "approval", "High-impact action — a human decides."
         if action_type not in AUTO_ELIGIBLE_ACTIONS:
             return "approval", "Requires analyst review."
         if confidence < AUTO_EXECUTE_FLOOR:
             return "approval", (f"Confidence {confidence}% is below the {AUTO_EXECUTE_FLOOR}% bar "
                                 f"for automatic action — a human decides.")
+        if ot_involved:
+            return "approval", ("An OT asset is involved in this alert. Nothing is done automatically "
+                                "around operational technology — a human decides.")
         if action_type == "block_indicator" and not reputation.is_confirmed_malicious(target):
             return "approval", "Indicator is not confirmed malicious — a human decides before blocking."
         if action_type == "block_indicator":
@@ -157,10 +178,14 @@ def propose_actions(alert, verdict, decided=None):
                         f"does it automatically and logs it for you.")
 
     def add(action_type, target, rationale, blast):
-        if not target:
+        if not target or (action_type, target) in proposed:
             return
+        if action_type == "isolate_host" and ot.asset_class(target):
+            contain_ot(target)           # an OT asset is never isolated
+            return
+        proposed.add((action_type, target))
         spec = ACTION_CATALOG[action_type]
-        high = action_type == "isolate_host" and _is_high_impact(target)
+        high = (action_type == "isolate_host" and _is_high_impact(target)) or action_type == "segment_ot_boundary"
         risk_tier = "high_impact" if high else "standard"
         policy, reason = _policy_for(action_type, target, risk_tier)
         act = ProposedAction(
@@ -173,7 +198,7 @@ def propose_actions(alert, verdict, decided=None):
             rationale=rationale,
             blast_radius=(f"HIGH IMPACT — {target} looks like shared infrastructure; "
                           f"isolating it may disrupt many users/services. Confirm before approving."
-                          if high else blast),
+                          if high and action_type == "isolate_host" else blast),
             risk_tier=risk_tier,
             requires_ack=high,
             policy=policy,
@@ -194,6 +219,31 @@ def propose_actions(alert, verdict, decided=None):
             act.decided_at = stamp
             act.result_message = disp["message"]
         actions.append(act)
+
+    def contain_ot(asset, source=None):
+        """Containment for an OT asset: tell the plant, and cut the path on the
+        IT side of the boundary. Never an action on the asset itself."""
+        kind = ot.asset_class(asset)
+        add("ot_notify", asset,
+            f"{asset} is an OT {kind}. The people running the process must know before anything is changed.",
+            "A phone call. Nothing is changed on any system.")
+        if kind == ot.OPERATOR:
+            add("segment_ot_boundary", asset,
+                f"{asset} is an operator station, so it is not isolated: that would take the screen away from "
+                f"the operators. Blocking its path to the IT network and the internet stops the attacker instead.",
+                f"OT ASSET — cuts {asset} off from the IT network and the internet at the boundary firewall. "
+                f"Operators keep their view and control of the process. Remote support and data transfer "
+                f"from {asset} stop until this is lifted.")
+        elif source and ot.asset_class(source) != ot.CONTROLLER:
+            add("segment_ot_boundary", source,
+                f"{source} is sending commands to the controller {asset}. Nothing is done to the controller; "
+                f"the source is cut off from the control network instead.",
+                f"OT ASSET — cuts {source} off at the boundary firewall. Anyone operating the process from "
+                f"{source} loses that path until this is lifted. The controller keeps running.")
+
+    # An alert about a controller: no action on it, ever.
+    for controller in ot.controllers(alert):
+        contain_ot(controller, source=indicators.get("ot_source") or src_ip)
 
     # Host containment for endpoint threats: named in the title, or shown by
     # the command line itself (a low-rated alert whose command deletes shadow

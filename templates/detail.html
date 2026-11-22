@@ -258,7 +258,7 @@
           {% if act.requires_ack %}
           <label style="font-size:12px; color:var(--escalate);"><input type="checkbox" name="ack"> I acknowledge the blast radius</label>
           {% endif %}
-          <button type="submit" name="decision" value="approve" style="background:var(--suspicious); color:#1a1200; border:none; border-radius:7px; padding:8px 16px; font-weight:600; cursor:pointer; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;">Approve &amp; execute</button>
+          <button type="submit" name="decision" value="approve" style="background:var(--suspicious); color:#1a1200; border:none; border-radius:7px; padding:8px 16px; font-weight:600; cursor:pointer; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;">{% if act.action_type == 'ot_notify' %}Call made — record it{% else %}Approve &amp; execute{% endif %}</button>
           <button type="submit" name="decision" value="decline" style="background:none; color:var(--muted); border:1px solid var(--line); border-radius:7px; padding:8px 14px; cursor:pointer; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;">Decline</button>
           <input type="text" name="reason" maxlength="200" placeholder="reason (optional, recorded)" style="flex:1; min-width:180px; background:var(--panel-2); border:1px solid var(--line); border-radius:7px; padding:8px 10px; color:var(--text); font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:12.5px;">
         </form>

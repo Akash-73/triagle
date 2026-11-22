@@ -155,9 +155,10 @@
   {% if demo_mode and user.role == 'analyst' %}
   <div style="display:flex; align-items:center; gap:14px; background:linear-gradient(90deg, rgba(255,93,93,0.10), transparent); border:1px solid rgba(255,93,93,0.3); border-radius:12px; padding:12px 18px; margin-bottom:18px;">
     <span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:var(--escalate); text-transform:uppercase; letter-spacing:.08em;">● Live demo</span>
-    <form method="post" action="/demo/fire" style="margin:0;">
+    <form method="post" action="/demo/fire" style="margin:0; display:flex; gap:8px;">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <button type="submit" style="background:var(--escalate); color:#1a0606; border:none; border-radius:8px; padding:9px 18px; font-weight:700; cursor:pointer; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:13px;">⚡ Fire live attack</button>
+      <button type="submit" name="scenario" value="bank" style="background:var(--escalate); color:#1a0606; border:none; border-radius:8px; padding:9px 16px; font-weight:700; cursor:pointer; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:13px;">⚡ Fire live attack · bank</button>
+      <button type="submit" name="scenario" value="power" style="background:none; color:var(--escalate); border:1px solid rgba(255,93,93,0.6); border-radius:8px; padding:9px 16px; font-weight:700; cursor:pointer; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:13px;">⚡ power utility (OT)</button>
     </form>
     <form method="post" action="/demo/reset" style="margin:0;">
       <input type="hidden" name="csrf" value="{{ csrf }}">

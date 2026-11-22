@@ -21,7 +21,7 @@ from app.models import Verdict
 from app.agent import tools as toolmod
 from app.agent import backend
 from app.engine.triage import _enforce_guardrails, _deterministic_verdict, settled_by_kind
-from app.engine import signals
+from app.engine import signals, ot
 
 MAX_STEPS = 4
 
@@ -152,7 +152,7 @@ def _rule_determine(ctx):
             summary=("Confirmed high-risk activity — escalated with corroborating evidence." if confirmed
                      else "Known-bad source touching this client — escalated for review."),
             reasoning="Investigation concluded this is a real threat: " + "; ".join(reason_bits) + ".",
-            recommended_actions=([
+            recommended_actions=(list(ot.RECOMMENDED) if ot.involved(alert) else [
                 "Isolate the affected asset/account immediately.",
                 "Preserve volatile evidence before remediation.",
                 "Block corroborated malicious indicators at the perimeter.",

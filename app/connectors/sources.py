@@ -109,11 +109,41 @@ def from_entra(raw, client):
     )
 
 
+def from_ot_monitor(raw, client):
+    """An OT network monitor's alert (Zeek ICSNPP, Nozomi, Claroty and
+    similar all report the same things): who sent what, over which industrial
+    protocol, to which controller. The controller is the asset; the sender is
+    kept as the source so containment can be proposed on that side."""
+    target = raw.get("dst_asset") or raw.get("dstip") or "unknown"
+    return NormalizedAlert(
+        alert_id=raw.get("id", "unknown"),
+        source="ot_monitor",
+        client=client,
+        timestamp=raw.get("time", ""),
+        title=raw.get("alert", "OT network event"),
+        raw_severity=str(raw.get("severity", "medium")).lower(),
+        entity=target,
+        host=target,
+        src_ip=raw.get("src_asset") or raw.get("srcip"),
+        dst_ip=raw.get("dstip"),
+        description=raw.get("detail", ""),
+        indicators={
+            "protocol": raw.get("protocol"),
+            "function": raw.get("function"),
+            "ot_source": raw.get("src_asset") or raw.get("srcip"),
+            "ot_target": target,
+            "technique": raw.get("technique"),
+        },
+        raw=raw,
+    )
+
+
 CONNECTORS = {
     "crowdstrike_edr": from_crowdstrike,
     "fortinet_fw": from_fortinet,
     "entra_id": from_entra,
     "wazuh": from_wazuh,
+    "ot_monitor": from_ot_monitor,
 }
 
 

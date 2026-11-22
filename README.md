@@ -146,6 +146,41 @@ Triagle cannot know are listed, not guessed.
 `TRIAGLE_DEMO_CLOCK=true` shifts the sample alerts' timestamps to end five
 minutes ago so the clocks can be shown running.
 
+## Care around operational technology
+
+Triagle does not detect attacks on industrial control systems; an OT network
+monitor does that, and its alerts arrive through the `ot_monitor` connector.
+What Triagle adds is care about what happens next. In IT the safe reflex is
+to isolate the machine. In a plant or a substation that reflex can stop a
+process, or take the screen away from the operators keeping it safe.
+
+- An alert that touches a controller (PLC, RTU, IED, DCS, safety system) is
+  never closed without a person, whatever a model says.
+- A controller or an operator station (HMI, SCADA server, historian,
+  engineering workstation) is never isolated. Containment is proposed at the
+  IT/OT boundary firewall instead, with the blast radius spelled out, and it
+  needs an engineer's approval and acknowledgement.
+- The first proposed step is a phone call to the control room. Triagle
+  records that it was made; there is no system call.
+- Nothing is automatic when an OT asset is involved, including actions that
+  are automatic elsewhere, such as blocking a confirmed-malicious address.
+
+Assets are recognised by name, or listed in `TRIAGLE_OT_CONTROLLERS` and
+`TRIAGLE_OT_STATIONS`. In a real deployment the list comes from the OT
+monitor's inventory. See `app/engine/ot.py` and `tests/test_ot.py`.
+
+## Demo scenarios
+
+With `TRIAGLE_DEMO=true` the console has two "fire live attack" buttons. Both
+run the same intrusion; the sector changes what Triagle does about it.
+
+| Scenario | Tenant | What it shows |
+|---|---|---|
+| `bank` (default) | a co-operative bank | CERT-In and RBI clocks running together; host isolation and account actions with human approval |
+| `power` | a power utility | the foothold is an HMI and the attacker sends a breaker command to an RTU: no isolation, containment at the boundary, CSIRT-Power on the clock |
+
+All clients in the samples and scenarios are invented.
+
 ## Sign-in and the audit log
 
 Nobody reaches the console without signing in.
@@ -182,7 +217,7 @@ the durable record of who approved, declined or filed what.
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 156 tests, no network or key needed
+python -m pytest -q                 # 181 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```
@@ -250,6 +285,7 @@ app/
   engine/relate.py        what else of note happened on this host / user, recently
   engine/correlate.py     link a client's alerts into incidents (never across clients)
   engine/regclock.py      regulators, sectors and the reporting clock
+  engine/ot.py            OT assets and the rules that hold around them
   engine/certin.py        report draft; when the clock starts; what is reportable
   privacy.py              Aadhaar / PAN / UPI / mobile / email masking
   auth.py                 sign-in, roles, sessions, form tokens
@@ -278,6 +314,7 @@ tests/                    test suite
 - [ ] Analyst feedback loop — learn per-client "normal"
 - [x] Live connector: Wazuh, with a forwarder and a queue that holds up on a real stream
 - [x] Regulatory clock: CERT-In, RBI, SEBI, CSIRT-Power, Data Protection Board
+- [x] OT-safe response: no isolation of controllers or operator stations, containment at the boundary
 - [ ] Live threat-intelligence feeds; one real containment action end to end
 - [ ] Vector-DB context store for richer investigation
 - [ ] Per-client SLA + closure-code analytics

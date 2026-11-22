@@ -11,6 +11,7 @@ SOURCES = {
     "fortinet_fw": ("Fortinet Firewall", "network"),
     "entra_id": ("Microsoft Entra ID", "identity / logins"),
     "wazuh": ("Wazuh SIEM", "endpoints & servers"),
+    "ot_monitor": ("OT network monitor", "plant & substation networks"),
     "barracuda_waf": ("Barracuda WAF", "web apps"),
     "nutanix": ("Nutanix", "infrastructure"),
     "cisco_asa": ("Cisco ASA", "network"),

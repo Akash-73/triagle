@@ -34,6 +34,8 @@ checked, whatever the kind.
 import re
 from functools import lru_cache
 
+from app.engine import ot
+
 TERMS = [
     "ransomware", "ransom note", "files encrypted for impact", "data encrypted for impact",
     "encrypting files", "shadow copies deleted", "exfiltration", "data theft",
@@ -158,7 +160,7 @@ def hard_signals(alert):
         # the title is a check name ("Ensure LSASS runs as a protected process"),
         # not activity; only a command line can carry a signal here
         return matched_behaviours(alert)
-    return matched_terms(alert) + matched_behaviours(alert)
+    return matched_terms(alert) + matched_behaviours(alert) + ot.signals(alert)
 
 
 def suspicious_terms(alert):

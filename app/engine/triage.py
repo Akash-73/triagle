@@ -27,7 +27,7 @@ import json
 import re
 
 from app.models import Verdict, CLOSURE_CODES
-from app.engine import signals
+from app.engine import signals, ot
 
 # Confidence below this can NEVER result in an auto-close. Hard floor.
 AUTO_CLOSE_CONFIDENCE_FLOOR = 85
@@ -96,10 +96,33 @@ def _deterministic_verdict(alert):
             reasoning=(f"The alert contains a high-risk indicator ({matched}). Triagle never "
                        f"auto-closes alerts carrying indicators of hands-on-keyboard or destructive "
                        f"activity, even if other signals look benign. Routed to a human analyst."),
-            recommended_actions=[
+            recommended_actions=(list(ot.RECOMMENDED) if ot.involved(alert) else [
                 "Isolate the affected host/account pending investigation.",
                 "Confirm whether the activity was authorized (change ticket, red-team window).",
                 "Preserve volatile evidence before remediation.",
+            ]),
+            used_ai=False,
+            basis="signal",
+        )
+
+    # 1b. Anything that touches an industrial controller goes to a person,
+    #     however routine it looks. The cost of being wrong is physical.
+    touched = ot.controllers(alert)
+    if touched:
+        return Verdict(
+            alert_id=alert.alert_id,
+            disposition="needs_human",
+            closure_code=None,
+            confidence=60,
+            severity=alert.raw_severity if alert.raw_severity in ("high", "critical") else "medium",
+            escalate=True,
+            summary="Activity involving an industrial controller — sent for review, not closed.",
+            reasoning=(f"The alert involves {', '.join(touched[:3])}, which runs a physical process. "
+                       f"Triagle does not close alerts on controllers by itself, and takes no action "
+                       f"on them. An OT engineer decides whether this was expected."),
+            recommended_actions=[
+                "Confirm with the control room whether this activity was planned.",
+                "Do not restart, reload or isolate the controller as a first step.",
             ],
             used_ai=False,
         )
@@ -270,6 +293,13 @@ def _enforce_guardrails(verdict, alert):
             verdict.disposition = "suspicious"
             verdict.reasoning += (" [Guardrail: a high-risk indicator was present, so this alert "
                                   "cannot be closed as benign regardless of other reasoning.]")
+    if ot.controllers(alert) and not verdict.escalate:
+        verdict.escalate = True
+        verdict.closure_code = None
+        if verdict.disposition == "benign":
+            verdict.disposition = "needs_human"
+        verdict.reasoning += (" [Guardrail: the alert involves an industrial controller, so it "
+                              "cannot be closed without a person.]")
     if verdict.closure_code and verdict.closure_code not in CLOSURE_CODES:
         verdict.closure_code = None
         verdict.escalate = True
