@@ -246,3 +246,18 @@ def test_auth_off_is_explicit_and_visible():
     auth.load_config({"TRIAGLE_AUTH": "off"})
     page = anon().get("/")
     assert page.status_code == 200 and "sign-in is OFF" in page.text
+
+
+def test_on_cloud_run_each_entry_also_goes_to_the_platform_log(monkeypatch, capsys):
+    monkeypatch.delenv("TRIAGLE_AUDIT_STDOUT", raising=False)
+    monkeypatch.delenv("K_SERVICE", raising=False)
+    audit.record("quiet", "nobody")
+    assert "triagle_audit" not in capsys.readouterr().out
+    monkeypatch.setenv("K_SERVICE", "triagle")
+    audit.record("regulatory report marked filed", "admin", regulator="RBI")
+    line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert line["severity"] == "NOTICE" and line["triagle_audit"]["regulator"] == "RBI"
+    assert line["triagle_audit"]["hash"] and audit.verify()["ok"]
+    monkeypatch.setenv("TRIAGLE_AUDIT_STDOUT", "off")
+    audit.record("quiet again", "nobody")
+    assert "triagle_audit" not in capsys.readouterr().out

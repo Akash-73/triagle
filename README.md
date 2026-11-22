@@ -205,7 +205,8 @@ log with the user's name, the alert, the action and its target. Entries are
 chained by hash; `/audit` shows the log and whether the chain is intact.
 The chain detects edited or removed lines. It does not stop someone with
 server access from deleting the file, so ship it off the box for anything
-that matters. On a host with an ephemeral disk (Render's free tier) the log
+that matters. On Cloud Run each entry is also written to Google Cloud
+Logging, which survives a redeploy. On a host with an ephemeral disk (Render's free tier) the log
 is lost on redeploy unless you mount a disk.
 
 Not yet: password reset, per-client access (every user sees every client),
@@ -217,7 +218,7 @@ the durable record of who approved, declined or filed what.
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 181 tests, no network or key needed
+python -m pytest -q                 # 182 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```

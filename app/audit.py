@@ -12,12 +12,18 @@ the whole file or rewriting the entire chain. For that, ship the log off
 the box (a SIEM, object storage with retention lock).
 
 File: TRIAGLE_AUDIT_LOG, default data/audit.jsonl. On hosts with an
-ephemeral disk (Render's free tier) it is lost on redeploy; mount a disk or
-point the variable at persistent storage.
+ephemeral disk (Cloud Run, Render's free tier) it is lost on redeploy; mount
+a disk or point the variable at persistent storage.
+
+Off the box: on Cloud Run every entry is also written to standard output as
+one structured line, which Cloud Run sends to Google Cloud Logging. That copy
+survives a redeploy and can be given a retention lock. TRIAGLE_AUDIT_STDOUT
+turns it on or off anywhere else (on / off).
 """
 import hashlib
 import json
 import os
+import sys
 import threading
 from datetime import datetime, timezone
 
@@ -49,6 +55,15 @@ def _last_hash(p):
     return last
 
 
+def _to_stdout():
+    choice = os.environ.get("TRIAGLE_AUDIT_STDOUT", "").lower()
+    if choice in ("on", "true", "1"):
+        return True
+    if choice in ("off", "false", "0"):
+        return False
+    return bool(os.environ.get("K_SERVICE"))          # set by Cloud Run
+
+
 def record(event, user, **fields):
     """Append one entry. Returns it. Never raises into the request path for
     a full disk etc. — but the caller is told via the 'written' flag."""
@@ -69,6 +84,13 @@ def record(event, user, **fields):
             entry["written"] = True
         except OSError:
             entry["written"] = False
+    if _to_stdout():
+        try:
+            # one JSON object per line is what Cloud Logging parses into a structured entry
+            print(json.dumps({"severity": "NOTICE", "message": f"triagle audit: {event} by {entry['user']}",
+                              "triagle_audit": entry}, default=str), file=sys.stdout, flush=True)
+        except (OSError, ValueError):
+            pass
     return entry
 
 
