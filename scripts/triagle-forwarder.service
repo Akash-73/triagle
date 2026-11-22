@@ -9,7 +9,7 @@
 # /etc/triagle-forwarder.env holds three lines, readable by root only:
 #   TRIAGLE_URL=https://your-triagle.run.app
 #   TRIAGLE_INGEST_KEY=the-same-value-as-on-triagle
-#   TRIAGLE_CLIENT=Your Company
+#   TRIAGLE_CLIENT="Your Company"
 #
 # Runs as the wazuh user: it only needs to read alerts.json, nothing more.
 [Unit]
@@ -29,7 +29,6 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadOnlyPaths=/var/ossec/logs/alerts
 
 [Install]
 WantedBy=multi-user.target

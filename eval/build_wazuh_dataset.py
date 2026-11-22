@@ -27,9 +27,9 @@ import json
 import os
 
 HERE = os.path.dirname(__file__)
-CLIENT = "Sahyadri Co-operative Bank"
+CLIENT = "Greenvale Co-operative Bank"
 MANAGER = "wazuh-server"
-LAPTOP = {"id": "001", "name": "SCB-BR2-WKS-014", "ip": "10.20.4.37"}
+LAPTOP = {"id": "001", "name": "GCB-BR2-WKS-014", "ip": "10.20.4.37"}
 SERVER = {"id": "000", "name": MANAGER}
 WIN_USER = "a.kulkarni"
 
@@ -162,7 +162,7 @@ def win(rid, ts, channel, provider, event_id, eventdata, label, scenario, split,
 
 
 def sysmon(rid, ts, event_id, eventdata, label, scenario, split, why="", **fmt):
-    ed = {"utcTime": ts.replace("T", " ").replace("Z", ".000"), "user": f"SCB\\{WIN_USER}"}
+    ed = {"utcTime": ts.replace("T", " ").replace("Z", ".000"), "user": f"GCB\\{WIN_USER}"}
     ed.update(eventdata)
     win(rid, ts, "Microsoft-Windows-Sysmon/Operational", "Microsoft-Windows-Sysmon", event_id, ed,
         label, scenario, split, why, **fmt)
@@ -178,8 +178,8 @@ def proc(rid, ts, image, cmdline, parent, label, scenario, split, why="", **fmt)
 
 def logon(ts, target, logon_type, label=False, split="dev"):
     win("60106", ts, "Security", "Microsoft-Windows-Security-Auditing", 4624, {
-        "subjectUserName": LAPTOP["name"] + "$", "subjectDomainName": "SCB",
-        "targetUserName": target, "targetDomainName": "NT AUTHORITY" if target == "SYSTEM" else "SCB",
+        "subjectUserName": LAPTOP["name"] + "$", "subjectDomainName": "GCB",
+        "targetUserName": target, "targetDomainName": "NT AUTHORITY" if target == "SYSTEM" else "GCB",
         "logonType": str(logon_type), "logonProcessName": "Advapi", "ipAddress": "-",
         "processName": "C:\\Windows\\System32\\services.exe"}, label, "routine", split)
 
@@ -241,10 +241,10 @@ def build():
     logon(D + "03:44:10Z", "SYSTEM", 5, split="holdout")
     logon(D + "04:10:55Z", WIN_USER, 11, split="holdout")
     win("60118", D + "03:31:41Z", "Security", "Microsoft-Windows-Security-Auditing", 4624,
-        {"targetUserName": WIN_USER, "targetDomainName": "SCB", "logonType": "7", "ipAddress": "127.0.0.1"},
+        {"targetUserName": WIN_USER, "targetDomainName": "GCB", "logonType": "7", "ipAddress": "127.0.0.1"},
         False, "routine", "dev")
     win("60137", D + "03:58:00Z", "Security", "Microsoft-Windows-Security-Auditing", 4634,
-        {"targetUserName": WIN_USER, "targetDomainName": "SCB", "logonType": "2"}, False, "routine", "dev")
+        {"targetUserName": WIN_USER, "targetDomainName": "GCB", "logonType": "2"}, False, "routine", "dev")
     for i, ts in enumerate(("03:30:20Z", "03:30:21Z", "03:35:00Z", "04:40:11Z")):
         win("61104", D + ts, "System", "Service Control Manager", 7040,
             {"param1": "Background Intelligent Transfer Service", "param2": "auto start", "param3": "demand start"},
@@ -260,7 +260,7 @@ def build():
         "Microsoft-Windows-Windows Defender", 2000, {}, False, "routine", "holdout")
     for rid, loc in (("503", "wazuh-agent"), ("506", "wazuh-agent")):
         raw = _base(rid, LAPTOP, D + "03:30:00Z", loc)
-        raw["full_log"] = "ossec: Agent started: 'SCB-BR2-WKS-014->any'."
+        raw["full_log"] = "ossec: Agent started: 'GCB-BR2-WKS-014->any'."
         _add(raw, False, "routine", "dev")
     fim("594", D + "03:40:00Z", "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\BITS", "modified", False, "dev")
     fim("554", D + "03:40:02Z", "c:\\programdata\\microsoft\\windows\\start menu\\programs\\teams.lnk", "added", False, "holdout")
@@ -342,10 +342,10 @@ def build():
     proc("92040", D + "10:04:05Z", NET1, "C:\\Windows\\system32\\net1 user svc_backup P@ssw0rd!23 /add", NET,
          True, "intrusion", "dev", orig="net1.exe")
     win("60109", D + "10:04:05Z", "Security", "Microsoft-Windows-Security-Auditing", 4720,
-        {"subjectUserName": WIN_USER, "subjectDomainName": "SCB", "targetUserName": "svc_backup",
+        {"subjectUserName": WIN_USER, "subjectDomainName": "GCB", "targetUserName": "svc_backup",
          "targetDomainName": LAPTOP["name"]}, True, "intrusion", "dev")
     win("60154", D + "10:04:30Z", "Security", "Microsoft-Windows-Security-Auditing", 4732,
-        {"subjectUserName": WIN_USER, "subjectDomainName": "SCB", "targetUserName": "Administrators",
+        {"subjectUserName": WIN_USER, "subjectDomainName": "GCB", "targetUserName": "Administrators",
          "memberSid": "S-1-5-21-1-2-3-1009"}, True, "intrusion", "dev")
     sysmon("92302", D + "10:05:00Z", 13, {
         "image": REG, "eventType": "SetValue",
@@ -364,7 +364,7 @@ def build():
     proc("92052", D + "14:12:00Z", CMD, "cmd.exe /c vssadmin delete shadows /all /quiet", "C:\\Users\\Public\\upd.exe",
          True, "cred-theft", "holdout", why="Wazuh rates this level 4; the command deletes shadow copies")
     win("60117", D + "14:13:00Z", "Security", "Microsoft-Windows-Eventlog", 1102,
-        {"subjectUserName": WIN_USER, "subjectDomainName": "SCB"}, True, "cred-theft", "holdout")
+        {"subjectUserName": WIN_USER, "subjectDomainName": "GCB"}, True, "cred-theft", "holdout")
     for ts in ("14:20:01Z", "14:20:03Z"):
         win("60122", D + ts, "Security", "Microsoft-Windows-Security-Auditing", 4625,
             {"targetUserName": "Administrator", "logonType": "3", "ipAddress": "10.20.4.91"}, None, "cred-theft", "holdout")

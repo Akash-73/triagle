@@ -116,7 +116,7 @@ def test_tenant_sectors_come_from_file_then_environment(tmp_path):
 # ---- when the clock starts, and when it does not ---------------------------------------
 
 def test_the_clock_starts_at_the_first_real_attack_alert_not_an_earlier_weak_signal(wz):
-    inc = _incident(wz, "Sahyadri Co-operative Bank", "SCB-BR2-WKS-014")
+    inc = _incident(wz, "Greenvale Co-operative Bank", "GCB-BR2-WKS-014")
     members = _members(wz, inc)
     assert members[0]["alert"]["title"] == "New Windows Service Created"         # 04:15, a judgement call
     assert members[0]["verdict"]["basis"] == "correlation"
@@ -124,14 +124,14 @@ def test_the_clock_starts_at_the_first_real_attack_alert_not_an_earlier_weak_sig
 
 
 def test_probing_from_outside_does_not_start_a_clock(wz):
-    inc = _incident(wz, "Sahyadri Co-operative Bank", "wazuh-server")
+    inc = _incident(wz, "Greenvale Co-operative Bank", "wazuh-server")
     members = _members(wz, inc)
     assert all("brute force" in m["alert"]["title"] for m in members)
     assert certin.probing_only(members) and not certin.is_reportable_candidate(members)
 
 
 def test_a_package_install_is_not_part_of_the_brute_force_against_the_same_server(wz):
-    inc = _incident(wz, "Sahyadri Co-operative Bank", "wazuh-server")
+    inc = _incident(wz, "Greenvale Co-operative Bank", "wazuh-server")
     titles = [m["alert"]["title"] for m in _members(wz, inc)]
     assert not any("dpkg" in t for t in titles) and len(titles) == 2
     dpkg = next(a for a in wz["alerts"] if "dpkg" in a["title"])
@@ -140,7 +140,7 @@ def test_a_package_install_is_not_part_of_the_brute_force_against_the_same_serve
 
 
 def test_an_alert_tied_to_the_attackers_account_joins_the_incident(wz):
-    inc = _incident(wz, "Sahyadri Co-operative Bank", "SCB-BR2-WKS-014")
+    inc = _incident(wz, "Greenvale Co-operative Bank", "GCB-BR2-WKS-014")
     assert "User account enabled or created" in [m["alert"]["title"] for m in _members(wz, inc)]
 
 
