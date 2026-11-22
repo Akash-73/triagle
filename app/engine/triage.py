@@ -79,7 +79,6 @@ def _has_hard_escalate(alert):
 
 
 def _deterministic_verdict(alert):
-    blob = _text_blob(alert)
     escalate_signal = _has_hard_escalate(alert)
 
     # 1. Hard-escalate signals: always escalate, never close. This is the
@@ -124,10 +123,66 @@ def _deterministic_verdict(alert):
             used_ai=False,
         )
 
+    # 2b. Not activity at all, by the source tool's own classification.
+    kind = signals.kind(alert)
+    ind = alert.indicators or {}
+    if kind == signals.POSTURE:
+        what = ind.get("kind_reason") or "configuration or vulnerability finding"
+        return Verdict(
+            alert_id=alert.alert_id,
+            disposition="benign",
+            closure_code="POSTURE_FINDING",
+            confidence=90,
+            severity="low",
+            escalate=False,
+            summary="Not an incident — posture finding, sent to the hardening backlog.",
+            reasoning=(f"The source tool classifies this as a {what}. It reports the state of the "
+                       f"system, not something a person or a program did, so it is not triaged as "
+                       f"an attack. It is counted in the hardening backlog instead of the alert queue."),
+            recommended_actions=["Fix through the patching or hardening process; no incident response needed."],
+            tuning_recommendation=("Send benchmark and vulnerability results to a posture report rather "
+                                   "than the alert queue, so analysts only see activity."),
+            used_ai=False,
+        )
+    if kind == signals.OPERATIONAL and not signals.suspicious_terms(alert) and not signals.sensitive_terms(alert):
+        what = ind.get("kind_reason") or "system health event"
+        return Verdict(
+            alert_id=alert.alert_id,
+            disposition="benign",
+            closure_code="OPERATIONAL_EVENT",
+            confidence=88,
+            severity="low",
+            escalate=False,
+            summary="Not a security detection — system health event, sent to IT operations.",
+            reasoning=(f"The source tool classifies this as a {what}: an error, crash, shutdown or "
+                       f"capacity event. It carries no risk signal, so it is closed for the SOC and "
+                       f"left for IT operations."),
+            recommended_actions=["No security action. IT operations may want to look at the underlying fault."],
+            used_ai=False,
+        )
+
+    # 2c. A control that used to pass now fails: that is a change, not a state.
+    if ind.get("drift"):
+        return Verdict(
+            alert_id=alert.alert_id,
+            disposition="needs_human",
+            closure_code=None,
+            confidence=65,
+            severity="medium",
+            escalate=True,
+            summary="A security control that was passing now fails — sent for review.",
+            reasoning=("A benchmark check on this system went from passed to failed. A first-time "
+                       "failure is a hardening task; a control that stops passing means something "
+                       "changed it, which can be an attacker lowering defences."),
+            recommended_actions=[
+                "Find what changed the setting and who did it.",
+                "Check the same host for other alerts in the last 24 hours.",
+            ],
+            used_ai=False,
+        )
+
     # 3. Genuinely suspicious identity/network signals -> escalate, don't guess.
-    suspicious_terms = ["impossible travel", "brute", "password spray", "anomalous",
-                        "unfamiliar", "malware", "trojan", "exploit", "suspicious"]
-    if any(t in blob for t in suspicious_terms):
+    if signals.suspicious_terms(alert):
         return Verdict(
             alert_id=alert.alert_id,
             disposition="suspicious",
@@ -184,13 +239,14 @@ def _deterministic_verdict(alert):
             used_ai=False,
         )
 
-    # 5. Everything else: don't pretend to know. Escalate at medium confidence.
+    # 5. Everything else: don't pretend to know. Escalate at medium confidence,
+    #    and never rate it below what the source tool said.
     return Verdict(
         alert_id=alert.alert_id,
         disposition="needs_human",
         closure_code=None,
         confidence=55,
-        severity="medium",
+        severity=alert.raw_severity if alert.raw_severity in ("high", "critical") else "medium",
         escalate=True,
         summary="Undetermined — escalated rather than guessed.",
         reasoning=("Triagle could not reach a high-confidence disposition from the available evidence. "
@@ -280,9 +336,15 @@ def _ai_verdict(alert):
         return None
 
 
+def settled_by_kind(alert):
+    """Posture findings and health events are decided by rule alone. There is
+    nothing for a model or an investigation to add, and no reason to pay for one."""
+    return signals.kind(alert) != signals.ACTIVITY and not signals.hard_signals(alert)
+
+
 def triage(alert):
     """Produce a guardrail-enforced Verdict for one alert."""
-    verdict = _ai_verdict(alert)
+    verdict = None if settled_by_kind(alert) else _ai_verdict(alert)
     if verdict is None:
         verdict = _deterministic_verdict(alert)
     return _enforce_guardrails(verdict, alert)

@@ -13,6 +13,7 @@ import json
 from app.connectors.sources import normalize
 from app.engine.triage import triage
 from app.engine.correlate import correlate
+from app.engine.relate import EntityIndex
 from app.engine.tuning import analyze_rules
 from app.engine.response import propose_actions
 
@@ -27,7 +28,7 @@ def _load_env():
         return {"entity_history": {}, "threat_intel": {}}
 
 
-def process_batch(raw_alerts):
+def process_batch(raw_alerts, decided=None):
     normalized = []
     for item in raw_alerts:
         try:
@@ -38,12 +39,14 @@ def process_batch(raw_alerts):
     alert_dicts = [a.to_dict() for a in normalized]
     verdicts = {}
     trails = {}
+    index = EntityIndex(alert_dicts)          # built once, shared by every investigation
 
     if AGENTIC:
         from app.agent.loop import investigate
         env = _load_env()
         for a in alert_dicts:
-            v, trail = investigate(a, alert_dicts, env.get("entity_history"), env.get("threat_intel"))
+            v, trail = investigate(a, alert_dicts, env.get("entity_history"), env.get("threat_intel"),
+                                   index=index)
             verdicts[a["alert_id"]] = v
             trails[a["alert_id"]] = trail
     else:
@@ -51,13 +54,13 @@ def process_batch(raw_alerts):
             verdicts[a.alert_id] = triage(a).to_dict()
             trails[a.alert_id] = []
 
-    incidents = correlate(normalized)
+    incidents = correlate(normalized, verdicts)
     rule_health = analyze_rules(alert_dicts, verdicts)
 
     # Stage response actions (pending human approval) for escalated threats
     actions = {}
     for a in alert_dicts:
-        proposed = propose_actions(a, verdicts.get(a["alert_id"], {}))
+        proposed = propose_actions(a, verdicts.get(a["alert_id"], {}), decided)
         if proposed:
             actions[a["alert_id"]] = [p.to_dict() for p in proposed]
 
@@ -74,6 +77,7 @@ def process_batch(raw_alerts):
         "incidents": incidents,
         "rule_health": rule_health,
         "actions": actions,
+        "index": index,
         "metrics": {
             "total": total, "escalated": escalated, "auto_closed": auto_closed,
             "true_positives": true_positives, "noise_reduced_pct": noise_reduced_pct,

@@ -20,7 +20,7 @@ import json
 from app.models import Verdict
 from app.agent import tools as toolmod
 from app.agent import backend
-from app.engine.triage import _enforce_guardrails
+from app.engine.triage import _enforce_guardrails, _deterministic_verdict, settled_by_kind
 from app.engine import signals
 
 MAX_STEPS = 4
@@ -123,7 +123,7 @@ def _rule_determine(ctx):
     # count corroborating signals found during investigation
     related = next((e for e in ctx.evidence if e["tool"] == "related_alerts"), {})
     ti = next((e for e in ctx.evidence if e["tool"] == "threat_intel"), {})
-    related_count = len(related.get("data", []) or [])
+    related_count = int(related.get("notable_count", len(related.get("data", []) or [])))
     ti_data = ti.get("data") or {}
     ti_hit = bool(ti_data.get("match"))
 
@@ -163,34 +163,57 @@ def _rule_determine(ctx):
             used_ai=False,
         )
 
-    if related_count >= 2:
+    # Related activity can raise an alert that already has some weight of its
+    # own. It cannot turn a routine logon into an escalation: on a real host
+    # there are always other alerts nearby.
+    if related_count >= 2 and signals.has_own_weight(alert):
         return Verdict(
             alert_id=alert["alert_id"], disposition="suspicious", closure_code=None,
             confidence=72, severity="high", escalate=True,
             summary="Multiple correlated alerts — escalated for human review.",
-            reasoning=f"Investigation found {related_count} related alerts forming a pattern, "
+            reasoning=f"Investigation found {related_count} related alerts of note forming a pattern, "
                       f"insufficient to auto-close but enough to warrant escalation.",
             recommended_actions=["Review the correlated timeline for attack progression."],
             used_ai=False,
         )
 
     # nothing corroborating; fall back to the base engine's conservative call
-    from app.engine.triage import _deterministic_verdict
+    verdict = _deterministic_verdict(_as_alert(alert))
+    if related_count and not verdict.escalate:
+        verdict.reasoning += (f" {related_count} alert(s) of note were raised on the same asset or "
+                              f"account in the same window; this routine event is kept as context "
+                              f"for them, not escalated by itself.")
+    return verdict
+
+
+_ALERT_FIELDS = ["alert_id", "source", "client", "timestamp", "title", "raw_severity", "entity",
+                 "src_ip", "user", "host", "dst_ip", "description", "indicators", "raw"]
+
+
+def _as_alert(alert):
     from app.models import NormalizedAlert
-    na = NormalizedAlert(**{k: alert.get(k) for k in
-        ["alert_id","source","client","timestamp","title","raw_severity","entity",
-         "src_ip","user","host","dst_ip","description","indicators","raw"] if k in alert})
-    return _deterministic_verdict(na)
+    return NormalizedAlert(**{k: alert.get(k) for k in _ALERT_FIELDS if k in alert})
 
 
 def _has_hard_escalate_dict(alert):
     return bool(signals.hard_signals(alert))
 
 
-def investigate(focus_alert, all_alerts, entity_history=None, threat_intel=None):
+def investigate(focus_alert, all_alerts, entity_history=None, threat_intel=None, index=None):
     """Run the full agentic investigation loop for one alert. Returns
     (verdict_dict, investigation_trail)."""
-    ctx = toolmod.InvestigationContext(focus_alert, all_alerts, entity_history, threat_intel)
+    na = _as_alert(focus_alert)
+
+    # A benchmark result or a health event is decided by rule alone: there is
+    # nothing to investigate and no reason to spend a model call on it.
+    if settled_by_kind(na):
+        verdict = _enforce_guardrails(_deterministic_verdict(na), na)
+        what = (focus_alert.get("indicators") or {}).get("kind_reason") or "non-activity event"
+        return verdict.to_dict(), [{"tool": "classification", "args": {},
+                                    "result_summary": f"The source tool classifies this as a {what}. "
+                                                      f"Decided by rule; no investigation needed."}]
+
+    ctx = toolmod.InvestigationContext(focus_alert, all_alerts, entity_history, threat_intel, index=index)
     use_llm = backend.is_llm_enabled()
 
     for _ in range(MAX_STEPS):
@@ -208,12 +231,6 @@ def investigate(focus_alert, all_alerts, entity_history=None, threat_intel=None)
         toolmod.run_tool(action, ctx, args if isinstance(args, dict) else {})
 
     verdict = (_llm_determine(ctx) if use_llm else None) or _rule_determine(ctx)
-
-    # convert focus_alert dict to a NormalizedAlert-like for guardrails
-    from app.models import NormalizedAlert
-    na = NormalizedAlert(**{k: focus_alert.get(k) for k in
-        ["alert_id","source","client","timestamp","title","raw_severity","entity",
-         "src_ip","user","host","dst_ip","description","indicators","raw"] if k in focus_alert})
     verdict = _enforce_guardrails(verdict, na)
 
     return verdict.to_dict(), ctx.steps

@@ -8,6 +8,7 @@ what proves the normalization layer actually works across heterogeneous
 sources — the exact "tool sprawl" pain MSPs have.
 """
 from app.models import NormalizedAlert
+from app.connectors.wazuh import from_wazuh
 
 
 def _is_public_ip(value):
@@ -112,6 +113,7 @@ CONNECTORS = {
     "crowdstrike_edr": from_crowdstrike,
     "fortinet_fw": from_fortinet,
     "entra_id": from_entra,
+    "wazuh": from_wazuh,
 }
 
 

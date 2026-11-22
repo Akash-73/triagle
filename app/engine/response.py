@@ -19,11 +19,13 @@ Each proposed action carries: what it does, why, its blast-radius note, and
 its risk tier — so the human approves with eyes open.
 """
 import datetime
+import re
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 from app.engine import reputation
 from app.engine import action_tools
+from app.engine import signals
 
 
 # --- The automation policy -------------------------------------------------
@@ -105,12 +107,17 @@ def _is_high_impact(target):
     return any(h in t for h in HIGH_IMPACT_HOST_HINTS)
 
 
-def propose_actions(alert, verdict):
+def propose_actions(alert, verdict, decided=None):
     """
     Given an alert and its verdict, propose containment actions — but ONLY
     for verdicts that warrant response (escalated true-positive/suspicious).
     Benign verdicts get no actions. Returns a list of ProposedAction.
+
+    decided: {action_id: what already happened to it}. The queue is rebuilt
+    every time an alert arrives, so anything already approved, declined or
+    auto-run is restored from here instead of being proposed (or run) again.
     """
+    decided = decided or {}
     if not verdict.get("escalate"):
         return []
     if verdict.get("disposition") not in ("true_positive", "suspicious"):
@@ -173,7 +180,13 @@ def propose_actions(alert, verdict):
             policy_reason=reason,
         )
         act.tool_call = action_tools.build_call(action_type, target, spec["platform"])
-        if policy == "auto":
+        prior = decided.get(act.action_id)
+        if prior:
+            act.status = prior.get("status", act.status)
+            act.decided_by = prior.get("decided_by")
+            act.decided_at = prior.get("decided_at")
+            act.result_message = prior.get("result_message", "")
+        elif policy == "auto":
             stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
             disp = action_tools.dispatch(act.to_dict(), approver="Triagle · auto-policy")
             act.status = "auto_executed"
@@ -182,8 +195,12 @@ def propose_actions(alert, verdict):
             act.result_message = disp["message"]
         actions.append(act)
 
-    # Host containment for endpoint threats.
-    if host and any(k in title for k in ["ransomware", "credential", "lsass", "malware", "lateral"]):
+    # Host containment for endpoint threats: named in the title, or shown by
+    # the command line itself (a low-rated alert whose command deletes shadow
+    # copies is still an endpoint threat).
+    endpoint_words = any(k in title for k in ["ransomware", "credential", "lsass", "lateral"]) \
+        or bool(re.search(r"(?<![a-z])malware", title))
+    if host and (endpoint_words or signals.matched_behaviours(alert)):
         add("isolate_host", host,
             "Endpoint shows confirmed hands-on/destructive activity; isolating contains spread.",
             f"Removes {host} from the network. Reversible once cleared.")

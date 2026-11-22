@@ -14,45 +14,46 @@ full agent loop is real and demoable without external dependencies.
 The tool registry is passed to the reasoning layer, which decides WHICH
 tool to call at each step — the agent plans, we don't hardcode the path.
 """
-from datetime import datetime
+from app.engine.relate import EntityIndex, GENERIC_ENTITIES, entity_values
 
 
 class InvestigationContext:
     """Holds everything the agent knows so far about one investigation."""
-    def __init__(self, focus_alert, all_alerts, entity_history=None, threat_intel=None):
+    def __init__(self, focus_alert, all_alerts, entity_history=None, threat_intel=None, index=None):
         self.focus_alert = focus_alert          # the alert being investigated (dict)
         self.all_alerts = all_alerts            # every normalized alert in the batch (list of dict)
         self.entity_history = entity_history or {}   # synthetic per-entity history
         self.threat_intel = threat_intel or {}       # synthetic TI lookups
         self.evidence = []                      # accumulated findings from tool calls
         self.steps = []                         # audit trail of what the agent did
+        self._index = index                     # shared across a batch; built on demand otherwise
+        self._related = None
+
+    def related(self):
+        """(notable related alerts in the window, routine count). One tenant's
+        alerts are never used to investigate another's: the index is keyed by client."""
+        if self._related is None:
+            if self._index is None:
+                self._index = EntityIndex(self.all_alerts)
+            self._related = self._index.related(self.focus_alert)
+        return self._related
+
+    @property
+    def hours(self):
+        self.related()
+        return self._index.hours
 
     def record(self, tool, args, result):
         self.steps.append({"tool": tool, "args": args, "result_summary": result.get("summary", "")})
         self.evidence.append(result)
 
 
-# Generic identifiers that appear across unrelated alerts and must NOT be
-# used to link them — otherwise every "system"/"admin" event falsely
-# correlates. Mirrors the exclusion in engine/correlate.py.
-GENERIC_ENTITIES = {"system", "admin", "administrator", "n/a", "unknown", "-",
-                    "multiple", "localsystem", "network service"}
-
-
 def _entity_values(alert):
-    vals = set()
-    for k in ("host", "user", "src_ip", "dst_ip", "entity"):
-        v = alert.get(k)
-        if v and str(v).strip().lower() not in GENERIC_ENTITIES:
-            vals.add(str(v).lower())
-    return vals
+    return entity_values(alert)
 
 
-def _same_tenant(ctx):
-    """Alerts belonging to the same client as the focus alert. One client's
-    data is never used to investigate another's."""
-    client = ctx.focus_alert.get("client")
-    return [a for a in ctx.all_alerts if a.get("client") == client]
+def _span(hours):
+    return f"{hours:g} h" if hours else "any time"
 
 
 def _indicators_to_check(alert):
@@ -66,23 +67,27 @@ def _indicators_to_check(alert):
 
 # ---- The tools -----------------------------------------------------------
 
+MAX_LISTED = 25      # evidence handed to the planner / shown in the trail
+
+
 def tool_related_alerts(ctx, args):
-    """Find other alerts in the environment sharing an entity with the focus."""
-    focus_entities = _entity_values(ctx.focus_alert)
-    related = []
-    for a in _same_tenant(ctx):
-        if a["alert_id"] == ctx.focus_alert["alert_id"]:
-            continue
-        if _entity_values(a) & focus_entities:
-            related.append({
-                "alert_id": a["alert_id"], "title": a["title"],
-                "source": a["source"], "timestamp": a.get("timestamp"),
-                "entity": a.get("entity"),
-            })
+    """Find other alerts of note in the environment sharing an entity with the focus."""
+    notable, routine = ctx.related()
+    related = [{
+        "alert_id": a["alert_id"], "title": a["title"],
+        "source": a["source"], "timestamp": a.get("timestamp"),
+        "entity": a.get("entity"),
+    } for a in notable[:MAX_LISTED]]
+    summary = (f"Found {len(notable)} related alert(s) sharing an entity with the focus alert "
+               f"within {_span(ctx.hours)}.")
+    if routine:
+        summary += f" {routine} routine event(s) on the same entities were not counted."
     return {
         "tool": "related_alerts",
-        "summary": f"Found {len(related)} related alert(s) sharing an entity with the focus alert.",
+        "summary": summary,
         "data": related,
+        "notable_count": len(notable),
+        "routine_count": routine,
     }
 
 
@@ -120,12 +125,10 @@ def tool_threat_intel(ctx, args):
 
 
 def tool_timeline(ctx, args):
-    """Build a chronological timeline of the focus + related alerts."""
-    focus_entities = _entity_values(ctx.focus_alert)
-    events = []
-    for a in _same_tenant(ctx):
-        if _entity_values(a) & focus_entities:
-            events.append({"timestamp": a.get("timestamp"), "title": a["title"], "source": a["source"]})
+    """Build a chronological timeline of the focus + related alerts of note."""
+    notable, _ = ctx.related()
+    events = [{"timestamp": a.get("timestamp"), "title": a["title"], "source": a["source"]}
+              for a in [ctx.focus_alert] + notable[:MAX_LISTED]]
     events.sort(key=lambda e: e.get("timestamp") or "")
     return {
         "tool": "timeline",
@@ -137,7 +140,7 @@ def tool_timeline(ctx, args):
 TOOL_REGISTRY = {
     "related_alerts": {
         "fn": tool_related_alerts,
-        "description": "Find other alerts involving the same host, user, or IP as the alert under investigation. Use to see if this alert is part of a larger pattern.",
+        "description": "Find other alerts of note involving the same host, user, or IP as the alert under investigation, within the correlation window. Routine telemetry is counted but not listed. Use to see if this alert is part of a larger pattern.",
         "args": {},
     },
     "entity_history": {

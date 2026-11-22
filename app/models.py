@@ -31,6 +31,8 @@ CLOSURE_CODES = {
     "BENIGN_KNOWN_TOOL": "Benign — known admin/security tool behavior",
     "BENIGN_DUPLICATE": "Benign — duplicate of an already-handled alert",
     "FP_TUNING": "False positive — noisy detection, tuning recommended",
+    "POSTURE_FINDING": "Not an incident — configuration or vulnerability finding, sent to the hardening backlog",
+    "OPERATIONAL_EVENT": "Not a security detection — system health event, sent to IT operations",
     "INSUFFICIENT_EVIDENCE": "Cannot decide with available evidence — escalated",
 }
 
@@ -53,7 +55,11 @@ class NormalizedAlert:
     raw: dict = field(default_factory=dict)
 
     def to_dict(self):
-        return asdict(self)
+        # shallow on purpose: `raw` can be a large SIEM event and is never
+        # modified downstream, so there is no reason to deep-copy it per alert
+        d = {f: getattr(self, f) for f in self.__dataclass_fields__}
+        d["indicators"] = dict(self.indicators or {})
+        return d
 
 
 @dataclass

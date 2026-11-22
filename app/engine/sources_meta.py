@@ -10,6 +10,7 @@ SOURCES = {
     "crowdstrike_edr": ("CrowdStrike EDR", "endpoints"),
     "fortinet_fw": ("Fortinet Firewall", "network"),
     "entra_id": ("Microsoft Entra ID", "identity / logins"),
+    "wazuh": ("Wazuh SIEM", "endpoints & servers"),
     "barracuda_waf": ("Barracuda WAF", "web apps"),
     "nutanix": ("Nutanix", "infrastructure"),
     "cisco_asa": ("Cisco ASA", "network"),
