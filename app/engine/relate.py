@@ -31,6 +31,9 @@ GENERIC_ENTITIES = {"system", "admin", "administrator", "n/a", "unknown", "-",
                     "multiple", "localsystem", "network service", "root"}
 
 ENTITY_FIELDS = ("host", "user", "src_ip", "dst_ip", "entity")
+# Sharing an account or an address is strong evidence two alerts belong
+# together. Sharing only a host is weak on a busy machine.
+STRONG_FIELDS = ("user", "src_ip", "dst_ip")
 
 
 def window_hours():
@@ -53,10 +56,10 @@ def parse_ts(ts):
     return dt.timestamp()
 
 
-def entity_values(alert):
+def entity_values(alert, fields=ENTITY_FIELDS):
     """Lower-cased host / user / addresses of an alert dict, minus generic ones."""
     vals = set()
-    for k in ENTITY_FIELDS:
+    for k in fields:
         v = alert.get(k)
         if v and str(v).strip().lower() not in GENERIC_ENTITIES:
             vals.add(str(v).lower())
@@ -107,6 +110,23 @@ class EntityIndex:
         if t is None or not self.window:
             return 0, len(times)
         return bisect.bisect_left(times, t - self.window), bisect.bisect_right(times, t + self.window)
+
+    def strong_count(self, alert):
+        """How many notable alerts in the window share an account or an
+        address with this one (not merely the host)."""
+        me = self.pos.get(alert.get("alert_id"), -1)
+        t = self.times[me] if me >= 0 else parse_ts(alert.get("timestamp"))
+        client = alert.get("client")
+        found = set()
+        for e in entity_values(alert, STRONG_FIELDS):
+            key = (client, e)
+            times = self._n_times.get(key)
+            if times:
+                lo, hi = self._span(times, t)
+                found.update(self._n_idx[key][lo:hi])
+            found.update(self._n_untimed.get(key, ()))
+        found.discard(me)
+        return len(found)
 
     def related(self, alert):
         """(notable alerts sharing an entity inside the window, in time order;

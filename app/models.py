@@ -75,6 +75,9 @@ class Verdict:
     recommended_actions: list = field(default_factory=list)
     tuning_recommendation: Optional[str] = None   # how to fix the detection, if noisy
     used_ai: bool = False
+    # what the escalation rests on: "signal" (a risk signal on the alert itself),
+    # "intel" (a threat-intelligence match), "correlation" (only the alerts around it)
+    basis: str = ""
 
     def to_dict(self):
         return asdict(self)

@@ -16,74 +16,74 @@
   .top { padding:26px 34px; border-bottom:2px solid var(--ink); display:flex; justify-content:space-between; align-items:flex-start; }
   .brand { font-weight:700; font-size:20px; display:flex; align-items:center; gap:10px; }
   .brand .eye { width:26px; height:26px; border-radius:50%; background:radial-gradient(circle at 50% 50%, var(--eye) 0 22%, #fff 23% 42%, var(--eye) 43% 50%, transparent 51%); }
-  .brand small { color:var(--muted); font-weight:400; font-size:11px; font-family:'IBM Plex Mono'; }
-  .meta { text-align:right; font-size:12px; color:var(--muted); font-family:'IBM Plex Mono'; line-height:1.7; }
+  .brand small { color:var(--muted); font-weight:400; font-size:11px; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
+  .meta { text-align:right; font-size:12px; color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; line-height:1.7; }
   .body { padding:30px 34px; }
   h1 { font-size:23px; font-weight:700; margin-bottom:6px; }
-  .verdict-line { display:inline-block; font-family:'IBM Plex Mono'; font-size:12px; font-weight:600; padding:5px 12px; border-radius:20px; margin-bottom:20px; }
+  .verdict-line { display:inline-block; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; font-weight:600; padding:5px 12px; border-radius:20px; margin-bottom:20px; }
   .verdict-line.crit { background:#fbeae8; color:var(--crit); }
   .verdict-line.ok { background:#e9f5ee; color:var(--ok); }
   .lead { font-size:15px; line-height:1.6; color:#33404f; margin-bottom:22px; }
-  .ai-badge { font-family:'IBM Plex Mono'; font-size:10px; padding:2px 9px; border-radius:20px; background:#e8f0fe; color:#1a56db; margin-left:8px; vertical-align:middle; letter-spacing:0.03em; }
+  .ai-badge { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:10px; padding:2px 9px; border-radius:20px; background:#e8f0fe; color:#1a56db; margin-left:8px; vertical-align:middle; letter-spacing:0.03em; }
   .ai-badge.muted { background:#eef1f4; color:#6b7280; }
   .worknotes { background:#f6f9ff; border:1px solid #dce6f5; border-left:3px solid #1a56db; border-radius:8px; padding:12px 18px; margin-bottom:24px; }
   .worknotes p { font-size:14px; line-height:1.6; color:#2c3a4b; margin:5px 0; }
   .worknotes p:first-child { margin-top:0; } .worknotes p:last-child { margin-bottom:0; }
-  .section-t { font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); font-family:'IBM Plex Mono'; margin:24px 0 12px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  .section-t { font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; margin:24px 0 12px; padding-bottom:6px; border-bottom:1px solid var(--line); }
 
   .istrip { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
   .istat { flex:1; min-width:130px; background:var(--band); border:1px solid var(--line); border-radius:9px; padding:12px 15px; }
   .istat .n { font-size:21px; font-weight:700; line-height:1.1; }
   .istat .n.bad { color:var(--crit); } .istat .n.good { color:var(--ok); }
-  .istat .l { font-size:11px; color:var(--muted); font-family:'IBM Plex Mono'; text-transform:uppercase; letter-spacing:.04em; margin-top:3px; }
+  .istat .l { font-size:11px; color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; text-transform:uppercase; letter-spacing:.04em; margin-top:3px; }
   .ioc { display:flex; align-items:center; gap:9px; font-size:13px; padding:7px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
   .ioc:last-child { border-bottom:none; }
-  .ioc .v { font-family:'IBM Plex Mono'; font-size:12.5px; word-break:break-all; }
-  .ioc .tag { font-family:'IBM Plex Mono'; font-size:10px; font-weight:600; text-transform:uppercase; padding:2px 8px; border-radius:20px; background:#fbeae8; color:var(--crit); }
-  .ioc .sc { color:var(--muted); font-size:11.5px; font-family:'IBM Plex Mono'; margin-left:auto; }
+  .ioc .v { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12.5px; word-break:break-all; }
+  .ioc .tag { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:10px; font-weight:600; text-transform:uppercase; padding:2px 8px; border-radius:20px; background:#fbeae8; color:var(--crit); }
+  .ioc .sc { color:var(--muted); font-size:11.5px; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; margin-left:auto; }
   .outcome { font-size:14.5px; font-weight:600; padding:12px 16px; border-radius:9px; margin-bottom:16px; }
   .outcome.done { background:#e9f5ee; border:1px solid #cce8d6; color:#1f5d3d; }
   .outcome.wait { background:#fff6e9; border:1px solid #f0e0c0; color:#8a5a1e; }
   .act { display:flex; align-items:center; gap:10px; font-size:13px; padding:10px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
   .act:last-child { border-bottom:none; }
-  .act .st { font-family:'IBM Plex Mono'; font-size:10px; font-weight:600; padding:3px 9px; border-radius:20px; text-transform:uppercase; white-space:nowrap; }
+  .act .st { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:10px; font-weight:600; padding:3px 9px; border-radius:20px; text-transform:uppercase; white-space:nowrap; }
   .act .st.auto { background:#e9f5ee; color:var(--ok); }
   .act .st.appr { background:#e8f0fe; color:#1a56db; }
   .act .st.wait { background:#fff1dd; color:#8a5a1e; }
   .act .st.dec { background:#f0f0f2; color:#777; }
   .act .lbl2 { font-weight:600; }
-  .act .vend { color:var(--muted); font-family:'IBM Plex Mono'; font-size:11px; }
-  .act .who { color:var(--muted); font-family:'IBM Plex Mono'; font-size:11px; margin-left:auto; }
+  .act .vend { color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:11px; }
+  .act .who { color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:11px; margin-left:auto; }
   .autoline { background:#e9f5ee; border:1px solid #cce8d6; border-left:3px solid var(--ok); border-radius:8px; padding:11px 15px; font-size:13.5px; color:#1f5d3d; margin-top:12px; }
   .autoline b { color:var(--ok); }
-  .plug2 { font-size:11px; color:var(--muted); font-family:'IBM Plex Mono'; margin-top:10px; }
+  .plug2 { font-size:11px; color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; margin-top:10px; }
 
   .timeline { position:relative; margin-left:8px; }
   .step { position:relative; padding:0 0 20px 26px; border-left:2px solid var(--line); }
   .step:last-child { border-left:2px solid transparent; }
   .step .dot { position:absolute; left:-7px; top:2px; width:12px; height:12px; border-radius:50%; background:var(--eye); border:2px solid #fff; box-shadow:0 0 0 1px var(--line); }
   .step.crit .dot { background:var(--crit); }
-  .step .time { font-family:'IBM Plex Mono'; font-size:11px; color:var(--muted); }
+  .step .time { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:11px; color:var(--muted); }
   .step .title { font-weight:600; font-size:14.5px; margin:2px 0; }
   .step .desc { font-size:13px; color:#4a5666; line-height:1.5; }
-  .step .src { font-family:'IBM Plex Mono'; font-size:11px; color:var(--muted); }
+  .step .src { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:11px; color:var(--muted); }
 
   .actions { background:var(--band); border-radius:10px; padding:18px 22px; }
   .actions li { font-size:14px; margin:8px 0 8px 18px; line-height:1.5; }
 
-  .footer { padding:20px 34px; border-top:1px solid var(--line); font-size:11px; color:var(--muted); font-family:'IBM Plex Mono'; line-height:1.6; }
-  .printbtn { position:fixed; top:16px; right:16px; background:var(--eye); color:#fff; border:none; border-radius:8px; padding:11px 18px; font-family:'Sora'; font-weight:600; font-size:14px; cursor:pointer; }
+  .footer { padding:20px 34px; border-top:1px solid var(--line); font-size:11px; color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; line-height:1.6; }
+  .printbtn { position:fixed; top:16px; right:16px; background:var(--eye); color:#fff; border:none; border-radius:8px; padding:11px 18px; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight:600; font-size:14px; cursor:pointer; }
   @media print { .printbtn { display:none !important; } body { background:#fff; } .sheet { border:none; margin:0; max-width:100%; } @page { margin:1.4cm; } }
 </style>
 </head>
 <body>
 <button class="printbtn" onclick="window.print()">Save as PDF ↓</button>
-{% if reportable %}<a class="printbtn" style="right:170px; background:#c0392b; text-decoration:none;" href="/certin/{{ incident.key }}">CERT-In draft →</a>{% endif %}
+{% if reportable %}<a class="printbtn" style="right:170px; background:#c0392b; text-decoration:none;" href="/clock#{{ incident.id }}">Reporting deadlines →</a>{% endif %}
 <div class="sheet">
   <div class="top">
     <div class="brand"><span class="eye"></span> <div>Triagle <br><small>triage, decided</small></div></div>
     <div class="meta">
-      SECURITY INCIDENT REPORT<br>
+      SECURITY INCIDENT REPORT · {{ incident.id }}<br>
       Prepared for: {{ client_name }}<br>
       {{ now }}
     </div>
@@ -127,7 +127,7 @@
     </div>
     {% endif %}{% endfor %}
     {% if intel.actions %}
-    <div class="intel-sub" style="margin:18px 0 6px;font-family:'IBM Plex Mono';font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);">Response actions · {{ intel.actions|length }}</div>
+    <div class="intel-sub" style="margin:18px 0 6px;font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);">Response actions · {{ intel.actions|length }}</div>
     {% for a in intel.actions %}
     <div class="act">
       {% if a.status=='auto_executed' %}<span class="st auto">auto-contained</span>
@@ -145,14 +145,29 @@
     <div class="plug2">Reputation from Triagle's offline intel pack for this demo — in production, live VirusTotal / AbuseIPDB / GreyNoise / Talos lookups. Containment calls run through the Action Gateway (dry-run in demo).</div>
     {% endif %}
 
+    {% if clock %}
+    <div class="section-t">Reporting deadlines · {{ clock.sector_label }}</div>
+    <table style="width:100%; border-collapse:collapse; font-size:13.5px; margin-bottom:6px;">
+      {% for r in clock.rows %}
+      <tr style="border-bottom:1px solid var(--line);">
+        <td style="padding:8px 6px; width:26%;"><b>{{ r.name }}</b></td>
+        <td style="padding:8px 6px;">{{ r.label }} <span style="color:var(--muted);">· within {{ r.hours }} h</span></td>
+        <td style="padding:8px 6px; width:38%; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; {% if r.status == 'overdue' %}color:var(--crit);{% elif r.status == 'filed' %}color:var(--ok);{% elif r.status != 'running' %}color:var(--muted);{% endif %}">{% if r.status in ('running', 'overdue') %}due {{ r.due_at }} · {{ r.note }}{% else %}{{ r.note }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div class="src" style="margin-bottom:8px;">Clock started {{ clock.noticed_at }}, at the first alert judged an attack. <a href="/clock#{{ incident.id }}" style="color:var(--eye);text-decoration:none;">Open drafts and record filing →</a></div>
+    {% endif %}
+
     <div class="section-t">What happened — timeline</div>
     <div class="timeline">
       {% for m in members %}
       <div class="step {% if m.verdict.escalate %}crit{% endif %}">
         <span class="dot"></span>
-        <div class="time">{{ m.alert.timestamp }}</div>
+        <div class="time">{{ m.alert.timestamp|ist_short or m.alert.timestamp }}{% if m.alert.timestamp|ist_short %} IST{% endif %}</div>
         <div class="title"><a href="/alert/{{ m.alert.alert_id | urlencode }}" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--line);">{{ m.alert.title }}</a></div>
         <div class="desc">{{ m.alert.description or m.verdict.summary }}</div>
+        {% if m.alert.indicators.cmdline %}<div class="src" style="color:#33404f; word-break:break-all; margin:3px 0;">&gt; {{ m.alert.indicators.cmdline[:300] }}</div>{% endif %}
         <div class="src">source: {{ source_full(m.alert.source) }} · asset: {{ m.alert.entity }} · <a href="/alert/{{ m.alert.alert_id | urlencode }}" style="color:var(--eye);text-decoration:none;">investigate &amp; respond →</a></div>
       </div>
       {% endfor %}

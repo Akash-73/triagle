@@ -3555,7 +3555,7 @@
    "timestamp": "2026-11-22T14:10:40.000+0000",
    "rule": {
     "level": 12,
-    "description": "Local Security Authority Subsystem Service (LSASS) process was accessed by C:\\\\Users\\\\Public\\\\upd.exe, possible code injection for credential dumping",
+    "description": "Local Security Authority Subsystem Service (LSASS) process was accessed by C:\\Users\\Public\\upd.exe, possible code injection for credential dumping",
     "id": "92403",
     "firedtimes": 1,
     "mail": true,
@@ -3624,7 +3624,7 @@
    "timestamp": "2026-11-22T14:11:00.000+0000",
    "rule": {
     "level": 12,
-    "description": "Windows Defender: Antimalware platform detected Severe potentially unwanted software (C:\\\\Users\\\\Public\\\\upd.exe)",
+    "description": "Windows Defender: Antimalware platform detected Severe potentially unwanted software (C:\\Users\\Public\\upd.exe)",
     "id": "62123",
     "firedtimes": 1,
     "mail": true,

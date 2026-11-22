@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CERT-In draft — {{ d.key }}</title>
+<title>{{ reg.name }} draft — {{ d.key }}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -16,44 +16,44 @@
   .top { padding:26px 34px; border-bottom:2px solid var(--ink); display:flex; justify-content:space-between; align-items:flex-start; }
   .brand { font-weight:700; font-size:20px; display:flex; align-items:center; gap:10px; }
   .brand .eye { width:26px; height:26px; border-radius:50%; background:radial-gradient(circle at 50% 50%, var(--eye) 0 22%, #fff 23% 42%, var(--eye) 43% 50%, transparent 51%); }
-  .brand small { color:var(--muted); font-weight:400; font-size:11px; font-family:'IBM Plex Mono'; }
-  .meta { text-align:right; font-size:12px; color:var(--muted); font-family:'IBM Plex Mono'; line-height:1.7; }
+  .brand small { color:var(--muted); font-weight:400; font-size:11px; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
+  .meta { text-align:right; font-size:12px; color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; line-height:1.7; }
   .body { padding:30px 34px; }
   h1 { font-size:23px; font-weight:700; margin-bottom:6px; }
-  .verdict-line { display:inline-block; font-family:'IBM Plex Mono'; font-size:12px; font-weight:600; padding:5px 12px; border-radius:20px; margin-bottom:20px; }
+  .verdict-line { display:inline-block; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; font-weight:600; padding:5px 12px; border-radius:20px; margin-bottom:20px; }
   .verdict-line.crit { background:#fbeae8; color:var(--crit); }
   .verdict-line.ok { background:#e9f5ee; color:var(--ok); }
   .lead { font-size:15px; line-height:1.6; color:#33404f; margin-bottom:26px; }
-  .section-t { font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); font-family:'IBM Plex Mono'; margin:24px 0 12px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  .section-t { font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; margin:24px 0 12px; padding-bottom:6px; border-bottom:1px solid var(--line); }
 
   .timeline { position:relative; margin-left:8px; }
   .step { position:relative; padding:0 0 20px 26px; border-left:2px solid var(--line); }
   .step:last-child { border-left:2px solid transparent; }
   .step .dot { position:absolute; left:-7px; top:2px; width:12px; height:12px; border-radius:50%; background:var(--eye); border:2px solid #fff; box-shadow:0 0 0 1px var(--line); }
   .step.crit .dot { background:var(--crit); }
-  .step .time { font-family:'IBM Plex Mono'; font-size:11px; color:var(--muted); }
+  .step .time { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:11px; color:var(--muted); }
   .step .title { font-weight:600; font-size:14.5px; margin:2px 0; }
   .step .desc { font-size:13px; color:#4a5666; line-height:1.5; }
-  .step .src { font-family:'IBM Plex Mono'; font-size:11px; color:var(--muted); }
+  .step .src { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:11px; color:var(--muted); }
 
   .actions { background:var(--band); border-radius:10px; padding:18px 22px; }
   .actions li { font-size:14px; margin:8px 0 8px 18px; line-height:1.5; }
 
-  .footer { padding:20px 34px; border-top:1px solid var(--line); font-size:11px; color:var(--muted); font-family:'IBM Plex Mono'; line-height:1.6; }
-  .printbtn { position:fixed; top:16px; right:16px; background:var(--eye); color:#fff; border:none; border-radius:8px; padding:11px 18px; font-family:'Sora'; font-weight:600; font-size:14px; cursor:pointer; }
+  .footer { padding:20px 34px; border-top:1px solid var(--line); font-size:11px; color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; line-height:1.6; }
+  .printbtn { position:fixed; top:16px; right:16px; background:var(--eye); color:#fff; border:none; border-radius:8px; padding:11px 18px; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight:600; font-size:14px; cursor:pointer; }
   @media print { .printbtn { display:none !important; } body { background:#fff; } .sheet { border:none; margin:0; max-width:100%; } @page { margin:1.4cm; } }
 
-  .draftband { background:#fff7e6; border-bottom:1px solid #f0d9a8; color:#7a5200; padding:10px 34px; font-size:12.5px; font-family:'IBM Plex Mono'; line-height:1.5; }
+  .draftband { background:#fff7e6; border-bottom:1px solid #f0d9a8; color:#7a5200; padding:10px 34px; font-size:12.5px; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; line-height:1.5; }
   .clock { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:6px 0 22px; }
   .clock .c { background:var(--band); border-radius:10px; padding:12px 14px; }
-  .clock .c .l { font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-family:'IBM Plex Mono'; }
+  .clock .c .l { font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
   .clock .c .v { font-size:14px; font-weight:600; margin-top:4px; }
-  .clock .c.hot { background:#fbeae8; } .clock .c.hot .v { color:var(--crit); font-family:'IBM Plex Mono'; font-size:18px; }
-  .clock .c.good { background:#e9f5ee; } .clock .c.good .v { color:var(--ok); font-family:'IBM Plex Mono'; font-size:18px; }
+  .clock .c.hot { background:#fbeae8; } .clock .c.hot .v { color:var(--crit); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:18px; }
+  .clock .c.good { background:#e9f5ee; } .clock .c.good .v { color:var(--ok); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:18px; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   td, th { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { font-family:'IBM Plex Mono'; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
-  td.mono { font-family:'IBM Plex Mono'; font-size:12px; word-break:break-all; }
+  th { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
+  td.mono { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; word-break:break-all; }
   .type { margin:0 0 10px; font-size:14px; } .type b { display:block; } .type span { color:var(--muted); font-size:12.5px; }
   .todo li { font-size:13.5px; margin:6px 0 6px 18px; color:#7a5200; }
   .plain li { font-size:13.5px; margin:6px 0 6px 18px; }
@@ -67,12 +67,13 @@
   <div class="top">
     <div class="brand"><span class="eye"></span> <div>Triagle <br><small>triage, decided</small></div></div>
     <div class="meta">
-      CERT-In INCIDENT REPORT — DRAFT<br>
+      {{ reg.name }} INCIDENT REPORT — DRAFT<br>
       {{ d.client }} · ref {{ d.reference }}<br>
       drafted {{ d.generated_at }}
     </div>
   </div>
-  <div class="draftband">Draft for review. Triagle filled this from alert evidence; a person must check it, complete the marked fields and send it. Nothing has been filed. Incident-type wording follows CERT-In's Directions of 28 April 2022 — check against the current reporting form.</div>
+  <div class="draftband">Draft for review, addressed to {{ reg.long }}. Triagle filled this from alert evidence; a person must check it, complete the marked fields and send it. Nothing has been filed.<br>Basis: {{ reg.instrument }}. {{ reg.verify }}</div>
+  {% if not rows %}<div class="draftband" style="background:#fbeae8; border-color:#f0c4be; color:#8a2a1e;">{{ reg.name }} is not among the regulators for this client's sector ({{ clock.sector_label }}). The draft is shown for reference only.</div>{% endif %}
 
   {% if metrics.demo_clock %}<div class="draftband" style="background:#eef6fb; border-color:#cfe3ee; color:#0e5a70;">Demo clock is on: each client's sample alert timestamps were shifted to end five minutes ago so the reporting window can be shown running.</div>{% endif %}
   <div class="body">
@@ -81,12 +82,22 @@
 
     <div class="clock">
       <div class="c"><div class="l">Noticed (first escalated alert)</div><div class="v">{{ d.noticed_at }}</div></div>
-      <div class="c"><div class="l">{{ d.window_hours }}-hour window ends</div><div class="v">{{ d.deadline_at }}</div></div>
-      <div class="c {% if d.overdue %}hot{% else %}good{% endif %}"><div class="l">Time left to report</div><div class="v" id="left" data-deadline="{{ d.deadline_iso or '' }}">{% if d.minutes_remaining is none %}unknown{% elif d.overdue %}window passed{% else %}{{ d.minutes_remaining // 60 }}h {{ d.minutes_remaining % 60 }}m{% endif %}</div></div>
+      {% for r in rows %}
+      <div class="c"><div class="l">{{ r.hours }}-hour window ends · {{ r.label|lower }}</div><div class="v">{{ r.due_at }}</div></div>
+      <div class="c {% if r.status == 'overdue' %}hot{% else %}good{% endif %}"><div class="l">Time left · {{ r.label|lower }}</div><div class="v" {% if r.status in ('running', 'overdue') %}data-deadline="{{ r.due_iso }}"{% endif %}>{% if r.status == 'filed' %}✓ filed{% elif r.status == 'overdue' %}window passed{% elif r.status == 'running' %}{{ r.seconds_left // 3600 }}h {{ (r.seconds_left % 3600) // 60 }}m{% elif r.status == 'not_in_force' %}not binding yet{% elif r.status == 'not_triggered' %}not triggered{% else %}unknown{% endif %}</div></div>
+      {% endfor %}
       <div class="c good"><div class="l">Triagle investigation time</div><div class="v">{{ metrics.processing_ms }} ms</div></div>
     </div>
+    {% for r in rows %}{% if r.status in ('not_in_force', 'not_triggered', 'filed') %}<p class="none" style="margin:-10px 0 14px;">{{ r.label }}: {{ r.note }}</p>{% endif %}{% endfor %}
+    {% if others %}
+    <table style="margin-bottom:22px;">
+      <tr><th colspan="4">Other deadlines on this incident · {{ clock.sector_label }}</th></tr>
+      {% for o in others %}<tr><td style="width:24%"><b>{{ o.name }}</b></td><td>{{ o.label }}</td><td>{% if o.status in ('running', 'overdue') %}due {{ o.due_at }}{% else %}{{ o.note }}{% endif %}</td><td style="width:16%"><a href="/notice/{{ incident.id }}/{{ o.regulator }}" style="color:var(--eye); text-decoration:none;">open draft →</a></td></tr>{% endfor %}
+    </table>
+    {% endif %}
 
     <div class="section-t">1 · Type of incident</div>
+    {% if reg.key != 'certin' %}<p class="none" style="margin-bottom:10px;">Classified with CERT-In's incident types as a common vocabulary. Map it to {{ reg.name }}'s own categories on its form.</p>{% endif %}
     {% for t in d.incident_types %}
     <p class="type"><b>☑ {{ t.type }}</b><span>based on: {{ t.basis | join('; ') }}</span></p>
     {% else %}<p class="none">No incident type could be assigned from the evidence. Select one manually.</p>{% endfor %}
@@ -145,9 +156,9 @@
 </div>
 <script>
 (function(){
-  var el=document.getElementById('left'); var iso=el && el.dataset.deadline; if(!iso) return;
-  function tick(){ var ms=new Date(iso)-new Date(); if(ms<=0){ el.textContent='window passed'; return; }
-    var s=Math.floor(ms/1000); el.textContent=Math.floor(s/3600)+'h '+String(Math.floor(s%3600/60)).padStart(2,'0')+'m '+String(s%60).padStart(2,'0')+'s'; }
+  function tick(){ document.querySelectorAll('[data-deadline]').forEach(function(el){
+    var ms=new Date(el.dataset.deadline)-new Date(); if(ms<=0){ el.textContent='window passed'; el.parentNode.className='c hot'; return; }
+    var s=Math.floor(ms/1000); el.textContent=Math.floor(s/3600)+'h '+String(Math.floor(s%3600/60)).padStart(2,'0')+'m '+String(s%60).padStart(2,'0')+'s'; }); }
   tick(); setInterval(tick,1000);
 })();
 </script>

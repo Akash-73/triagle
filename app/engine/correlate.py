@@ -16,10 +16,15 @@ Two limits keep an incident meaning something on a live stream:
   - Two alerts are linked only if they are within the correlation window of
     each other (TRIAGLE_CORRELATION_HOURS, 24 by default). An incident can run
     longer than the window as long as each step follows the last within it.
+  - Sharing an account or an address links any two escalated alerts. Sharing
+    only a host links them when both are notable in their own right. A package
+    install on a server is not part of the brute-force attempt against it just
+    because both happened on that server.
 """
 import hashlib
 from collections import defaultdict, Counter
 
+from app.engine import signals
 from app.engine.relate import GENERIC_ENTITIES, parse_ts, window_hours
 
 __all__ = ["correlate", "GENERIC_ENTITIES"]
@@ -60,10 +65,20 @@ def correlate(alerts, verdicts=None, hours=None):
             i = parent[i]
         return i
 
-    last_seen = {}                       # (client, entity) -> index of the latest member
+    selective = verdicts is not None
+    notable = [signals.is_notable(a) if selective else True for a in members]
+
+    def strong(a):
+        return {str(v) for v in (a.user, a.src_ip, getattr(a, "dst_ip", None))
+                if v and str(v).strip().lower() not in GENERIC_ENTITIES}
+
+    last_seen = {}                       # (client, entity) -> index of the latest member that may link on it
     for i in order:
         a = members[i]
+        by_account_or_address = strong(a)
         for e in _entities(a):
+            if not notable[i] and e not in by_account_or_address:
+                continue                 # only the host in common, and nothing notable about this alert
             k = (a.client, e.lower())
             j = last_seen.get(k)
             if j is not None:

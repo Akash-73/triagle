@@ -37,15 +37,15 @@
     background: radial-gradient(circle at 50% 50%, var(--eye) 0 22%, #0a0e14 23% 42%, var(--eye) 43% 50%, transparent 51%);
     box-shadow: 0 0 16px rgba(56,189,248,0.5);
   }
-  .brand small { color: var(--muted); font-weight: 400; font-size: 12px; font-family: 'IBM Plex Mono'; margin-left: 4px; }
-  .tag { font-family: 'IBM Plex Mono'; font-size: 12px; color: var(--muted); }
+  .brand small { color: var(--muted); font-weight: 400; font-size: 12px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; margin-left: 4px; }
+  .tag { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); }
 
   main { padding: 28px; max-width: 1180px; margin: 0 auto; }
 
   /* metric strip */
   .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
   .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
-  .metric .n { font-size: 28px; font-weight: 700; font-family: 'IBM Plex Mono'; }
+  .metric .n { font-size: 28px; font-weight: 700; font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
   .metric .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
   .metric.hero-metric { background: linear-gradient(135deg, rgba(56,189,248,0.14), var(--panel)); border-color: rgba(56,189,248,0.3); }
   .metric.hero-metric .n { color: var(--eye); }
@@ -61,15 +61,15 @@
   .intro b { color: var(--eye); }
   .intro .dot { font-size:12px; } .intro .rk { color: var(--escalate); } .intro .gk { color: var(--muted); }
 
-  .section-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 26px 0 12px; font-family: 'IBM Plex Mono'; }
+  .section-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 26px 0 12px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
 
   /* incident cards */
   .incidents { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 8px; }
   .incident { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 10px; padding: 14px 16px; }
   .incident.elevated { border-left-color: var(--escalate); }
   .incident .h { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; margin-bottom: 4px; }
-  .incident .badge { font-family: 'IBM Plex Mono'; font-size: 10px; padding: 2px 7px; border-radius: 20px; background: rgba(255,93,93,0.15); color: var(--escalate); }
-  .incident .meta { font-size: 12.5px; color: var(--muted); font-family: 'IBM Plex Mono'; }
+  .incident .badge { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 10px; padding: 2px 7px; border-radius: 20px; background: rgba(255,93,93,0.15); color: var(--escalate); }
+  .incident .meta { font-size: 12.5px; color: var(--muted); font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
 
   /* the queue */
   .queue { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
@@ -80,7 +80,7 @@
   .qrow.esc { background: rgba(255,93,93,0.045); }
   .qrow.esc:hover { background: rgba(255,93,93,0.09); }
 
-  .disp { font-family: 'IBM Plex Mono'; font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 6px; text-align: center; white-space: nowrap; }
+  .disp { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 6px; text-align: center; white-space: nowrap; }
   .disp.true_positive { background: rgba(255,122,69,0.15); color: var(--tp); }
   .disp.suspicious { background: rgba(255,180,67,0.15); color: var(--suspicious); }
   .disp.benign { background: rgba(70,214,138,0.13); color: var(--benign); }
@@ -89,75 +89,121 @@
   .qmain .title { font-weight: 600; font-size: 14.5px; }
   .qmain .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
   .qmain .sub .client { color: var(--eye); }
-  .qmain .src { font-family: 'IBM Plex Mono'; font-size: 11px; color: var(--muted); }
+  .qmain .src { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); }
 
   .conf { text-align: center; }
   .conf .bar { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 5px; }
   .conf .bar span { display: block; height: 100%; background: var(--eye); }
-  .conf .v { font-family: 'IBM Plex Mono'; font-size: 13px; font-weight: 600; }
+  .conf .v { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 13px; font-weight: 600; }
 
   .action { text-align: right; }
-  .pill-esc { font-family: 'IBM Plex Mono'; font-size: 11px; font-weight: 600; color: var(--escalate); }
-  .pill-closed { font-family: 'IBM Plex Mono'; font-size: 11px; color: var(--muted); }
+  .pill-esc { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; color: var(--escalate); }
+  .pill-closed { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); }
 
-  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 30px; font-family: 'IBM Plex Mono'; }
+  .qmain .when { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); }
+  .more { display:block; text-align:center; padding:14px; color:var(--eye); text-decoration:none; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12.5px; background:var(--panel); }
+  .more:hover { background: var(--panel-2); }
+
+  /* source strip */
+  .sources { display:flex; align-items:center; gap:8px 18px; flex-wrap:wrap; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:var(--muted);
+             margin-bottom:16px; padding:10px 14px; background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .sources .lead { color: var(--eye); }
+  .sources .s { color: var(--text); white-space: nowrap; }
+  .sources .s .n { color: var(--muted); }
+  .sources .live { color: var(--benign); }
+  .sources .live::before { content:"●"; margin-right:5px; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+
+  .breakdown { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:var(--muted); margin: 0 0 14px 2px; }
+  .breakdown b { color: var(--text); font-weight: 500; }
+
+  /* reporting deadline on an incident card */
+  .due { margin-top:10px; padding:8px 10px; border-radius:8px; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.22);
+         font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:var(--text); display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
+  .due .t { font-weight:600; font-size:14px; color:var(--eye); white-space:nowrap; }
+  .due.soon { background:rgba(255,180,67,0.10); border-color:rgba(255,180,67,0.35); } .due.soon .t { color:var(--suspicious); }
+  .due.late { background:rgba(255,93,93,0.10); border-color:rgba(255,93,93,0.4); } .due.late .t { color:var(--escalate); }
+  .due.done { background:rgba(70,214,138,0.08); border-color:rgba(70,214,138,0.3); } .due.done .t { color:var(--benign); }
+  .due small { color: var(--muted); }
+  .metric.warn .n { color: var(--suspicious); }
+
+  #fresh { display:none; position:fixed; left:50%; transform:translateX(-50%); top:14px; z-index:9; background:var(--eye); color:#04121c;
+           border:none; border-radius:20px; padding:9px 18px; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight:700; font-size:13px; cursor:pointer;
+           box-shadow:0 6px 24px rgba(0,0,0,.45); }
+
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 30px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
   @media (max-width: 720px) { .qrow { grid-template-columns: 90px 1fr; } .conf, .action { display: none; } }
 </style>
-{% if demo_mode %}<meta http-equiv="refresh" content="6">{% endif %}
 </head>
 <body>
 <header>
   <div class="brand"><span class="eye"></span> Triagle <small>triage, decided</small></div>
-  <div class="tag">{% if user.role == 'analyst' %}<a href="/audit" style="color:var(--eye); text-decoration:none; margin-right:16px;">Audit log →</a>{% endif %}<a href="/benchmark" style="color:var(--eye); text-decoration:none; margin-right:16px;">Benchmark →</a><a href="/tuning" style="color:var(--eye); text-decoration:none; margin-right:16px;">Detection Tuning →</a>MSP triage console · {{ now }}
+  <div class="tag">{% if user.role == 'analyst' %}<a href="/audit" style="color:var(--eye); text-decoration:none; margin-right:16px;">Audit log →</a>{% endif %}<a href="/clock" style="color:var(--eye); text-decoration:none; margin-right:16px;">Regulatory clock →</a><a href="/benchmark" style="color:var(--eye); text-decoration:none; margin-right:16px;">Benchmark →</a><a href="/tuning" style="color:var(--eye); text-decoration:none; margin-right:16px;">Detection Tuning →</a>{{ now }}
     {% if auth_on %}<form method="post" action="/logout" style="display:inline; margin-left:16px;"><input type="hidden" name="csrf" value="{{ csrf }}"><span style="color:var(--text);">{{ user.name }}</span> <span style="opacity:.7">({{ user.role }})</span> <button type="submit" style="background:none; border:1px solid var(--line); color:var(--muted); border-radius:6px; padding:3px 9px; margin-left:6px; cursor:pointer; font-family:inherit; font-size:12px;">Sign out</button></form>{% else %}<span style="color:var(--escalate); margin-left:16px;">sign-in is OFF</span>{% endif %}</div>
 </header>
 
 <main>
-  <div class="intro">Triagle is an <b>AI security analyst</b>. It watches the alerts from your security tools, investigates every one, and flags the real attacks — so a human only sees what matters. <span class="dot rk">●</span> red = needs attention &nbsp; <span class="dot gk">●</span> grey = cleared noise.</div>
-  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-family:'IBM Plex Mono';font-size:12px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;">
-    <span style="color:var(--eye);">⇅ Log sources</span>
-    <span>Alerts arrive live by webhook from your SIEM / EDR → <span style="color:var(--text);">POST /ingest</span>. Connectors normalize each vendor's native format into one alert.</span>
-    <span style="margin-left:auto;color:var(--text);">CrowdStrike EDR · Fortinet Firewall · Microsoft Entra ID</span>
+  <button id="fresh" onclick="location.reload()">New alerts arrived — refresh</button>
+  <div class="intro">Triagle is an <b>AI SOC analyst for regulated companies</b>. It triages every alert from your security tools, never closes a real attack, and keeps you inside the regulator's reporting clock. <span class="dot rk">●</span> red = needs you &nbsp; <span class="dot gk">●</span> grey = closed with a reason.</div>
+  <div class="sources">
+    <span class="lead">⇅ Log sources</span>
+    {% for s in sources %}
+    <span class="s">{{ source_name(s.source) }} <span class="n">· {{ s.count }}</span>{% if s.live %} <span class="live">live{% if s.last %}, last alert {{ s.last }}{% endif %}</span>{% endif %}</span>
+    {% else %}<span>No alerts yet. Point your SIEM at <span style="color:var(--text);">POST /ingest</span>.</span>{% endfor %}
+    <span style="margin-left:auto;">alerts arrive by webhook → <span style="color:var(--text);">POST /ingest</span></span>
   </div>
   {% if demo_mode and user.role == 'analyst' %}
   <div style="display:flex; align-items:center; gap:14px; background:linear-gradient(90deg, rgba(255,93,93,0.10), transparent); border:1px solid rgba(255,93,93,0.3); border-radius:12px; padding:12px 18px; margin-bottom:18px;">
-    <span style="font-family:'IBM Plex Mono'; font-size:12px; color:var(--escalate); text-transform:uppercase; letter-spacing:.08em;">● Live demo</span>
+    <span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:var(--escalate); text-transform:uppercase; letter-spacing:.08em;">● Live demo</span>
     <form method="post" action="/demo/fire" style="margin:0;">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <button type="submit" style="background:var(--escalate); color:#1a0606; border:none; border-radius:8px; padding:9px 18px; font-weight:700; cursor:pointer; font-family:'Sora'; font-size:13px;">⚡ Fire live attack</button>
+      <button type="submit" style="background:var(--escalate); color:#1a0606; border:none; border-radius:8px; padding:9px 18px; font-weight:700; cursor:pointer; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:13px;">⚡ Fire live attack</button>
     </form>
     <form method="post" action="/demo/reset" style="margin:0;">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <button type="submit" style="background:none; color:var(--muted); border:1px solid var(--line); border-radius:8px; padding:9px 14px; cursor:pointer; font-family:'Sora'; font-size:13px;">Reset queue</button>
+      <button type="submit" style="background:none; color:var(--muted); border:1px solid var(--line); border-radius:8px; padding:9px 14px; cursor:pointer; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:13px;">Reset queue</button>
     </form>
     {% if metrics.live_alerts %}<span style="color:var(--muted); font-size:12.5px;">{{ metrics.live_alerts }} live alert(s) ingested this session</span>{% endif %}
-    <span style="margin-left:auto; color:var(--muted); font-size:11.5px; font-family:'IBM Plex Mono';">auto-refreshing</span>
+    <span style="margin-left:auto; color:var(--muted); font-size:11.5px; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;">updates as alerts arrive</span>
   </div>
   {% endif %}
   <div class="metrics">
-    <div class="metric hero-metric"><div class="n">{{ metrics.noise_reduced_pct }}%</div><div class="l">Noise auto-cleared</div></div>
+    <div class="metric hero-metric"><div class="n">{{ metrics.closed_pct_all }}%</div><div class="l">Closed with a reason</div></div>
     <div class="metric danger"><div class="n">{{ metrics.escalated }}</div><div class="l">Escalated to you</div></div>
-    <div class="metric"><div class="n">{{ metrics.total }}</div><div class="l">Alerts ingested</div></div>
-    <div class="metric"><div class="n">{{ metrics.elevated_incidents }}</div><div class="l">Multi-tool incidents</div></div>
+    <div class="metric"><div class="n">{{ metrics.received }}</div><div class="l">Alerts received</div></div>
+    <div class="metric {% if overdue_deadlines %}danger{% elif open_deadlines %}warn{% endif %}"><div class="n">{{ open_deadlines }}</div><div class="l">Reporting deadlines running{% if overdue_deadlines %} · {{ overdue_deadlines }} overdue{% endif %}</div></div>
     <div class="metric"><div class="n">{{ metrics.staged_actions }}</div><div class="l">Actions staged</div></div>
     <div class="metric"><div class="n">{{ metrics.flagged_rules }}</div><div class="l">Rules to tune</div></div>
     <div class="metric"><div class="n">{{ metrics.processing_ms }}<span style="font-size:14px"> ms</span></div><div class="l">To investigate all · {{ metrics.backend }}</div></div>
   </div>
+  {% if breakdown %}<div class="breakdown">Closed: {% for b in breakdown %}<b>{{ b.n }}</b> {{ b.what }}{% if not loop.last %} · {% endif %}{% endfor %}{% if metrics.rolled_off %} &nbsp;(<b>{{ metrics.rolled_off }}</b> older alerts counted, no longer listed){% endif %}</div>{% endif %}
 
   <div class="banner">
-    🛡 <span><b>Conservative closure is on.</b> Triagle never auto-closes an alert carrying ransomware, credential-theft, or lateral-movement signals — those always reach a human, even at high confidence. {{ metrics.auto_closed }} genuinely benign alerts were cleared with evidence; {{ metrics.escalated }} were escalated rather than guessed.</span>
+    🛡 <span><b>Conservative closure is on.</b> Triagle never auto-closes an alert carrying ransomware, credential-theft, or lateral-movement signals — those always reach a human, even at high confidence. {{ metrics.closed_all }} alerts were closed, each with a closure code and a reason; {{ metrics.escalated }} were escalated rather than guessed.</span>
   </div>
 
   {% if incidents %}
-  <div class="section-label">Correlated incidents — related alerts grouped</div>
+  <div class="section-label">Incidents — related alerts grouped into one case · {{ incidents|length }}</div>
   <div class="incidents">
     {% for inc in incidents %}
     <div class="incident {% if inc.elevated %}elevated{% endif %}">
       <div class="h">{{ inc.key }} {% if inc.elevated %}<span class="badge">MULTI-TOOL</span>{% endif %}</div>
       <div class="meta">{{ inc.client }} · {{ inc.size }} alerts · {{ source_list(inc.sources) }}</div>
-      <div class="meta" style="margin-top:8px;">
-        <a href="/report/{{ inc.key }}" style="color:var(--eye); text-decoration:none;">Client report →</a>
-        {% if inc.reportable %}<a href="/certin/{{ inc.key }}" style="color:var(--escalate); text-decoration:none; margin-left:14px;">CERT-In draft →</a>{% endif %}
+      {% if inc.clock %}{% set n = inc.clock.next %}
+        {% if n %}
+        <div class="due {% if n.status == 'overdue' %}late{% elif n.seconds_left < 3600 %}soon{% endif %}">
+          <span>{{ n.name }} · {{ n.label|lower }}{% if inc.clock.open > 1 %} <small>+{{ inc.clock.open - 1 }} more</small>{% endif %}</span>
+          <span class="t" data-due="{{ n.due_iso }}">{{ n.note }}</span>
+        </div>
+        {% elif inc.clock.filed %}
+        <div class="due done"><span>Regulatory reports</span><span class="t">✓ {{ inc.clock.filed }} marked filed</span></div>
+        {% endif %}
+      {% elif inc.probing %}
+        <div class="due" style="background:none; border-color:var(--line);"><span><small>Probing from outside, no sign it worked. No report due.</small></span></div>
+      {% endif %}
+      <div class="meta" style="margin-top:10px;">
+        <a href="/report/{{ inc.id }}" style="color:var(--eye); text-decoration:none;">Incident report →</a>
+        {% if inc.reportable %}<a href="/clock#{{ inc.id }}" style="color:var(--escalate); text-decoration:none; margin-left:14px;">Reporting deadlines →</a>{% endif %}
       </div>
     </div>
     {% endfor %}
@@ -171,7 +217,7 @@
       <div><span class="disp {{ r.verdict.disposition }}">{{ verdict_label(r.verdict.disposition) }}</span></div>
       <div class="qmain">
         <div class="title">{{ r.alert.title }}</div>
-        <div class="sub"><span class="client">{{ r.alert.client }}</span> · {{ r.alert.entity }} · <span class="src">{{ source_full(r.alert.source) }}</span></div>
+        <div class="sub"><span class="client">{{ r.alert.client }}</span> · {{ r.alert.entity }} · <span class="src">{{ source_full(r.alert.source) }}</span>{% if r.alert.timestamp|ist_short %} · <span class="when">{{ r.alert.timestamp|ist_short }}</span>{% endif %}</div>
       </div>
       <div class="conf">
         <div class="v">{{ r.verdict.confidence }}%</div>
@@ -182,9 +228,28 @@
       </div>
     </a>
     {% endfor %}
+    {% if closed_hidden %}<a class="more" href="/?closed=all">Showing the latest {{ closed_total - closed_hidden }} of {{ closed_total }} closed alerts — show all</a>{% endif %}
   </div>
 </main>
 
-<footer>Triagle · AI SOC analyst · conservative-closure triage for MSPs</footer>
+<footer>Triagle · AI SOC analyst for regulated companies · triage, decided</footer>
+<script>
+(function(){
+  // live countdowns
+  function fmt(ms){ var s=Math.floor(Math.abs(ms)/1000), h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60;
+    var t=(h? h+'h ':'')+String(m).padStart(2,'0')+'m '+String(x).padStart(2,'0')+'s'; return ms<0 ? 'overdue '+t : t+' left'; }
+  function tick(){ document.querySelectorAll('[data-due]').forEach(function(el){
+    var iso=el.getAttribute('data-due'); if(!iso) return; el.textContent=fmt(new Date(iso)-new Date()); }); }
+  tick(); setInterval(tick,1000);
+  // refresh when the queue changes; do not yank the page from under someone reading it
+  var rev={{ rev }};
+  setInterval(function(){
+    fetch('/api/state',{credentials:'same-origin'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
+      if(!j || j.rev===rev) return;
+      if(window.scrollY<240) location.reload(); else document.getElementById('fresh').style.display='block';
+    }).catch(function(){});
+  }, 4000);
+})();
+</script>
 </body>
 </html>

@@ -43,6 +43,10 @@ class InvestigationContext:
         self.related()
         return self._index.hours
 
+    def strong_count(self):
+        self.related()
+        return self._index.strong_count(self.focus_alert)
+
     def record(self, tool, args, result):
         self.steps.append({"tool": tool, "args": args, "result_summary": result.get("summary", "")})
         self.evidence.append(result)
@@ -87,6 +91,7 @@ def tool_related_alerts(ctx, args):
         "summary": summary,
         "data": related,
         "notable_count": len(notable),
+        "strong_count": ctx.strong_count(),     # of those, sharing an account or address
         "routine_count": routine,
     }
 

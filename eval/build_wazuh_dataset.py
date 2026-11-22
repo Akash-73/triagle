@@ -357,10 +357,10 @@ def build():
     proc("92026", D + "14:10:00Z", REG, "reg.exe save hklm\\sam C:\\Users\\Public\\s.hiv", CMD, True, "cred-theft", "holdout")
     sysmon("92403", D + "14:10:40Z", 8, {"sourceImage": "C:\\Users\\Public\\upd.exe",
                                          "targetImage": "C:\\Windows\\System32\\lsass.exe"},
-           True, "cred-theft", "holdout", src="C:\\\\Users\\\\Public\\\\upd.exe")
+           True, "cred-theft", "holdout", src="C:\\Users\\Public\\upd.exe")
     win("62123", D + "14:11:00Z", "Microsoft-Windows-Windows Defender/Operational", "Microsoft-Windows-Windows Defender", 1116,
         {"threatName": "HackTool:Win32/Mimikatz!dha", "severityName": "Severe", "processName": "C:\\Users\\Public\\upd.exe",
-         "path": "file:_C:\\Users\\Public\\upd.exe"}, True, "cred-theft", "holdout", sev="Severe", proc="C:\\\\Users\\\\Public\\\\upd.exe")
+         "path": "file:_C:\\Users\\Public\\upd.exe"}, True, "cred-theft", "holdout", sev="Severe", proc="C:\\Users\\Public\\upd.exe")
     proc("92052", D + "14:12:00Z", CMD, "cmd.exe /c vssadmin delete shadows /all /quiet", "C:\\Users\\Public\\upd.exe",
          True, "cred-theft", "holdout", why="Wazuh rates this level 4; the command deletes shadow copies")
     win("60117", D + "14:13:00Z", "Security", "Microsoft-Windows-Eventlog", 1102,

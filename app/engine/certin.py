@@ -85,11 +85,44 @@ def classify(members):
     return out
 
 
+PROBING = "Targeted scanning / probing of critical networks / systems"
+
+
+def _attack_members(members):
+    return [m for m in members if m["verdict"].get("escalate")
+            and m["verdict"].get("disposition") in ("true_positive", "suspicious")]
+
+
+def probing_only(members):
+    """True when everything Triagle judged an attack here is an attempt from
+    outside (a scan, a spray, a brute force) with no sign that it worked."""
+    attack = _attack_members(members)
+    if not attack or any(m["verdict"].get("disposition") == "true_positive" for m in attack):
+        return False
+    types = classify(attack)
+    return bool(types) and all(t["type"] == PROBING for t in types)
+
+
 def is_reportable_candidate(members):
-    """An incident gets a draft when a human has something real to decide:
-    at least one alert in it was escalated as true positive or suspicious."""
-    return any(m["verdict"].get("escalate") and m["verdict"].get("disposition") in ("true_positive", "suspicious")
-               for m in members)
+    """An incident gets a draft and a clock when a human has something real
+    to decide: an alert in it was escalated as true positive or suspicious,
+    and it is more than probing from outside that shows no sign of success.
+    The internet knocks on every server all day; nobody reports each knock."""
+    return bool(_attack_members(members)) and not probing_only(members)
+
+
+def when_noticed(members):
+    """When the organisation noticed the incident. Triagle's evidence is the
+    first alert it judged an attack on that alert's own evidence. An earlier
+    alert that only looks suspicious because of what came later did not start
+    the clock: nobody knew then."""
+    attack = _attack_members(members)
+    own = [m for m in attack if m["verdict"].get("basis") != "correlation"]
+    for pool in (own, attack, [m for m in members if m["verdict"].get("escalate")]):
+        times = [t for t in (_parse(m["alert"].get("timestamp")) for m in pool) if t]
+        if times:
+            return min(times)
+    return None
 
 
 def build_draft(incident, members, actions_by_alert, threat_intel=None, now=None, noticed_at=None):
@@ -99,8 +132,8 @@ def build_draft(incident, members, actions_by_alert, threat_intel=None, now=None
     escalated = [m for m in members if m["verdict"].get("escalate")]
 
     # The clock runs from when the organisation noticed the incident. Triagle's
-    # best evidence for that is the first escalated alert; a person can correct it.
-    first = min((t for t in (_parse(m["alert"].get("timestamp")) for m in escalated) if t), default=None)
+    # best evidence for that is the first alert it judged an attack; a person can correct it.
+    first = when_noticed(members)
     occurred = min((t for t in (_parse(m["alert"].get("timestamp")) for m in members) if t), default=None)
     noticed = noticed_at or first
     deadline = noticed + timedelta(hours=REPORTING_WINDOW_HOURS) if noticed else None

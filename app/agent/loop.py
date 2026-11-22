@@ -161,11 +161,17 @@ def _rule_determine(ctx):
                 "Check whether any connection from this source succeeded.",
             ]),
             used_ai=False,
+            basis="signal" if hard else "intel",
         )
 
     # Related activity can raise an alert that already has some weight of its
     # own. It cannot turn a routine logon into an escalation: on a real host
-    # there are always other alerts nearby.
+    # there are always other alerts nearby. And an alert that is not notable
+    # in itself (a package install, a port opening) is only raised by alerts
+    # that share its account or address, not by whatever else happened on the
+    # same machine that day.
+    if not signals.is_notable(alert):
+        related_count = int(related.get("strong_count", related_count))
     if related_count >= 2 and signals.has_own_weight(alert):
         return Verdict(
             alert_id=alert["alert_id"], disposition="suspicious", closure_code=None,
@@ -175,6 +181,7 @@ def _rule_determine(ctx):
                       f"insufficient to auto-close but enough to warrant escalation.",
             recommended_actions=["Review the correlated timeline for attack progression."],
             used_ai=False,
+            basis="correlation",
         )
 
     # nothing corroborating; fall back to the base engine's conservative call

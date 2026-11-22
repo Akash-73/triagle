@@ -24,7 +24,7 @@ from fastapi.templating import Jinja2Templates
 from app.orchestrator import process_batch
 from app.connectors.sources import normalize
 from app.engine.response import execute_action
-from app.engine import certin
+from app.engine import certin, regclock
 from app.agent import backend
 from app import auth, audit
 from app.engine import sources_meta, worknotes, reputation
@@ -41,6 +41,43 @@ templates.env.globals.update(
     source_list=sources_meta.source_list,
     verdict_label=sources_meta.verdict_label,
 )
+
+_IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+
+def _ist_short(ts):
+    """2026-11-22T14:01:12Z -> '22 Nov, 19:31' (IST). Empty if unreadable."""
+    try:
+        dt = datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(_IST).strftime("%d %b, %H:%M")
+
+
+def _ago(iso, now=None):
+    try:
+        then = datetime.datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return ""
+    secs = int(((now or datetime.datetime.now(datetime.timezone.utc)) - then).total_seconds())
+    if secs < 90:
+        return f"{max(secs, 0)} s ago"
+    if secs < 5400:
+        return f"{secs // 60} min ago"
+    if secs < 172800:
+        return f"{secs // 3600} h ago"
+    return f"{secs // 86400} d ago"
+
+
+templates.env.filters["ist_short"] = _ist_short
+
+CLOSURE_WORDS = {
+    "BENIGN_EXPECTED": "routine activity", "BENIGN_KNOWN_TOOL": "known admin tools",
+    "POSTURE_FINDING": "posture findings", "OPERATIONAL_EVENT": "health events",
+    "BENIGN_DUPLICATE": "duplicates", "FP_TUNING": "false positives",
+}
 
 
 # ---- sign-in ---------------------------------------------------------------
@@ -216,6 +253,9 @@ def _ensure_state():
     _CACHE["rolled"] = {"total": 0, "closed": 0, "escalated": 0, "codes": {}}
     _CACHE["feeds"] = {}
     _CACHE["rev"] = 0
+    _CACHE["tenants"] = regclock.load_tenants()      # client -> sector, from config
+    _CACHE["sector_overrides"] = {}                  # client -> sector, set by an analyst
+    _CACHE["filings"] = []                           # regulatory reports a person marked as sent
     _CACHE.pop("result", None)
 
 
@@ -468,21 +508,79 @@ def _find_incident(result, ref):
     return None
 
 
+def _sector(client):
+    return regclock.sector_of(client, _CACHE.get("tenants"), _CACHE.get("sector_overrides"))
+
+
+def _clock(result, incident, members=None):
+    """The reporting deadlines for one incident, or None if nothing in it is
+    something a person may have to report."""
+    members = members if members is not None else _incident_members(result, incident)
+    if not certin.is_reportable_candidate(members):
+        return None
+    return regclock.clocks_for(incident, members, _sector(incident.get("client")),
+                               filings=_CACHE.get("filings"))
+
+
+CLOSED_SHOWN = 40      # closed alerts listed on the console before "show all"
+_SEV_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+
+def _source_strip(result):
+    """One entry per source tool in the queue: how many alerts, and for a
+    live feed when the last one arrived."""
+    counts = {}
+    for a in result["alerts"]:
+        counts[a["source"]] = counts.get(a["source"], 0) + 1
+    live = {}
+    for f in _CACHE.get("feeds", {}).values():
+        cur = live.setdefault(f["source"], {"count": 0, "last": ""})
+        cur["count"] += f["count"]
+        cur["last"] = max(cur["last"], f.get("last", ""))
+    out = []
+    for src, n in sorted(counts.items(), key=lambda kv: (kv[0] not in live, -kv[1])):
+        out.append({"source": src, "count": n, "live": src in live,
+                    "received": live.get(src, {}).get("count", 0),
+                    "last": _ago(live[src]["last"]) if src in live else ""})
+    return out
+
+
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, user=Depends(require_user)):
+def dashboard(request: Request, closed: str = "", user=Depends(require_user)):
     result = _load_result()
-    # build a combined alert+verdict view, escalated first
-    rows = []
+    escalated, done = [], []
     for a in result["alerts"]:
         v = result["verdicts"].get(a["alert_id"], {})
-        rows.append({"alert": a, "verdict": v})
-    rows.sort(key=lambda r: (not r["verdict"].get("escalate"),
-                             {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(r["verdict"].get("severity"), 9)))
+        (escalated if v.get("escalate") else done).append({"alert": a, "verdict": v})
+    # escalated: most severe first, newest first inside a severity. closed: newest first.
+    escalated.sort(key=lambda r: r["alert"].get("timestamp") or "", reverse=True)
+    escalated.sort(key=lambda r: _SEV_ORDER.get(r["verdict"].get("severity"), 9))
+    done.sort(key=lambda r: r["alert"].get("timestamp") or "", reverse=True)
+    shown = done if closed == "all" else done[:CLOSED_SHOWN]
+
+    open_deadlines = overdue = 0
     for inc in result["incidents"]:
-        inc["reportable"] = certin.is_reportable_candidate(_incident_members(result, inc))
+        members = _incident_members(result, inc)
+        inc["clock"] = _clock(result, inc, members)
+        inc["reportable"] = inc["clock"] is not None
+        inc["probing"] = certin.probing_only(members)
+        if inc["clock"]:
+            open_deadlines += inc["clock"]["open"]
+            overdue += inc["clock"]["overdue"]
+    incidents = sorted(result["incidents"], key=lambda i: (
+        0 if i["clock"] and i["clock"]["next"] else 1,
+        i["clock"]["next"]["seconds_left"] if i["clock"] and i["clock"]["next"] else 0,
+        not i["elevated"], -i["size"]))
+
+    m = result["metrics"]
+    breakdown = [{"n": n, "what": CLOSURE_WORDS.get(code, code.lower().replace("_", " "))}
+                 for code, n in sorted(m.get("closed_by_code", {}).items(), key=lambda kv: -kv[1])]
     return templates.TemplateResponse(request, "dashboard.html", _ctx(
-        request, user, rows=rows, metrics=result["metrics"], incidents=result["incidents"],
-        now=datetime.datetime.now().strftime("%d %b %Y, %H:%M")))
+        request, user, rows=escalated + shown, metrics=m, incidents=incidents,
+        closed_total=len(done), closed_hidden=len(done) - len(shown), breakdown=breakdown,
+        sources=_source_strip(result), open_deadlines=open_deadlines, overdue_deadlines=overdue,
+        rev=_CACHE.get("rev", 0),
+        now=datetime.datetime.now(_IST).strftime("%d %b %Y, %H:%M IST")))
 
 
 @app.get("/alert/{alert_id}", response_class=HTMLResponse)
@@ -647,6 +745,7 @@ def incident_report(request: Request, entity: str, user=Depends(require_user)):
         "client_name": client_name,
         "any_escalated": any_escalated,
         "reportable": certin.is_reportable_candidate(members),
+        "clock": _clock(result, incident, members),
         "work_notes": notes_text,
         "work_notes_by_gemini": notes_by_gemini,
         "work_notes_provider": notes_provider,
@@ -655,23 +754,155 @@ def incident_report(request: Request, entity: str, user=Depends(require_user)):
     })
 
 
-@app.get("/certin/{entity}", response_class=HTMLResponse)
-def certin_draft(request: Request, entity: str, user=Depends(require_user)):
-    """Draft CERT-In incident report for an incident, with the 6-hour clock.
+def _notice(request, entity, reg_key):
+    """Draft incident report for one regulator, with that regulator's clock.
     A draft for a person to check and send; nothing is filed from here."""
     from app.orchestrator import _load_env
+    reg = regclock.regulator(reg_key)
+    if not reg:
+        raise HTTPException(status_code=404, detail="No such regulator.")
     result = _load_result()
     incident = _find_incident(result, entity)
     if not incident:
         raise HTTPException(status_code=404, detail=f"No incident found for {entity}")
     members = _incident_members(result, incident)
-    if not certin.is_reportable_candidate(members):
+    clock = _clock(result, incident, members)
+    if clock is None:
         raise HTTPException(status_code=404, detail="Nothing in this incident was escalated; no report draft.")
     draft = certin.build_draft(incident, members, result.get("actions", {}),
                                threat_intel=_load_env().get("threat_intel"))
+    mine = [r for r in clock["rows"] if r["regulator"] == reg_key]
+    others = [r for r in clock["rows"] if r["regulator"] != reg_key]
     return templates.TemplateResponse(request, "certin.html", {
-        "d": draft, "metrics": result["metrics"],
+        "d": draft, "metrics": result["metrics"], "reg": dict(reg, key=reg_key),
+        "rows": mine, "others": others, "clock": clock, "incident": incident,
     })
+
+
+@app.get("/certin/{entity}", response_class=HTMLResponse)
+def certin_draft(request: Request, entity: str, user=Depends(require_user)):
+    """Draft CERT-In incident report for an incident, with the 6-hour clock."""
+    return _notice(request, entity, "certin")
+
+
+@app.get("/notice/{entity}/{regulator}", response_class=HTMLResponse)
+def notice_draft(request: Request, entity: str, regulator: str, user=Depends(require_user)):
+    """The same draft, addressed to another regulator on the incident's clock."""
+    return _notice(request, entity, regulator)
+
+
+# ---- the regulatory clock ------------------------------------------------------
+
+@app.get("/clock", response_class=HTMLResponse)
+def clock_page(request: Request, notice: str = "", user=Depends(require_user)):
+    """Every incident with a reporting deadline, most urgent first."""
+    result = _load_result()
+    cards, watching = [], []
+    for inc in result["incidents"]:
+        members = _incident_members(result, inc)
+        attack = [m for m in members if m["verdict"].get("escalate")
+                  and m["verdict"].get("disposition") in ("true_positive", "suspicious")]
+        if not attack:
+            continue
+        # the alert that best says what this incident is
+        lead = max(attack, key=lambda m: (m["verdict"].get("disposition") == "true_positive",
+                                          -_SEV_ORDER.get(m["verdict"].get("severity"), 9),
+                                          m["verdict"].get("confidence", 0)))["alert"]
+        clock = _clock(result, inc, members)
+        if clock is None:
+            sources = sorted({m["alert"]["src_ip"] for m in attack if m["alert"].get("src_ip")})
+            watching.append({"incident": inc, "headline": lead["title"], "sources": sources,
+                             "attempts": len(attack)})
+            continue
+        cards.append({"incident": inc, "clock": clock,
+                      "escalated": sum(1 for m in members if m["verdict"].get("escalate")),
+                      "headline": lead["title"]})
+
+    def urgency(card):
+        nxt = card["clock"]["next"]
+        if nxt is None:
+            return (2, 0)
+        return (0, nxt["seconds_left"]) if nxt["status"] == "running" else (1, -nxt["seconds_left"])
+    cards.sort(key=urgency)
+    running = [(r, c) for c in cards for r in c["clock"]["rows"] if r["status"] == "running"]
+    late = [(r, c) for c in cards for r in c["clock"]["rows"] if r["status"] == "overdue"]
+    pick = (min(running, key=lambda rc: rc[0]["seconds_left"]) if running
+            else max(late, key=lambda rc: rc[0]["seconds_left"]) if late else None)
+    summary = {
+        "incidents": len(cards),
+        "open": sum(c["clock"]["open"] for c in cards),
+        "overdue": sum(c["clock"]["overdue"] for c in cards),
+        "filed": sum(c["clock"]["filed"] for c in cards),
+        "next": pick[0] if pick else None, "next_client": pick[1]["incident"]["client"] if pick else None,
+    }
+    clients = sorted({a["client"] for a in result["alerts"]})
+    return templates.TemplateResponse(request, "clock.html", _ctx(
+        request, user, cards=cards, watching=watching, summary=summary, regulators=regclock.REGULATORS,
+        sectors=regclock.SECTORS, tenants=[{"client": c, "sector": _sector(c)} for c in clients],
+        can_file=user["role"] == "analyst", metrics=result["metrics"], rev=_CACHE.get("rev", 0),
+        notice=CLOCK_NOTICES.get(notice, ""),
+        now=datetime.datetime.now(_IST).strftime("%d %b %Y, %H:%M IST")))
+
+
+CLOCK_NOTICES = {
+    "confirm": "Not recorded: tick the box to confirm a person sent the report, then mark it filed again.",
+    "done": "That report was already marked as filed.",
+}
+
+
+@app.post("/clock/file")
+def clock_file(request: Request, incident: str = Form(...), regulator: str = Form(...),
+               deadline: str = Form(...), reference: str = Form(default=""), confirm: str = Form(default=""),
+               csrf: str = Form(default=""), user=Depends(require_analyst)):
+    """An analyst records that a person sent a report. Triagle does not send
+    it. This stops that clock and goes in the audit log."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload the page and try again.")
+    with _LOCK:
+        result = _load_result()
+        inc = _find_incident(result, incident)
+        clock = _clock(result, inc) if inc else None
+        row = next((r for r in (clock or {}).get("rows", [])
+                    if r["regulator"] == regulator and r["deadline"] == deadline), None)
+        if row is None:
+            raise HTTPException(status_code=404, detail="No such reporting deadline on that incident.")
+        back = f"/clock?notice={{}}#{inc['id']}"
+        if row["status"] == "filed":
+            return RedirectResponse(url=back.format("done"), status_code=303)
+        if confirm != "on":
+            return RedirectResponse(url=back.format("confirm"), status_code=303)
+        stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+        ref = " ".join(reference.split())[:80] or None
+        _CACHE["filings"].append({"alert_ids": list(inc["alert_ids"]), "regulator": regulator,
+                                  "deadline": deadline, "by": user["name"], "at": stamp, "reference": ref,
+                                  "incident": inc["id"], "client": inc["client"]})
+        audit.record("regulatory report marked filed", user["name"], incident=inc["id"], client=inc["client"],
+                     regulator=row["name"], report=row["label"], due=row["due_iso"],
+                     minutes_before_deadline=(row["seconds_left"] // 60 if row["seconds_left"] is not None else None),
+                     binding=row["binding"], reference=ref, ip=_client_ip(request))
+        _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+    return RedirectResponse(url=f"/clock#{inc['id']}", status_code=303)
+
+
+@app.post("/tenant/sector")
+def tenant_sector(request: Request, client: str = Form(...), sector: str = Form(...),
+                  csrf: str = Form(default=""), user=Depends(require_analyst)):
+    """Set which sector a client is in, which decides the regulators it reports to."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload the page and try again.")
+    if sector not in regclock.SECTORS:
+        raise HTTPException(status_code=400, detail="Unknown sector.")
+    with _LOCK:
+        result = _load_result()
+        if client not in {a["client"] for a in result["alerts"]}:
+            raise HTTPException(status_code=404, detail="No such client in the queue.")
+        previous = _sector(client)
+        if previous != sector:
+            _CACHE["sector_overrides"][client] = sector
+            audit.record("client sector changed", user["name"], client=client, sector=sector,
+                         previous=previous, ip=_client_ip(request))
+            _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+    return RedirectResponse(url="/clock", status_code=303)
 
 
 @app.get("/benchmark", response_class=HTMLResponse)

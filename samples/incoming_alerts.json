@@ -237,7 +237,7 @@
   },
   {
     "source": "crowdstrike_edr",
-    "client": "Sterling Retail",
+    "client": "Sterling Securities",
     "raw": {
       "detection_id": "ldt:clk900",
       "created_timestamp": "2026-08-14T11:30:00Z",
@@ -255,7 +255,7 @@
   },
   {
     "source": "crowdstrike_edr",
-    "client": "Sterling Retail",
+    "client": "Sterling Securities",
     "raw": {
       "detection_id": "ldt:clk901",
       "created_timestamp": "2026-08-14T11:33:00Z",

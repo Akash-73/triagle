@@ -1,12 +1,45 @@
-# Triagle — Agentic AI SOC Analyst
+# Triagle — AI SOC analyst for regulated companies
 
 **Triage, decided.**
 
-Triagle is an agentic AI SOC analyst built for MSPs. For every alert it runs
-an autonomous investigation — planning which evidence to gather, calling
-investigative tools, reasoning over what it finds, and reaching an auditable
-determination — built around one rule: **an alert carrying a risk signal is
-never closed automatically, whatever the model says.**
+Triagle sits on top of the SIEM and security tools a company already has. It
+triages every alert, never closes a real attack, and keeps the company inside
+the regulator's reporting clock. It is built for India's regulated mid-market
+(co-operative banks, NBFCs, brokers, hospitals, utilities) and the MSSPs that
+serve them: organisations that are required to run a SOC and cannot staff one.
+
+For every alert it runs an investigation — planning which evidence to gather,
+calling investigative tools, reasoning over what it finds, and reaching an
+auditable determination — built around one rule: **an alert carrying a risk
+signal is never closed automatically, whatever the model says.**
+
+## Runs on a real SIEM stream
+
+`POST /ingest` takes alerts from any tool with a connector. The Wazuh
+connector reads an alert exactly as Wazuh writes it; a forwarder on the Wazuh
+server ships them (see [docs/WAZUH.md](docs/WAZUH.md)).
+
+The first run against alerts shaped like a real Wazuh feed was a failure
+worth recording. v0.7 escalated **68 of 68**. On a real host there is always
+another alert nearby, so the rule "two related alerts on the same host means
+escalate" was true of everything, and one laptop's routine logons became part
+of every incident. What changed:
+
+- Related alerts only count when an analyst would stop at them, and only
+  inside a 24-hour window.
+- An incident holds the escalated alerts, not the host's noise. Sharing an
+  account or an address links two alerts; sharing only a host links them
+  when both are notable in their own right.
+- The source tool's own classification is used: benchmark results and
+  vulnerability findings are posture, errors and shutdowns are health
+  events. Neither is triaged as an attack. A benchmark check that stops
+  passing is a change and is escalated.
+- A MITRE tactic label is not evidence. Wazuh tags an ordinary logon with
+  "Privilege Escalation".
+- A low rule level never excuses a command line.
+
+On the same 68 alerts now: 15 of 15 attack steps escalated, 41 of 41 routine
+alerts closed with a reason, 18 escalated in all.
 
 ## Agentic, not just AI-assisted
 
@@ -76,17 +109,42 @@ numbers and email addresses become placeholders like `<AADHAAR_1>`. Pattern
 matching only — it does not find names or addresses. `TRIAGLE_MASK_PII=false`
 turns it off for a model running on the same machine.
 
-## CERT-In report draft
+## The regulatory clock
 
-Each escalated incident has a draft at `/certin/<entity>`: incident type,
-times, affected systems, timeline, indicators, actions taken and proposed,
-points to check for a DPDP breach assessment, and the 6-hour reporting clock.
-It is a draft for a person to complete and send. Nothing is filed, and
-fields Triagle cannot know are listed, not guessed. Check the incident-type
-wording against CERT-In's current Directions before relying on it.
+A confirmed incident usually owes more than one report, to more than one
+regulator, on more than one deadline. `/clock` shows every incident with a
+report to consider, which regulators that client answers to, and a live
+countdown for each deadline. Each has a draft; a person checks and sends it,
+then marks it filed, which stops that clock and goes in the audit log.
+Triagle never files anything itself.
+
+| Sector | Reports to |
+|---|---|
+| Bank, co-operative bank, NBFC | CERT-In (6 h) · RBI (6 h) |
+| SEBI-regulated entity | CERT-In (6 h) · SEBI email (6 h) and portal (24 h) |
+| Power utility | CERT-In (6 h) · CSIRT-Power (6 h, binding from 1 April 2027) |
+| Anyone, if personal data was affected | Data Protection Board (72 h, enforceable from 13 May 2027) |
+
+The deadlines are data in `app/engine/regclock.py`, each with the instrument
+it comes from and a line on what to verify. Rules that are not binding yet
+are shown as such, with the time they would have been due. This is a working
+aid for a compliance lead, not legal advice.
+
+Two judgement rules are built in. The clock starts at the first alert Triagle
+judged an attack on that alert's own evidence, not at an earlier weak signal
+that only looks suspicious in hindsight. And probing from outside that shows
+no sign of success does not start a clock: it is listed as watched.
+
+Which sector a client is in comes from `samples/tenants.json`, the
+`TRIAGLE_TENANTS` variable, or the selector on the clock page.
+
+Each draft (`/notice/<incident>/<regulator>`, and `/certin/<incident>`)
+holds: incident type, times, affected systems, timeline, indicators, actions
+taken and proposed, and points to check for a DPDP breach assessment. Fields
+Triagle cannot know are listed, not guessed.
 
 `TRIAGLE_DEMO_CLOCK=true` shifts the sample alerts' timestamps to end five
-minutes ago so the clock can be shown running.
+minutes ago so the clocks can be shown running.
 
 ## Sign-in and the audit log
 
@@ -116,14 +174,15 @@ that matters. On a host with an ephemeral disk (Render's free tier) the log
 is lost on redeploy unless you mount a disk.
 
 Not yet: password reset, per-client access (every user sees every client),
-single sign-on, two-factor. Who approved an action is kept in the audit log,
-but the action's status on the page resets when the app restarts.
+single sign-on, two-factor. The queue, action status and filings are held in
+memory: they survive new alerts arriving but not a restart. The audit log is
+the durable record of who approved, declined or filed what.
 
 ## Measured
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 80 tests, no network or key needed
+python -m pytest -q                 # 156 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```
@@ -138,9 +197,20 @@ harmless alerts that contain alarming words.
 | Real threats missed | 3 of 21 | 0 of 21 |
 | Benign alerts sent to a human | 4 of 15 | 1 of 15 |
 
+`eval/wazuh_dataset.json` is 68 labelled alerts in Wazuh's own format, built
+from the stock 4.14 ruleset: routine Windows and Linux telemetry, benchmark
+and vulnerability findings, health events, SSH brute force from the internet,
+and two hands-on intrusions on a workstation.
+
+| Wazuh-shaped set | v0.7 | v0.8 |
+|---|---|---|
+| Attack steps missed | 0 of 15 | 0 of 15 |
+| Routine alerts sent to a human | 41 of 41 | 0 of 41 |
+| Escalated in total | 68 of 68 | 18 of 68 |
+
 What this does not show: the alerts are simulated and written by the engine's
 author, so it is a regression check on known attack shapes, not evidence of
-accuracy in a real environment. The model backends are covered by stubbed
+accuracy in a real environment. The measurement that matters is a live feed. The model backends are covered by stubbed
 tests only; no live model run is included in these numbers.
 
 ## Quick start
@@ -174,10 +244,13 @@ export TRIAGLE_AGENTIC=false   # single-pass triage instead of investigation loo
 ```
 app/
   connectors/sources.py   normalize EDR/firewall/identity alerts
-  engine/signals.py       risk terms + command-line behaviours
+  connectors/wazuh.py     read a Wazuh alert as Wazuh writes it
+  engine/signals.py       risk terms, command-line behaviours, alert kinds
   engine/triage.py        conservative-closure verdict + guardrails
+  engine/relate.py        what else of note happened on this host / user, recently
   engine/correlate.py     link a client's alerts into incidents (never across clients)
-  engine/certin.py        CERT-In report draft + 6-hour clock
+  engine/regclock.py      regulators, sectors and the reporting clock
+  engine/certin.py        report draft; when the clock starts; what is reportable
   privacy.py              Aadhaar / PAN / UPI / mobile / email masking
   auth.py                 sign-in, roles, sessions, form tokens
   audit.py                append-only, hash-chained audit log
@@ -187,8 +260,9 @@ app/
     loop.py               the plan-act-observe-determine investigation loop
   orchestrator.py         batch processing, agentic or fast mode
 templates/                console, alert detail (with trail), incident report
-samples/                  synthetic multi-client alerts + investigation env
-eval/                     labelled simulated dataset + benchmark
+scripts/wazuh_forwarder.py  runs on the Wazuh server, posts alerts to /ingest
+samples/                  synthetic multi-client alerts, tenant sectors, investigation env
+eval/                     labelled simulated datasets + benchmark
 tests/                    test suite
 ```
 
@@ -202,7 +276,9 @@ tests/                    test suite
 - [x] Sign-in with roles and a hash-chained audit log of approvals
 - [ ] Per-client access control; storage so action status survives a restart
 - [ ] Analyst feedback loop — learn per-client "normal"
-- [ ] Live connectors (API/webhook) for real tools
+- [x] Live connector: Wazuh, with a forwarder and a queue that holds up on a real stream
+- [x] Regulatory clock: CERT-In, RBI, SEBI, CSIRT-Power, Data Protection Board
+- [ ] Live threat-intelligence feeds; one real containment action end to end
 - [ ] Vector-DB context store for richer investigation
 - [ ] Per-client SLA + closure-code analytics
 

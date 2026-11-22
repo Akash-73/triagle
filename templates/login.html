@@ -13,7 +13,7 @@
   body { background:var(--bg); color:var(--text); font-family:'Sora',sans-serif; -webkit-font-smoothing:antialiased; }
   .mono { font-family:'IBM Plex Mono',monospace; }
   header { display:flex; align-items:center; justify-content:space-between; padding:18px 28px; border-bottom:1px solid var(--line); }
-  header a { color:var(--eye); text-decoration:none; font-size:14px; font-family:'IBM Plex Mono'; }
+  header a { color:var(--eye); text-decoration:none; font-size:14px; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
   .brand { display:flex; align-items:center; gap:11px; font-weight:700; font-size:20px; }
   .brand .eye { width:28px; height:28px; border-radius:50%; background:radial-gradient(circle at 50% 50%, var(--eye) 0 22%, #0a0e14 23% 42%, var(--eye) 43% 50%, transparent 51%); box-shadow:0 0 16px rgba(56,189,248,0.5); }
   main { padding:28px; max-width:1000px; margin:0 auto; }
@@ -21,19 +21,19 @@
   .sub { color:var(--muted); font-size:14px; margin-bottom:24px; max-width:640px; }
   .rule { background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--muted); border-radius:10px; padding:16px 18px; margin-bottom:12px; }
   .rule.flagged { border-left-color:var(--flag); background:linear-gradient(135deg, rgba(255,180,67,0.06), var(--panel)); }
-  .rname { font-weight:600; font-size:14.5px; margin-bottom:8px; font-family:'IBM Plex Mono'; }
+  .rname { font-weight:600; font-size:14.5px; margin-bottom:8px; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
   .bars { display:flex; gap:20px; font-size:13px; color:var(--muted); margin-bottom:8px; }
-  .bars b { font-family:'IBM Plex Mono'; }
+  .bars b { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
   .signal { color:var(--benign); } .noise { color:var(--flag); }
-  .flagpill { display:inline-block; font-family:'IBM Plex Mono'; font-size:11px; padding:2px 9px; border-radius:20px; background:rgba(255,180,67,0.15); color:var(--flag); margin-left:8px; }
+  .flagpill { display:inline-block; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:11px; padding:2px 9px; border-radius:20px; background:rgba(255,180,67,0.15); color:var(--flag); margin-left:8px; }
   .rec { font-size:13px; color:#c3cede; background:var(--panel2); border-radius:8px; padding:11px 14px; margin-top:8px; }
 
   .box { max-width:380px; margin:12vh auto 0; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:30px 28px; }
   .box h1 { font-size:22px; margin-bottom:4px; } .box p { color:var(--muted); font-size:13px; margin-bottom:20px; }
-  label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-family:'IBM Plex Mono'; margin:14px 0 6px; }
-  input[type=text], input[type=password] { width:100%; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:11px 12px; color:var(--text); font-family:'Sora'; font-size:14px; }
+  label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; margin:14px 0 6px; }
+  input[type=text], input[type=password] { width:100%; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:11px 12px; color:var(--text); font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:14px; }
   input:focus { outline:2px solid var(--eye); outline-offset:1px; }
-  button { width:100%; margin-top:22px; background:var(--eye); color:#04121c; border:none; border-radius:8px; padding:12px; font-weight:600; font-family:'Sora'; font-size:14px; cursor:pointer; }
+  button { width:100%; margin-top:22px; background:var(--eye); color:#04121c; border:none; border-radius:8px; padding:12px; font-weight:600; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:14px; cursor:pointer; }
   .err { background:rgba(255,93,93,0.1); border:1px solid rgba(255,93,93,0.45); color:var(--escalate); border-radius:8px; padding:10px 12px; font-size:13px; margin-bottom:6px; }
 </style>
 </head>

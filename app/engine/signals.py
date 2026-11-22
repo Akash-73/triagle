@@ -179,7 +179,7 @@ def is_notable(alert):
     they never count as corroboration for something else."""
     if kind(alert) != ACTIVITY:
         return bool(matched_behaviours(alert))
-    if hard_signals(alert):
+    if hard_signals(alert) or (_get(alert, "indicators") or {}).get("drift"):
         return True
     sev = str(_get(alert, "raw_severity") or "").lower()
     if sev in _SEV_HIGH:

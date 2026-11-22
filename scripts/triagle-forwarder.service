@@ -1,0 +1,35 @@
+# Triagle forwarder for Wazuh — systemd unit.
+#
+#   sudo install -m 755 wazuh_forwarder.py /opt/triagle/wazuh_forwarder.py
+#   sudo install -m 600 -o root /dev/null /etc/triagle-forwarder.env   # then edit it (see below)
+#   sudo install -m 644 triagle-forwarder.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now triagle-forwarder
+#   journalctl -u triagle-forwarder -f
+#
+# /etc/triagle-forwarder.env holds three lines, readable by root only:
+#   TRIAGLE_URL=https://your-triagle.run.app
+#   TRIAGLE_INGEST_KEY=the-same-value-as-on-triagle
+#   TRIAGLE_CLIENT=Your Company
+#
+# Runs as the wazuh user: it only needs to read alerts.json, nothing more.
+[Unit]
+Description=Forward Wazuh alerts to Triagle
+After=network-online.target wazuh-manager.service
+Wants=network-online.target
+
+[Service]
+User=wazuh
+Group=wazuh
+EnvironmentFile=/etc/triagle-forwarder.env
+StateDirectory=triagle-forwarder
+ExecStart=/usr/bin/python3 /opt/triagle/wazuh_forwarder.py --replay 200
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/var/ossec/logs/alerts
+
+[Install]
+WantedBy=multi-user.target
