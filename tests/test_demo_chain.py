@@ -141,3 +141,43 @@ def test_a_real_drop_in_temp_is_still_escalated():
                    groups=("sysmon", "sysmon_eid11", "windows"))
     r = process_batch([drop])
     assert r["verdicts"][r["alerts"][0]["alert_id"]]["escalate"]
+
+
+# ---- Windows' own scheduled database merge -----------------------------------
+
+def _sdbinst(sec, cmd, image="C:\\Windows\\System32\\sdbinst.exe"):
+    return _sysmon(sec, "92058", 12, "Application Compatibility Database launched",
+                   {"commandLine": cmd, "image": image, "originalFileName": "sdbinst.exe",
+                    "parentImage": "C:\\Windows\\System32\\svchost.exe", "user": "NT AUTHORITY\\SYSTEM"})
+
+
+def test_windows_own_database_merge_is_closed_not_raised_every_hour():
+    """Windows runs "sdbinst.exe -m -bg" from a scheduled task, about hourly.
+    The stock rule flags the program name and rates it high, so a laptop left
+    on raises the same alert all day. No database file is named: nothing is
+    being installed."""
+    for cmd in ("C:\\WINDOWS\\system32\\sdbinst.exe -m -bg", '"C:\\Windows\\System32\\sdbinst.exe" -m -bg',
+                "sdbinst.exe -m -bg", "C:\\WINDOWS\\system32\\sdbinst.exe -mm"):
+        r = process_batch([_sdbinst(0, cmd)])
+        v = r["verdicts"][r["alerts"][0]["alert_id"]]
+        assert not v["escalate"] and v["closure_code"] == "BENIGN_KNOWN_TOOL", cmd
+        assert "names no database file" in v["reasoning"] and v["tuning_recommendation"]
+    day = process_batch([_sdbinst(3600 * i, "C:\\WINDOWS\\system32\\sdbinst.exe -m -bg") for i in range(10)])
+    assert day["metrics"]["escalated"] == 0 and day["metrics"]["incident_count"] == 0
+
+
+def test_installing_a_compatibility_database_is_still_raised():
+    """Only the exact merge command is recognised. Naming a database file,
+    adding anything else, or running a copy from another folder is not."""
+    raised = [
+        _sdbinst(0, "C:\\Windows\\System32\\sdbinst.exe -q C:\\Users\\akash\\AppData\\Local\\Temp\\fix.sdb"),
+        _sdbinst(1, "sdbinst.exe C:\\ProgramData\\app.sdb"),
+        _sdbinst(2, "sdbinst.exe -m -bg -q C:\\ProgramData\\app.sdb"),
+        _sdbinst(3, "sdbinst.exe -m -bg & calc.exe"),
+        _sdbinst(4, "C:\\Users\\Public\\sdbinst.exe -m -bg", image="C:\\Users\\Public\\sdbinst.exe"),
+        _sdbinst(5, "sdbinst.exe -m -bg", image="C:\\Users\\Public\\sdbinst.exe"),
+    ]
+    for item in raised:
+        r = process_batch([item])
+        v = r["verdicts"][r["alerts"][0]["alert_id"]]
+        assert v["escalate"], item["raw"]["data"]["win"]["eventdata"]["commandLine"]

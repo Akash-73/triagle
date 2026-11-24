@@ -188,6 +188,26 @@ BENIGN_ARTIFACTS = [
 ]
 _BENIGN_ARTIFACT_RE = [(name, re.compile(rx, re.I)) for name, rx in BENIGN_ARTIFACTS]
 
+# Commands Windows runs on its own schedule that a stock ruleset flags by the
+# program name alone. Matched against the WHOLE command line, so the same
+# program doing anything else is not covered.
+#
+# sdbinst.exe installs application-compatibility databases, which is why its
+# name is on watch lists. Windows also runs it from a scheduled task with only
+# "-m -bg": merge what is already installed, in the background. No database
+# file is named, so nothing is being installed. An install has to name a file.
+BENIGN_COMMANDS = [
+    ("Windows scheduled compatibility-database merge",
+     r'^"?(?:[a-z]:\\+windows\\+(?:system32|syswow64)\\+)?sdbinst(?:\.exe)?"?(?:\s+-(?:mm|m|bg))+\s*$',
+     r"\\windows\\+(?:system32|syswow64)\\+sdbinst\.exe$",
+     "Windows runs this itself from a scheduled task. The command names no database file, so nothing "
+     "is being installed"),
+]
+# (name, whole command line, where the program must live when the alert says, why)
+_BENIGN_COMMAND_RE = [(name, re.compile(rx, re.I), re.compile(img, re.I), why)
+                      for name, rx, img, why in BENIGN_COMMANDS]
+_ARTIFACT_WHY = {name: why for name, _, _, why in BENIGN_COMMANDS}
+
 
 def _artifact_text(alert):
     ind = _get(alert, "indicators") or {}
@@ -204,7 +224,18 @@ def benign_artifact(alert):
     for name, rx in _BENIGN_ARTIFACT_RE:
         if rx.search(text):
             return name
+    ind = _get(alert, "indicators") or {}
+    cmd, image = str(ind.get("cmdline") or "").strip(), str(ind.get("image") or "").strip()
+    for name, rx, where, _ in _BENIGN_COMMAND_RE:
+        if cmd and rx.match(cmd) and (not image or where.search(image)):
+            return name                  # a copy of the program run from anywhere else is not covered
     return None
+
+
+def artifact_reason(name):
+    """Why a recognised artifact is not an attack, in one clause."""
+    return _ARTIFACT_WHY.get(name) or ("The operating system creates this in the course of normal work; "
+                                       "the file name is a signature only that producer uses")
 
 
 # Read-only discovery commands: what an administrator, a login script or an

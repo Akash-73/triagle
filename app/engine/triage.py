@@ -141,9 +141,8 @@ def _deterministic_verdict(alert):
             severity="low",
             escalate=False,
             summary=f"Benign — {artifact}.",
-            reasoning=(f"The alert is about a {artifact}. The operating system creates this in the "
-                       f"course of normal work; the file name is a signature only that producer uses. "
-                       f"The source tool rated it {alert.raw_severity}, but the artifact is not an "
+            reasoning=(f"The alert is about a {artifact}. {signals.artifact_reason(artifact)}. "
+                       f"The source tool rated it {alert.raw_severity}, but this is not an "
                        f"attack, so it is closed with evidence rather than raised."),
             recommended_actions=["No action required."],
             tuning_recommendation=(f"Suppress this detection for the {artifact} signature so the "
