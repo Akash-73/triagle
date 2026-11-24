@@ -3,6 +3,9 @@
 {% block title %}Overview · Triagle{% endblock %}
 {% block heading %}Overview{% endblock %}
 {% block content %}
+{% if user.guest %}
+<p class="callout" style="margin-bottom:20px; max-width:92ch;"><b>Triagle works the alert queue of a security operations team.</b> It closes routine alerts with a written reason and brings the rest to a person, with the evidence, a proposed response and any report due to a regulator. You are a guest on a working console: open any alert, or watch them arrive under <a href="/live">Live</a>.</p>
+{% endif %}
 <section style="margin-bottom:22px;">
   <p class="handover">
     <b>{{ metrics.received }}</b> alert{{ '' if metrics.received == 1 else 's' }} received.
@@ -100,16 +103,10 @@
 
     {% if demo_mode and user.role == 'analyst' %}
     <section class="panel">
-      <header><h2>Run a scenario</h2></header>
+      <header><h2>Test it</h2></header>
       <div class="body">
-        <p class="note" style="margin-bottom:12px;">Sends a scripted intrusion through the same webhook a real tool uses, so you can watch it investigated.</p>
-        <div class="inline-forms">
-          <form method="post" action="/demo/fire"><input type="hidden" name="csrf" value="{{ csrf }}">
-            <button class="btn" type="submit" name="scenario" value="bank">Bank intrusion</button>
-            <button class="btn" type="submit" name="scenario" value="power">Power utility, OT</button></form>
-          <form method="post" action="/demo/reset"><input type="hidden" name="csrf" value="{{ csrf }}">
-            <button class="btn quiet" type="submit">Clear live alerts</button></form>
-        </div>
+        <p class="note" style="margin-bottom:12px;">Send a scripted stream of alerts and watch each one arrive and be decided.</p>
+        <a class="btn" href="/live">Open the Live page</a>
       </div>
     </section>
     {% endif %}

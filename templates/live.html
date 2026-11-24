@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+{% block title %}Live · Triagle{% endblock %}
+{% block heading %}Live{% endblock %}
+{% block content %}
+<section style="margin-bottom:20px;">
+  <p class="handover" id="tally"></p>
+  {% if user.guest %}<p class="note" style="margin-top:9px; max-width:74ch;">Alerts from the connected tools, as they arrive. Each row is what the tool said and what Triagle decided about it. Select one to see the evidence.</p>{% endif %}
+</section>
+
+<section class="panel">
+  <header><h2>Arriving now</h2><span class="n" id="shown"></span>
+    <span class="watch"><span id="last"></span><span class="status ok" id="pulse">Watching</span></span></header>
+  {% if demo_on %}
+  <div class="teststrip">
+    {% if can_test %}
+    <div class="sendrow">
+      <form id="send">
+        <div class="choices" role="radiogroup" aria-label="Which test stream">
+          {% for key, label in streams.items() %}
+          <label class="choice"><input type="radio" name="kind" value="{{ key }}" {% if loop.first %}checked{% endif %}><span>{{ label }}</span><span class="n" data-count="{{ key }}"></span></label>
+          {% endfor %}
+        </div>
+        {% if scenarios|length > 1 %}
+        <select name="scenario" aria-label="Customer the test stream is for">
+          {% for key, s in scenarios.items() %}<option value="{{ key }}" {% if key == default_scenario %}selected{% endif %}>{{ s.client }}</option>{% endfor %}
+        </select>
+        {% else %}
+        <input type="hidden" name="scenario" value="{{ default_scenario }}">
+        {% endif %}
+        <button class="btn primary" type="submit" id="go">Send the test stream</button>
+      </form>
+      <form method="post" action="/demo/reset" id="clear" hidden>
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="next" value="live">
+        <button class="btn quiet" type="submit" id="clear-btn">Clear the test alerts</button>
+      </form>
+    </div>
+    {% endif %}
+    <div class="runline">
+      <p class="note" id="run-idle">{% if can_test %}A test stream is scripted alerts for an invented customer, sent in through the same door a connected tool uses. Each one is marked "test".{% else %}A signed-in analyst can send a scripted stream of test alerts from here. You will see each one arrive on this page.{% endif %}</p>
+      <div class="sendbar" id="run-bar" hidden><i></i></div>
+      <span class="note" id="run-words" hidden></span>
+      <p class="outcome" id="outcome" hidden aria-live="polite"></p>
+      <a class="btn primary" id="open-case" href="/cases" hidden>Open the case</a>
+    </div>
+    <p class="callout warn" id="run-error" hidden></p>
+  </div>
+  {% endif %}
+  <div class="scroll-x" id="feed-wrap"><table class="tbl fixed feed">
+    <thead><tr><th style="width:96px">Arrived</th><th style="width:22%">From</th><th style="width:27%">What the tool said</th><th>What Triagle decided</th></tr></thead>
+    <tbody id="feed"></tbody>
+  </table></div>
+  <div class="empty" id="feed-empty" hidden><b>Nothing has arrived yet.</b>An alert shows here within seconds of a connected tool sending it. <a href="/connectors">Connect a source</a>{% if can_test %}, or send a test stream{% endif %}.</div>
+</section>
+<noscript><p class="callout warn" style="margin-top:16px;">This page needs JavaScript to update. The same alerts are listed under <a href="/alerts">Alerts</a>.</p></noscript>
+
+<script>
+(function () {
+  var state = {{ state|tojson }};
+  var csrf = {{ csrf|tojson }}, canTest = {{ can_test|tojson }};
+  var streamCounts = {{ stream_counts|tojson }};
+  var GAP = 650;          // ms between sends, so each alert can be seen arriving
+  var TARGET = 22000;     // a stream takes about this long, even over a slow link
+  var running = false, run = null, failures = 0, skew = 0, first = true;
+  var rowEls = new Map();
+
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined && text !== null) e.textContent = String(text);
+    return e;
+  }
+  function plural(n, one, many) { return n === 1 ? one : many; }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+
+  // ---- the line at the top -------------------------------------------------
+  function tally(c) {
+    var p = $('tally');
+    p.textContent = '';
+    function part(n, cls, words) { p.appendChild(el('b', cls, n)); p.appendChild(document.createTextNode(' ' + words + ' ')); }
+    part(c.received, '', plural(c.received, 'alert received.', 'alerts received.'));
+    part(c.closed, '', 'closed, each with a reason.');
+    if (c.by_person) part(c.by_person, '', 'decided by a person.');
+    if (c.open) part(c.open, 'n-crit', plural(c.open, 'needs a decision.', 'need a decision.'));
+    else p.appendChild(document.createTextNode('None need a decision.'));
+  }
+
+  // ---- the feed --------------------------------------------------------------
+  function fill(tr, r) {
+    var keep = tr.classList.contains('new');
+    tr.className = 'link ' + (r.open ? 'sev-' + r.severity : 'closed') + (keep ? ' new' : '');
+    tr.setAttribute('data-href', '/alert/' + encodeURIComponent(r.id));
+    tr.textContent = '';
+
+    var from = el('td');
+    from.appendChild(el('span', 'from', r.tool));
+    var where = el('span', 'sub');
+    if (r.test) where.appendChild(el('span', 'tag', 'test'));
+    var place = [r.asset, r.client].filter(Boolean).join(', ');
+    where.appendChild(document.createTextNode(place));
+    where.title = place;
+    from.appendChild(where);
+
+    var said = el('td');
+    var link = el('a', 'primary', r.said || 'Alert');
+    link.href = '/alert/' + encodeURIComponent(r.id);
+    link.title = r.said || '';
+    said.appendChild(link);
+    if (r.said_severity) said.appendChild(el('span', 'sub', 'The tool rated it ' + r.said_severity));
+
+    var decided = el('td');
+    var verdict = el('div', 'verdict');
+    verdict.appendChild(el('span', 'sev ' + (r.open ? r.severity : 'none'), r.open ? cap(r.severity) : 'Closed'));
+    var words = r.open && r.what ? r.why + ': ' + r.what : r.why;
+    if (r.stands_for > 1) words += ', ' + r.stands_for + ' alerts raised once';
+    var w = el('span', 'words', words);
+    w.title = words;
+    verdict.appendChild(w);
+    decided.appendChild(verdict);
+    var reason = el('span', 'sub', r.reason);
+    reason.title = r.reason;
+    decided.appendChild(reason);
+
+    tr.appendChild(el('td', 'stripe when', r.when));
+    tr.appendChild(from);
+    tr.appendChild(said);
+    tr.appendChild(decided);
+  }
+
+  function sync(rows) {
+    var body = $('feed'), here = {};
+    rows.forEach(function (r, i) {
+      here[r.id] = true;
+      var sig = JSON.stringify(r), cur = rowEls.get(r.id);
+      if (!cur) {
+        cur = { tr: el('tr'), sig: sig, open: r.open };
+        if (!first) cur.tr.classList.add('new');
+        fill(cur.tr, r);
+        rowEls.set(r.id, cur);
+      } else if (cur.sig !== sig) {
+        var flipped = cur.open !== r.open;
+        cur.tr.classList.remove('changed');
+        fill(cur.tr, r);
+        cur.sig = sig;
+        cur.open = r.open;
+        if (flipped) { void cur.tr.offsetWidth; cur.tr.classList.add('changed'); }
+      }
+      if (body.children[i] !== cur.tr) body.insertBefore(cur.tr, body.children[i] || null);
+    });
+    rowEls.forEach(function (cur, id) { if (!here[id]) { cur.tr.remove(); rowEls.delete(id); } });
+    first = false;
+    $('feed-wrap').hidden = rows.length === 0;
+    $('feed-empty').hidden = rows.length > 0;
+    $('shown').textContent = rows.length ? 'the latest ' + rows.length : '';
+  }
+  $('feed').addEventListener('click', function (e) {
+    var tr = e.target.closest('tr[data-href]');
+    if (tr && !e.target.closest('a')) location.href = tr.getAttribute('data-href');
+  });
+
+  function lastWords() {
+    var out = $('last');
+    if (!state.last) { out.textContent = ''; return; }
+    var s = Math.max(0, Math.round((Date.now() + skew - new Date(state.last).getTime()) / 1000));
+    var ago = s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : s < 172800 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' days';
+    out.textContent = 'Last alert ' + ago + ' ago';
+  }
+  function pulse(ok) {
+    var p = $('pulse');
+    p.className = 'status ' + (ok ? 'ok' : 'warn');
+    p.textContent = ok ? 'Watching' : 'Not updating. Trying again.';
+  }
+
+  // ---- the test stream: where it stands, for anyone watching ---------------------
+  function runView(r) {
+    var idle = $('run-idle');
+    if (!idle) return;
+    var bar = $('run-bar'), words = $('run-words'), out = $('outcome'), open = $('open-case');
+    var sending = !!r && !r.done, done = !!r && r.done;
+    idle.hidden = !!r;
+    bar.hidden = words.hidden = !sending;
+    out.hidden = !done;
+    open.hidden = !(done && r.case);
+    if (sending) {
+      bar.firstElementChild.style.width = (100 * r.sent / Math.max(1, r.total)) + '%';
+      words.textContent = r.sent + ' of ' + r.total + ' sent';
+    }
+    if (!done) return;
+    out.textContent = '';
+    function say() {
+      for (var i = 0; i < arguments.length; i++) {
+        var x = arguments[i];
+        out.appendChild(typeof x === 'string' ? document.createTextNode(x) : x);
+      }
+    }
+    if (r.seconds) say(el('b', '', r.total), ' ' + plural(r.total, 'alert', 'alerts') + ' in ', el('b', '', r.seconds), ' ' + plural(r.seconds, 'second. ', 'seconds. '));
+    else say(el('b', '', r.total), ' ' + plural(r.total, 'alert sent. ', 'alerts sent. '));
+    say(el('b', '', r.closed), ' closed, each with a reason. ');
+    if (r.open) {
+      var where = r.cases === 1 ? ', as one case. ' : r.cases > 1 ? ', in ' + r.cases + ' cases. ' : '. ';
+      say(el('b', 'n-crit', r.open), ' ' + plural(r.open, 'needs', 'need') + ' a decision' + where);
+    } else say('None need a decision. ');
+    if (r.report) {
+      var due = el('b', 'n-due', r.report.note);
+      due.setAttribute('data-due', r.report.due);
+      say('A report to ' + r.report.name + ' is due in ', due, '.');
+    }
+    if (r.case) open.href = '/case/' + encodeURIComponent(r.case);
+  }
+  function clearView(n) {
+    var box = $('clear');
+    if (!box) return;
+    box.hidden = running || !n;
+    $('clear-btn').textContent = 'Clear the ' + n + ' test ' + plural(n, 'alert', 'alerts');
+  }
+
+  function apply(j) {
+    state = j;
+    if (j.now) skew = new Date(j.now).getTime() - Date.now();
+    tally(j.counts);
+    sync(j.rows);
+    runView(j.run);
+    clearView(j.test_alerts);
+    lastWords();
+  }
+  apply(state);
+  setInterval(lastWords, 1000);
+
+  // ---- keep up with the queue ---------------------------------------------------------
+  function poll() {
+    if (running || document.hidden) return;
+    fetch('/api/live?rev=' + encodeURIComponent(state.rev), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(function (j) {
+        failures = 0;
+        pulse(true);
+        if (j.now) skew = new Date(j.now).getTime() - Date.now();
+        if (!j.same && !running) apply(j);
+      })
+      .catch(function () { if (++failures >= 2) pulse(false); });
+  }
+  setInterval(poll, 2000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
+
+  // ---- sending a test stream ------------------------------------------------------------
+  var form = $('send');
+  if (!form || !canTest) return;
+  var goBtn = $('go');
+
+  function counts() {
+    var per = streamCounts[form.elements.scenario.value] || {};
+    form.querySelectorAll('[data-count]').forEach(function (n) {
+      var c = per[n.getAttribute('data-count')];
+      n.textContent = c ? c + ' ' + plural(c, 'alert', 'alerts') : '';
+    });
+  }
+  counts();
+  form.addEventListener('change', counts);
+
+  function busy(on) {
+    running = on;
+    goBtn.disabled = on;
+    goBtn.textContent = on ? 'Sending' : (state.run ? 'Send it again' : 'Send the test stream');
+    goBtn.classList.toggle('primary', !(state.run && state.run.done && state.run.case));
+    form.querySelectorAll('input[type=radio], select').forEach(function (i) { i.disabled = on; });
+    clearView(state.test_alerts);
+  }
+  function problem(text) {
+    var box = $('run-error');
+    box.hidden = !text;
+    box.textContent = text || '';
+  }
+  function post(url, body) {
+    return fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if (!r.ok) { var e = new Error(j.detail || 'The console refused that (' + r.status + ').'); e.refused = true; throw e; }
+          return j;
+        });
+      });
+  }
+  function stop(e) {
+    busy(false);
+    problem(e && e.refused ? e.message : 'Lost contact with the console part-way. What was sent is listed; send the stream again when the connection is back.');
+  }
+  function step(tries) {
+    var t = performance.now();
+    post('/api/demo/step', { csrf: csrf, run: run.id, n: run.n }).then(function (j) {
+      apply(j.state);
+      if (j.done) {
+        busy(false);
+        // start the written account of the case now, so it is there when the case is opened
+        if (j.case) fetch('/api/notes?case=' + encodeURIComponent(j.case), { credentials: 'same-origin' }).catch(function () {});
+        return;
+      }
+      var took = performance.now() - t, left = j.total - j.sent;
+      var budget = Math.max(2000, TARGET - (performance.now() - run.t0));
+      var steps = Math.max(1, Math.floor(budget / Math.max(GAP, took)));
+      run.n = Math.max(1, Math.min(5, Math.ceil(left / steps)));
+      setTimeout(function () { step(0); }, Math.max(0, GAP - took));
+    }).catch(function (e) {
+      // the server keeps its place, so asking again after a dropped connection sends nothing twice
+      if (!e.refused && tries < 3) setTimeout(function () { step(tries + 1); }, 1200);
+      else stop(e);
+    });
+  }
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (running) return;
+    problem('');
+    busy(true);
+    post('/api/demo/start', { csrf: csrf, kind: form.elements.kind.value, scenario: form.elements.scenario.value }).then(function (j) {
+      run = { id: j.run, n: 1, t0: performance.now() };
+      apply(j.state);
+      setTimeout(function () { step(0); }, GAP);
+    }).catch(stop);
+  });
+  busy(false);
+})();
+</script>
+{% endblock %}

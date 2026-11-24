@@ -15,6 +15,7 @@
     <a class="brand" href="/" aria-label="Triagle, overview"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><b>Triagle</b></a>
     <nav aria-label="Main">
       <a href="/" {% if active == 'overview' %}aria-current="page"{% endif %}>Overview</a>
+      <a href="/live" {% if active == 'live' %}aria-current="page"{% endif %}>Live</a>
       <a href="/alerts" {% if active == 'alerts' %}aria-current="page"{% endif %}>Alerts{% if nav.escalated %}<span class="count is-urgent" title="Alerts that need a decision">{{ nav.escalated }}</span>{% endif %}</a>
       <a href="/cases" {% if active == 'cases' %}aria-current="page"{% endif %}>Cases{% if nav.cases %}<span class="count">{{ nav.cases }}</span>{% endif %}</a>
       <a href="/clock" {% if active == 'clock' %}aria-current="page"{% endif %}>Reporting{% if nav.due %}<span class="count {% if nav.overdue %}is-urgent{% else %}is-due{% endif %}" title="Reports due to a regulator">{{ nav.due }}</span>{% endif %}</a>

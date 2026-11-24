@@ -90,7 +90,9 @@ def test_analyst_can_fire_a_demo_attack():
     c = analyst()
     base = len(main._load_result()["alerts"])
     r = c.post("/demo/fire", data={"csrf": csrf(c), "benign": "on"}, follow_redirects=False)
-    assert r.status_code == 303 and demo_attack.HOST in r.headers["location"]
+    assert r.status_code == 303 and r.headers["location"].startswith("/case/INC-"), "lands on the new case"
+    landed = main._find_incident(main._load_result(), r.headers["location"].rsplit("/", 1)[1])
+    assert demo_attack.HOST in landed["entities"]
     assert len(main._load_result()["alerts"]) == base + 6          # 5 attack + 1 benign
     assert any(e["event"] == "demo attack fired" for e in audit.read())
 
@@ -122,8 +124,8 @@ def test_fired_attack_closes_the_benign_alert_live():
 
 # ---- the demo controls only show in demo mode --------------------------------
 
-def test_fire_button_shows_only_in_demo_mode(monkeypatch):
+def test_the_way_to_the_test_stream_shows_only_in_demo_mode(monkeypatch):
     c = analyst()
-    assert "Run a scenario" in c.get("/").text
+    assert "Open the Live page" in c.get("/").text
     monkeypatch.setenv("TRIAGLE_DEMO", "false")
-    assert "Run a scenario" not in c.get("/").text
+    assert "Open the Live page" not in c.get("/").text

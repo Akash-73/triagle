@@ -69,7 +69,7 @@
       <header><h2>Model</h2><span class="n" id="model-state">{{ model.label }}</span></header>
       <div class="body">
         <dl class="kv">
-          <dt>Model</dt><dd class="mono">{{ model_status.model }}</dd>
+          <dt>Model</dt><dd><span class="mono">{{ model_status.model }}</span>{% if model_status.thinking %}, thinking set to {{ model_status.thinking }}{% endif %}</dd>
           <dt>Reached through</dt><dd>{{ model_status.transport or 'Nothing configured' }}{% if model_status.location %}, location {{ model_status.location }}{% endif %}</dd>
           {% if model_status.project %}<dt>Project</dt><dd class="mono">{{ model_status.project }}</dd>{% endif %}
           <dt>Last call</dt><dd id="model-last">{% if model_status.last.ok %}Answered in {{ model_status.last.seconds }} s{% elif model_status.last.ok is false %}Failed: {{ model_status.last.error }}{% else %}None yet{% endif %}</dd>

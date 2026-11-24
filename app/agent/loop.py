@@ -118,6 +118,9 @@ def _llm_determine(ctx):
         return None
 
 
+REAL_THREAT_LEAD = "Investigation concluded this is a real threat: "     # what follows it is the evidence
+
+
 def _rule_determine(ctx):
     """Deterministic determination from gathered evidence."""
     alert = ctx.focus_alert
@@ -152,7 +155,7 @@ def _rule_determine(ctx):
             escalate=True,
             summary=("Confirmed high-risk activity — escalated with corroborating evidence." if confirmed
                      else "Known-bad source touching this client — escalated for review."),
-            reasoning="Investigation concluded this is a real threat: " + "; ".join(reason_bits) + ".",
+            reasoning=REAL_THREAT_LEAD + "; ".join(reason_bits) + ".",
             recommended_actions=(list(ot.RECOMMENDED) if ot.involved(alert) else [
                 "Isolate the affected asset/account immediately.",
                 "Preserve volatile evidence before remediation.",

@@ -103,13 +103,21 @@ def test_a_decision_and_a_filed_report_survive_a_restart(site):
     assert "CERT-IN-REF-1" in site.get("/clock").text
 
 
-def test_clearing_the_queue_is_saved_too(site):
-    _ingest(site, ENCODED, DISCOVERY)
+def test_clearing_the_test_alerts_is_saved_and_leaves_a_real_feed_alone(site):
+    _ingest(site, ENCODED, DISCOVERY)                      # a connected tool's alerts
     token = _csrf(site.get("/").text)
+    site.post("/demo/fire", data={"csrf": token, "benign": "on"}, follow_redirects=False)
+    from app import demo_attack
+
+    def test_alerts(result):
+        return [a for a in result["alerts"] if a["client"] in demo_attack.CLIENTS]
+    assert len(test_alerts(main._load_result())) == 6
     assert site.post("/demo/reset", data={"csrf": token}, follow_redirects=False).status_code == 303
     _restart()
-    assert main._load_result()["metrics"]["live_alerts"] == 0
-    assert _ingest(site, ENCODED)["accepted"] == 1, "and the alert can be sent again afterwards"
+    after = main._load_result()
+    assert test_alerts(after) == [], "the test alerts are gone"
+    assert sum(1 for a in after["alerts"] if a["client"] == BANK) == 2, "the tool's alerts are not"
+    assert _ingest(site, ENCODED)["accepted"] == 0
 
 
 def test_alert_saves_are_spaced_out_but_a_decision_is_saved_at_once(site, monkeypatch):

@@ -324,3 +324,57 @@ ol.steps .found { display: block; color: var(--text-2); font-size: .95rem; }
 
 details > summary.btn { list-style: none; }
 details > summary.btn::-webkit-details-marker { display: none; }
+
+/* ---- live: alerts arriving, and a test stream to watch -------------------------- */
+.feed td.when { font-family: var(--figures); font-stretch: 90%; }
+.feed .from { font-weight: 500; }
+.feed tr.closed .from { font-weight: 400; }
+.feed .primary { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed .verdict { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.feed .verdict .words { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed tr:not(.closed) .verdict .words { font-weight: 600; color: var(--text); }
+.feed .sub .tag { font-size: .8rem; padding: 0 5px; margin-right: 6px; }
+@keyframes arrive { from { background-color: var(--line-strong); } to { background-color: transparent; } }
+@media (prefers-reduced-motion: no-preference) {
+  .feed tr.new td, .feed tr.changed td { animation: arrive 1.6s ease-out; }
+}
+.watch { margin-left: auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; font-size: .93rem; color: var(--text-2); }
+
+.teststrip { padding: 12px 16px 13px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+.sendrow, .sendrow form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0; }
+.sendrow #clear { margin-left: auto; }
+.choices { display: flex; flex-wrap: wrap; border: 1px solid var(--line-strong); border-radius: 5px; overflow: hidden; }
+.choice { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 3px 12px; color: var(--text-2); font-size: .95rem; cursor: pointer; border-right: 1px solid var(--line-strong); }
+.choice:last-child { border-right: 0; }
+.choice input { margin: 0; accent-color: var(--text); }
+.choice .n { color: var(--text-3); font-size: .88rem; white-space: nowrap; }
+.choice:has(input:checked) { background: var(--raised); color: var(--text); }
+.runline { min-height: 32px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.sendbar { flex: 0 1 300px; min-width: 120px; height: 6px; background: var(--raised); border-radius: 3px; overflow: hidden; }
+.sendbar i { display: block; height: 100%; width: 0; background: var(--text-2); }
+@media (prefers-reduced-motion: no-preference) { .sendbar i { transition: width .35s linear; } }
+.outcome { font-size: 1.1rem; line-height: 1.4; color: var(--text-2); }
+.outcome b { color: var(--text); font-weight: 650; }
+.outcome .n-crit { color: var(--crit); }
+.outcome .n-due { color: var(--med); font-family: var(--figures); font-stretch: 88%; }
+
+@media (min-width: 701px) { .feed { min-width: 640px; } }
+@media (max-width: 700px) {
+  /* on a phone each alert is a short block, so the decision is never off the side of the screen */
+  .feed, .feed tbody { display: block; }
+  .feed thead { display: none; }
+  .feed tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 12px; padding: 10px 14px 11px; border-bottom: 1px solid var(--line); box-shadow: inset 3px 0 0 var(--line); }
+  .feed tr:last-child { border-bottom: 0; }
+  .feed tr.sev-critical { box-shadow: inset 3px 0 0 var(--crit); }
+  .feed tr.sev-high { box-shadow: inset 3px 0 0 var(--high); }
+  .feed tr.sev-medium { box-shadow: inset 3px 0 0 var(--med); }
+  .feed td, .feed td:first-child { display: block; padding: 0; border: 0; min-width: 0; }
+  .feed td.stripe, .feed tr.closed td.stripe, .feed tr[class*="sev-"] td.stripe { box-shadow: none; grid-column: 2; grid-row: 1; color: var(--text-3); }
+  .feed td:nth-child(2) { grid-column: 1; grid-row: 1; }
+  .feed td:nth-child(3), .feed td:nth-child(4) { grid-column: 1 / -1; }
+  .feed td:nth-child(4) .sub { white-space: normal; }
+  .choices { width: 100%; }
+  .choice { flex: 1 1 100%; border-right: 0; border-bottom: 1px solid var(--line-strong); }
+  .choice:last-child { border-bottom: 0; }
+  .choice .n { margin-left: auto; }
+}

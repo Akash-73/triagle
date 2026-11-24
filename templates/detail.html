@@ -2,7 +2,7 @@
 {% import "_parts.html" as parts %}
 {% block title %}{{ uc.name }} · Triagle{% endblock %}
 {% block heading %}<a href="/alerts" style="text-decoration:none"><span class="crumb">Alerts /</span></a> {{ alert.alert_id }}{% endblock %}
-{% block top_actions %}{% if report_key %}<a class="btn small" href="/case/{{ report_key }}">Open case {{ report_key }}</a>{% endif %}{% endblock %}
+{% block top_actions %}{% if siem %}<a class="btn small" href="{{ siem.url }}" target="_blank" rel="noopener noreferrer" title="The same alert in {{ siem.name }}, with what Triagle wrote back about it">Open in {{ siem.name }}</a>{% endif %}{% if report_key %}<a class="btn small" href="/case/{{ report_key }}">Open case {{ report_key }}</a>{% endif %}{% endblock %}
 {% block content %}
 <div class="pagehead">
   <div class="what">
@@ -84,7 +84,7 @@
     {% endif %}
 
     <section class="panel">
-      <header><h2>Evidence from the tool</h2></header>
+      <header><h2>Evidence from the tool</h2>{% if siem %}<a class="more" href="{{ siem.url }}" target="_blank" rel="noopener noreferrer">Open in {{ siem.name }}</a>{% endif %}</header>
       <div class="body">
         <dl class="kv">
           <dt>Alert id</dt><dd class="mono">{{ alert.alert_id }}</dd>

@@ -32,7 +32,7 @@ from app import store
 from app.engine import certin, regclock
 from app.agent import backend
 from app import auth, audit
-from app.engine import sources_meta, worknotes, reputation, analyst, genai, usecases
+from app.engine import sources_meta, worknotes, reputation, analyst, genai, usecases, siem_link
 from app.engine.correlate import GENERIC_ENTITIES
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -327,7 +327,8 @@ def _snapshot():
             "live_count": _CACHE.get("live_count", 0), "rolled": _CACHE["rolled"],
             "feeds": list(_CACHE["feeds"].values()), "decisions": _CACHE["decisions"],
             "filings": _CACHE["filings"], "sector_overrides": _CACHE["sector_overrides"],
-            "resolutions": _CACHE["resolutions"], "outbox": _CACHE.get("outbox")}
+            "resolutions": _CACHE["resolutions"], "outbox": _CACHE.get("outbox"),
+            "arrived_at": _CACHE.get("arrived_at", {})}
 
 
 def _restore():
@@ -366,6 +367,8 @@ def _restore():
     if isinstance(box, dict) and box.get("epoch") and isinstance(box.get("events"), list):
         _CACHE["outbox"] = {"epoch": str(box["epoch"]), "seq": int(box.get("seq") or 0),
                             "events": [e for e in box["events"] if isinstance(e, dict) and e.get("seq")]}
+    kept = {m[0] for m in meta}
+    _CACHE["arrived_at"] = {str(k): str(v) for k, v in (state.get("arrived_at") or {}).items() if str(k) in kept}
     _CACHE["restored"] = {"alerts": len(live), "saved_at": state.get("saved_at")}
     return True
 
@@ -574,6 +577,8 @@ def _trim():
     gone = set(drop)
     _CACHE["live"] = [x for i, x in enumerate(live) if i not in gone]
     _CACHE["live_meta"] = [x for i, x in enumerate(meta) if i not in gone]
+    still = {x[0] for x in _CACHE["live_meta"]}
+    _CACHE["arrived_at"] = {k: v for k, v in _CACHE.get("arrived_at", {}).items() if k in still}
     _reprocess()
     return True
 
@@ -598,6 +603,7 @@ def _add_alerts(items):
             _CACHE["seen_ids"].add(a.alert_id)
             _CACHE["live"].append({"source": it["source"], "client": client, "raw": it["raw"]})
             _CACHE["live_meta"].append((a.alert_id, a.timestamp))
+            _CACHE.setdefault("arrived_at", {})[a.alert_id] = stamp
             feed = _CACHE["feeds"].setdefault((client, a.source), {"client": client, "source": a.source,
                                                                    "count": 0, "first": stamp})
             feed["count"] += 1
@@ -617,11 +623,18 @@ def _drop_live(keep=lambda item: False):
     with _LOCK:
         _ensure_state()
         pairs = [(x, m) for x, m in zip(_CACHE["live"], _CACHE["live_meta"]) if keep(x)]
+        removed_from = set()
         for x, m in zip(_CACHE["live"], _CACHE["live_meta"]):
             if not keep(x):
                 _CACHE["seen_ids"].discard(m[0])
+                removed_from.add(x.get("client"))
         _CACHE["live"] = [x for x, _ in pairs]
         _CACHE["live_meta"] = [m for _, m in pairs]
+        still = {m[0] for _, m in pairs}
+        _CACHE["arrived_at"] = {k: v for k, v in _CACHE.get("arrived_at", {}).items() if k in still}
+        # a customer whose alerts were all removed is no longer sending
+        emptied = removed_from - {x.get("client") for x in _CACHE["live"]}
+        _CACHE["feeds"] = {k: f for k, f in _CACHE["feeds"].items() if f.get("client") not in emptied}
         if not pairs:
             _CACHE["live_count"] = 0
             _CACHE["rolled"] = {"total": 0, "closed": 0, "escalated": 0, "codes": {}}
@@ -752,6 +765,17 @@ CLOSED_SHOWN = 40      # closed alerts listed on the console before "show all"
 _SEV_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 
+def _test_clients():
+    """Customers that only exist in the built-in test streams."""
+    from app import demo_attack
+    return demo_attack.CLIENTS
+
+
+def _real_feeds():
+    """Feeds from connected tools. A test stream is not a connected tool."""
+    return [f for f in _CACHE.get("feeds", {}).values() if f.get("client") not in _test_clients()]
+
+
 def _source_strip(result):
     """One entry per source tool in the queue: how many alerts, and for a
     live feed when the last one arrived."""
@@ -759,7 +783,7 @@ def _source_strip(result):
     for a in result["alerts"]:
         counts[a["source"]] = counts.get(a["source"], 0) + 1
     live = {}
-    for f in _CACHE.get("feeds", {}).values():
+    for f in _real_feeds():
         cur = live.setdefault(f["source"], {"count": 0, "last": ""})
         cur["count"] += f["count"]
         cur["last"] = max(cur["last"], f.get("last", ""))
@@ -892,10 +916,21 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
     just_decided = any(a.get("status") in ("executed", "approved", "auto_executed", "declined") for a in actions)
     return templates.TemplateResponse(request, "detail.html", _ctx(
         request, user, active="alerts", alert=alert, verdict=verdict, trail=trail, actions=actions, intel=intel,
+        siem=_siem_link(alert, user),
         uc=usecases.for_alert(alert, verdict), steps=_step_words(trail), ask_suggested=analyst.SUGGESTED,
         report_key=report_key, just_decided=just_decided, resolutions=RESOLUTIONS,
         notice=NOTICES.get(notice, ""), can_approve=user["role"] == "analyst",
         now=datetime.datetime.now().strftime("%d %b %Y, %H:%M")))
+
+
+def _siem_link(alert, user):
+    """Where to open this alert in the tool it came from. Not for a sample
+    alert, which was never in anyone's SIEM, and not for a guest: where a
+    customer's SIEM lives is not for everyone who has this console's address."""
+    if user.get("guest") or not siem_link.enabled():
+        return None
+    arrived = {m[0] for m in _CACHE.get("live_meta", [])}
+    return siem_link.for_alert(alert) if alert["alert_id"] in arrived else None
 
 
 STEP_WORDS = {
@@ -1053,20 +1088,31 @@ def api_notes(request: Request, case: str = "", user=Depends(require_user)):
         raise HTTPException(status_code=404, detail="No such case.")
     members = _incident_members(result, incident)
     key = tuple(incident["alert_ids"])
-    cached = _WORKNOTES.get(key)
-    stale = cached and not cached[1] and time.time() - _NOTES_AT.get(key, 0) > NOTES_RETRY_SECONDS
-    if not cached or stale:
-        if not _ask_allowed(_client_ip(request), trusted=_trusted(user)) and cached:
-            pass                                    # keep the fallback rather than hammer a failing model
-        else:
-            _WORKNOTES[key] = worknotes.work_notes(incident, members)
-            _NOTES_AT[key] = time.time()
-    text, by_model, provider = _WORKNOTES[key]
+    # one writer per case: a second request for the same case waits for the
+    # first one's answer instead of asking the model the same thing again
+    with _notes_lock(key):
+        cached = _WORKNOTES.get(key)
+        stale = cached and not cached[1] and time.time() - _NOTES_AT.get(key, 0) > NOTES_RETRY_SECONDS
+        if not cached or stale:
+            if not _ask_allowed(_client_ip(request), trusted=_trusted(user)) and cached:
+                pass                                # keep the fallback rather than hammer a failing model
+            else:
+                _WORKNOTES[key] = worknotes.work_notes(incident, members)
+                _NOTES_AT[key] = time.time()
+        text, by_model, provider = _WORKNOTES[key]
     return {"text": text, "by_model": by_model, "provider": provider,
             "error": None if by_model else genai.STATUS.get("error")}
 
 
 _NOTES_AT = {}
+_NOTES_LOCKS = {}
+
+
+def _notes_lock(key):
+    with _LOCK:
+        if len(_NOTES_LOCKS) > 500:
+            _NOTES_LOCKS.clear()
+        return _NOTES_LOCKS.setdefault(key, threading.Lock())
 
 
 NOTICES = {
@@ -1604,7 +1650,7 @@ def connectors_page(request: Request, user=Depends(require_user)):
     for a in result["alerts"]:
         counts[a["source"]] = counts.get(a["source"], 0) + 1
     live = {}
-    for f in _CACHE.get("feeds", {}).values():
+    for f in _real_feeds():
         cur = live.setdefault(f["source"], {"count": 0, "last": "", "clients": set()})
         cur["count"] += f["count"]
         cur["last"] = max(cur["last"], f.get("last", ""))
@@ -1857,7 +1903,7 @@ def demo_fire(request: Request, csrf: str = Form(default=""), benign: str = Form
     if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
         raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
     from app import demo_attack
-    scenario = scenario if scenario in demo_attack.SCENARIOS else demo_attack.DEFAULT
+    scenario = _scenario(scenario)
     # each fire is ONE clean incident: clear the previous demo attack first so
     # repeated clicks never pile up into a single doubled-up incident. Alerts
     # from a real feed are left alone.
@@ -1867,18 +1913,234 @@ def demo_fire(request: Request, csrf: str = Form(default=""), benign: str = Form
         items += demo_attack.fresh_benign(scenario=scenario)
     accepted = _add_alerts(items)
     audit.record("demo attack fired", user["name"], count=accepted, scenario=scenario, ip=_client_ip(request))
-    # land on the new incident so the judge sees the investigation immediately
-    return RedirectResponse(url=f"/report/{quote(demo_attack.SCENARIOS[scenario]['host'], safe='')}", status_code=303)
+    # land on the new case so the investigation is on screen immediately
+    case = _find_incident(_load_result(), demo_attack.SCENARIOS[scenario]["host"])
+    return RedirectResponse(url=f"/case/{case['id']}" if case else "/alerts", status_code=303)
 
 
 @app.post("/demo/reset")
-def demo_reset(request: Request, csrf: str = Form(default=""), user=Depends(require_analyst)):
-    """Drop all live alerts, back to the seed queue. Analyst-only."""
+def demo_reset(request: Request, csrf: str = Form(default=""), next: str = Form(default=""),
+               user=Depends(require_analyst)):
+    """Remove the test alerts. Alerts from connected tools are left alone:
+    this never empties a real queue. Analyst-only."""
     if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
         raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
-    _drop_live()
-    audit.record("demo queue reset", user["name"], ip=_client_ip(request))
-    return RedirectResponse(url="/", status_code=303)
+    with _LOCK:
+        _CACHE.pop("demo_run", None)
+        _drop_live(keep=lambda item: item.get("client") not in _test_clients())
+    audit.record("test alerts cleared", user["name"], ip=_client_ip(request))
+    return RedirectResponse(url="/live" if next == "live" else "/", status_code=303)
+
+
+# ---- live: alerts arriving and being decided, and a test stream to watch -------
+
+LIVE_ROWS = 40
+TEST_STREAMS = {
+    "shift": "A working hour, with one intrusion in it",
+    "intrusion": "The intrusion alone",
+}
+
+
+def _demo_on():
+    return os.environ.get("TRIAGLE_DEMO", "false").lower() == "true"
+
+
+def _scenario(asked):
+    """The scenario to run: the one asked for if this deployment offers it."""
+    from app import demo_attack
+    keep = demo_attack.offered()
+    if asked in keep:
+        return asked
+    return demo_attack.DEFAULT if demo_attack.DEFAULT in keep else keep[0]
+
+
+def _stream_items(kind, scenario):
+    from app import demo_attack
+    if kind == "shift":
+        return demo_attack.fresh_shift(scenario=scenario)
+    return demo_attack.fresh_benign(scenario=scenario) + demo_attack.fresh_attack(scenario=scenario)
+
+
+def _clock_time(iso):
+    """'19:52:07' in IST for today, '23 Nov, 19:52' for an earlier day."""
+    try:
+        dt = datetime.datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    dt = dt.astimezone(_IST)
+    today = datetime.datetime.now(_IST).date()
+    return dt.strftime("%H:%M:%S") if dt.date() == today else dt.strftime("%d %b, %H:%M")
+
+
+def _short_reason(verdict):
+    """The reason in one sentence, for a row with little room: the first
+    sentence of the reasoning, without the lead-in that only repeats the
+    verdict. The whole reasoning is on the alert's own page."""
+    from app.agent import loop
+    text = " ".join(str(verdict.get("reasoning") or verdict.get("summary") or "").split())
+    if text.startswith(loop.REAL_THREAT_LEAD):
+        text = text[len(loop.REAL_THREAT_LEAD):]
+        text = text[:1].upper() + text[1:]
+    first = text.split(". ", 1)[0].strip()
+    return first if not first or first.endswith((".", "!", "?")) else first + "."
+
+
+def _live_rows(result, limit=LIVE_ROWS):
+    """The alerts that arrived most recently, newest first: what the tool
+    said, and what Triagle decided. It is the decision as it stands now, so a
+    row can change after it appears (a later alert can raise an earlier one)."""
+    by_id = {a["alert_id"]: a for a in result["alerts"]}
+    arrived = _CACHE.get("arrived_at", {})
+    tests = _test_clients()
+    rows = []
+    for aid, _ in reversed(_CACHE.get("live_meta", [])):
+        a, v = by_id.get(aid), result["verdicts"].get(aid)
+        if not a or not v:
+            continue
+        uc = usecases.for_alert(a, v)
+        still_open = _is_open(v)
+        if v.get("resolved"):
+            why = f"{v['resolved']['label']}, closed by {v['resolved']['by']}"
+        elif v.get("escalate"):
+            why = sources_meta.verdict_words(v.get("disposition"))
+        else:
+            why = sources_meta.closure_words(v.get("closure_code"))
+        at = arrived.get(aid) or a.get("timestamp") or ""
+        rows.append({
+            "id": aid, "when": _clock_time(at), "arrived": at if aid in arrived else "",
+            "client": a.get("client") or "", "tool": sources_meta.source_name(a.get("source")),
+            "asset": a.get("host") or a.get("entity") or "", "said": a.get("title") or "",
+            "said_severity": str(a.get("raw_severity") or "").lower(), "open": still_open,
+            "severity": v.get("severity") if still_open else "", "what": uc["name"], "why": why,
+            "reason": _short_reason(v),
+            "stands_for": (v.get("burst") or {}).get("count") or 0, "test": a.get("client") in tests,
+        })
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def _run_summary(result, run):
+    """Where the test stream stands: how many of its alerts were sent, and
+    what became of them."""
+    from app import demo_attack
+    s = demo_attack.SCENARIOS[run["scenario"]]
+    mine = [a["alert_id"] for a in result["alerts"] if a.get("client") == s["client"]]
+    verdicts = [result["verdicts"][i] for i in mine if i in result["verdicts"]]
+    still_open = sum(1 for v in verdicts if _is_open(v))
+    cases = [inc for inc in result["incidents"] if inc.get("client") == s["client"]]
+    case = _find_incident(result, s["host"])
+    if case and case.get("client") != s["client"]:
+        case = None
+    name, report = "", None
+    if case:
+        members = _incident_members(result, case)
+        name = usecases.for_case(members)["name"]
+        clock = _clock(result, case, members)
+        if clock and clock.get("next"):
+            nxt = clock["next"]
+            report = {"name": nxt["name"], "due": nxt["due_iso"], "note": nxt["note"], "hours": nxt.get("hours")}
+    total = len(run["items"])
+    done = run["sent"] >= total
+    seconds = None
+    if done and run.get("finished"):
+        seconds = max(1, round(run["finished"] - run["started"]))
+    return {"id": run["id"], "kind": run["kind"], "customer": s["client"], "sent": run["sent"], "total": total,
+            "done": done, "seconds": seconds, "closed": len(verdicts) - still_open, "open": still_open,
+            "cases": len(cases), "case": case["id"] if case else None, "case_name": name, "report": report}
+
+
+def _live_state(result):
+    m = result["metrics"]
+    run = _CACHE.get("demo_run")
+    tests = _test_clients()
+    rows = _live_rows(result)
+    return {
+        "rev": _CACHE.get("rev", 0), "now": _now_iso(),
+        "counts": {"received": m.get("received", 0), "closed": m.get("closed_all", 0), "open": m.get("open", 0),
+                   "by_person": m.get("resolved", 0), "cases": m.get("incident_count", 0)},
+        "rows": rows,
+        "last": next((r["arrived"] for r in rows if r["arrived"]), ""),
+        "test_alerts": sum(1 for a in result["alerts"] if a.get("client") in tests),
+        "run": _run_summary(result, run) if run else None,
+    }
+
+
+@app.get("/live", response_class=HTMLResponse)
+def live_page(request: Request, user=Depends(require_user)):
+    """Alerts as they arrive, each with what the tool said and what Triagle
+    decided. An analyst can send a test stream from here and watch it."""
+    from app import demo_attack
+    result = _load_result()
+    keep = demo_attack.offered()
+    counts = {k: {kind: len(_stream_items(kind, k)) for kind in TEST_STREAMS} for k in keep}
+    return templates.TemplateResponse(request, "live.html", _ctx(
+        request, user, active="live", state=_live_state(result), demo_on=_demo_on(),
+        can_test=_demo_on() and user["role"] == "analyst", streams=TEST_STREAMS, stream_counts=counts,
+        scenarios={k: demo_attack.SCENARIOS[k] for k in keep}, default_scenario=_scenario(""),
+        sources=_source_strip(result), poll=False))
+
+
+@app.get("/api/live")
+def api_live(request: Request, rev: int = -1, user=Depends(require_user)):
+    """What the Live page polls. Read-only, so a guest may watch. A caller
+    that already has this revision gets a short answer."""
+    result = _load_result()
+    if rev == _CACHE.get("rev", 0):
+        return {"rev": rev, "same": True, "now": _now_iso()}
+    return _live_state(result)
+
+
+@app.post("/api/demo/start")
+async def api_demo_start(request: Request, user=Depends(require_analyst)):
+    """Prepare a test stream. Nothing is sent yet: the page sends it a few
+    alerts at a time with /api/demo/step, so the audience watches it arrive.
+    The previous test alerts are removed first; a real feed is left alone."""
+    body = await _json_body(request)
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    if not _demo_on():
+        raise HTTPException(status_code=403, detail="Test streams are turned off on this deployment.")
+    scenario = _scenario(body.get("scenario"))
+    kind = body.get("kind") if body.get("kind") in TEST_STREAMS else "shift"
+    items = _stream_items(kind, scenario)
+    with _LOCK:
+        _drop_live(keep=lambda item: item.get("client") not in _test_clients())
+        run = {"id": secrets.token_hex(4), "items": items, "sent": 0, "scenario": scenario, "kind": kind,
+               "started": time.time(), "finished": None}
+        _CACHE["demo_run"] = run
+        state = _live_state(_load_result())
+    audit.record("test stream started", user["name"], scenario=scenario, kind=kind, count=len(items),
+                 ip=_client_ip(request))
+    return {"run": run["id"], "total": len(items), "state": state}
+
+
+@app.post("/api/demo/step")
+async def api_demo_step(request: Request, user=Depends(require_analyst)):
+    """Send the next few alerts of the test stream through the same path a
+    real tool's alerts take, and say where the queue now stands."""
+    body = await _json_body(request)
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    try:
+        n = max(1, min(5, int(body.get("n", 1))))
+    except (TypeError, ValueError):
+        n = 1
+    with _LOCK:
+        run = _CACHE.get("demo_run")
+        if not run or run["id"] != body.get("run"):
+            raise HTTPException(status_code=409, detail="That test stream is no longer running.")
+        batch = run["items"][run["sent"]:run["sent"] + n]
+        if batch:
+            _add_alerts(batch)
+            run["sent"] += len(batch)
+        if run["sent"] >= len(run["items"]) and not run.get("finished"):
+            run["finished"] = time.time()
+        state = _live_state(_load_result())
+    return {"sent": state["run"]["sent"], "total": state["run"]["total"], "done": state["run"]["done"],
+            "case": state["run"]["case"], "state": state}
 
 
 @app.get("/healthz")

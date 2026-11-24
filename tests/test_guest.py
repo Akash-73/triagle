@@ -42,6 +42,14 @@ def test_a_guest_can_look_around(site):
     assert site.get(f"/alert/{aid}").status_code == 200
 
 
+def test_a_guest_is_told_what_this_is_and_an_analyst_is_not(site):
+    intro = "Triagle works the alert queue of a security operations team."
+    assert intro in site.get("/").text
+    analyst = TestClient(main.app)
+    analyst.post("/login", data={"username": "admin", "password": "pw"})
+    assert intro not in analyst.get("/").text
+
+
 def test_a_guest_can_try_an_alert(site):
     page = site.get("/connectors").text
     token = page.split("var CSRF = ")[1].split(",")[0].strip().strip('"')

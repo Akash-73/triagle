@@ -177,17 +177,33 @@ Assets are recognised by name, or listed in `TRIAGLE_OT_CONTROLLERS` and
 `TRIAGLE_OT_STATIONS`. In a real deployment the list comes from the OT
 monitor's inventory. See `app/engine/ot.py` and `tests/test_ot.py`.
 
-## Demo scenarios
+## Watching it work, and testing it
 
-With `TRIAGLE_DEMO=true` the console has two "fire live attack" buttons. Both
-run the same intrusion; the sector changes what Triagle does about it.
+The **Live** page lists alerts as they arrive, newest first. Each row shows
+what the tool said and what Triagle decided, with the reason in a sentence.
+Anyone who may look at the console may watch it, a guest included.
 
-| Scenario | Tenant | What it shows |
+With `TRIAGLE_DEMO=true` a signed-in analyst can also send a test stream from
+that page. It is sent one alert at a time through the same path a connected
+tool's alerts take, so the decisions on screen are the engine's own:
+
+| Test stream | What arrives |
+|---|---|
+| A working hour, with one intrusion in it | about thirty alerts from three tools for an invented customer. The routine ones are closed, each with its reason; the five that are the intrusion are raised as one case, and the reporting clock starts |
+| The intrusion alone | the same five alerts and one routine one |
+
+Every test alert is marked "test" and belongs to a customer of its own, so
+starting or clearing a stream never touches a connected tool's alerts.
+
+Two customers are built in; the sector changes what Triagle does about the
+same intrusion. `TRIAGLE_DEMO_SCENARIOS=bank` limits a deployment to one.
+
+| Scenario | Customer | What it shows |
 |---|---|---|
 | `bank` (default) | a co-operative bank | CERT-In and RBI clocks running together; host isolation and account actions with human approval |
 | `power` | a power utility | the foothold is an HMI and the attacker sends a breaker command to an RTU: no isolation, containment at the boundary, CSIRT-Power on the clock |
 
-All clients in the samples and scenarios are invented.
+All customers in the samples and test streams are invented.
 
 ## Sign-in and the audit log
 

@@ -30,6 +30,8 @@ Settings:
   GOOGLE_CLOUD_PROJECT      project id     (read from the metadata server on Cloud Run)
   TRIAGLE_VERTEX_LOCATION   default "global"
   TRIAGLE_MODEL             default "gemini-3.5-flash"
+  TRIAGLE_THINKING          minimal / low / medium / high, or "default" to leave
+                            the model's own setting alone. Default "low".
   GEMINI_API_KEY            AI Studio key, for the fallback transport
 """
 import os
@@ -49,6 +51,12 @@ STATUS = {"provider": None, "model": None, "ok": None, "error": None, "at": None
           "calls": 0, "failures": 0}
 
 _cache = {"project": None, "token": None, "token_exp": 0.0}
+
+# How long the model may think before it writes. Triagle asks it to put into
+# prose a verdict the rules have already reached, so a short think is enough
+# and the answer comes back in a few seconds instead of ten.
+THINKING_LEVELS = ("minimal", "low", "medium", "high")
+_no_thinking = set()      # models that refused the setting; they run on their own default
 
 
 def _flag(name):
@@ -136,12 +144,36 @@ def _extract(resp_json):
     return text.strip() or None
 
 
-def _body(system, user, max_tokens, temperature):
+def thinking():
+    """The thinking level to ask for, or None to leave the model's own."""
+    level = _flag("TRIAGLE_THINKING") or "low"
+    if level not in THINKING_LEVELS or model_name() in _no_thinking:
+        return None
+    return level
+
+
+def _body(system, user, max_tokens, temperature, level=None):
+    config = {"maxOutputTokens": max_tokens, "temperature": temperature}
+    if level:
+        config["thinkingConfig"] = {"thinkingLevel": level.upper()}
     return {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": user}]}],
-        "generationConfig": {"maxOutputTokens": max_tokens, "temperature": temperature},
+        "generationConfig": config,
     }
+
+
+def _post(url, headers, system, user, max_tokens, temperature):
+    """One call to the model. A model that has no thinking setting answers
+    HTTP 400 to it: ask again without, and stop sending it to that model."""
+    level = thinking()
+    resp = requests.post(url, headers=headers, json=_body(system, user, max_tokens, temperature, level), timeout=60)
+    if resp.status_code == 400 and level:
+        plain = requests.post(url, headers=headers, json=_body(system, user, max_tokens, temperature), timeout=60)
+        if plain.status_code == 200:
+            _no_thinking.add(model_name())
+        return plain
+    return resp
 
 
 def _error_text(resp):
@@ -172,9 +204,9 @@ def _vertex(system, user, max_tokens, temperature):
     token = _access_token()
     if not token:
         raise ModelError("No Google Cloud credentials found for this service.")
-    resp = requests.post(vertex_url(proj, location(), model_name()),
-                         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                         json=_body(system, user, max_tokens, temperature), timeout=60)
+    resp = _post(vertex_url(proj, location(), model_name()),
+                 {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                 system, user, max_tokens, temperature)
     if resp.status_code != 200:
         if resp.status_code in (401, 403):
             _cache["token"] = None
@@ -190,9 +222,9 @@ def _ai_studio(system, user, max_tokens, temperature):
     if not key:
         return None
     base = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
-    resp = requests.post(f"{base}/models/{model_name()}:generateContent",
-                         headers={"x-goog-api-key": key, "Content-Type": "application/json"},
-                         json=_body(system, user, max_tokens, temperature), timeout=60)
+    resp = _post(f"{base}/models/{model_name()}:generateContent",
+                 {"x-goog-api-key": key, "Content-Type": "application/json"},
+                 system, user, max_tokens, temperature)
     if resp.status_code != 200:
         raise ModelError(_error_text(resp))
     text = _extract(resp.json())
@@ -251,7 +283,7 @@ def status():
     transport = "Vertex AI" if vertex_enabled() else (
         "AI Studio key" if (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")) else None)
     return {
-        "configured": configured(), "transport": transport, "model": model_name(),
+        "configured": configured(), "transport": transport, "model": model_name(), "thinking": thinking(),
         "location": location() if vertex_enabled() else None,
         "project": project() if vertex_enabled() else None,
         "last": dict(STATUS),

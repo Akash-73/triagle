@@ -42,6 +42,8 @@ def _clean(tmp_path, monkeypatch):
     genai._cache.clear()
     genai._cache.update(project=None, token=None, token_exp=0.0)
     genai.STATUS.update(provider=None, model=None, ok=None, error=None, at=None, seconds=None, calls=0, failures=0)
+    genai._no_thinking.clear()
+    monkeypatch.delenv("TRIAGLE_THINKING", raising=False)
     main._ASK_TIMES.clear()
     main._ASK_ALL.clear()
     auth.load_config({"TRIAGLE_ADMIN_PASSWORD": "pw", "TRIAGLE_SECRET": "s",
@@ -123,6 +125,44 @@ def test_an_empty_reply_counts_as_a_failure(cloud_run):
     cloud_run["reply"] = FakeResp(200, {"candidates": [{"content": {"parts": [{"text": "x", "thought": True}]}}]})
     assert genai.generate_prose("s", "u") == (None, None)
     assert "no text" in genai.STATUS["error"]
+
+
+def test_the_model_is_asked_for_a_short_think(cloud_run, monkeypatch):
+    genai.generate_prose("s", "u")
+    config = cloud_run["posts"][0]["json"]["generationConfig"]
+    assert config["thinkingConfig"] == {"thinkingLevel": "LOW"} and "thinkingBudget" not in str(config)
+    assert genai.status()["thinking"] == "low"
+    monkeypatch.setenv("TRIAGLE_THINKING", "high")
+    genai.generate_prose("s", "u")
+    assert cloud_run["posts"][1]["json"]["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "HIGH"}
+    for leave_alone in ("default", "off", "nonsense"):
+        monkeypatch.setenv("TRIAGLE_THINKING", leave_alone)
+        genai.generate_prose("s", "u")
+        assert "thinkingConfig" not in cloud_run["posts"][-1]["json"]["generationConfig"], leave_alone
+        assert genai.status()["thinking"] is None
+
+
+def test_a_model_without_that_setting_is_asked_again_without_it_and_then_left_alone(cloud_run, monkeypatch):
+    refused = FakeResp(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT",
+                                       "message": "Unknown name thinkingLevel"}})
+
+    def post(url, headers=None, json=None, timeout=None):
+        cloud_run["posts"].append({"url": url, "json": json})
+        return refused if "thinkingConfig" in json["generationConfig"] else model_reply("written anyway")
+
+    monkeypatch.setattr(genai.requests, "post", post)
+    assert genai.generate_prose("s", "u") == ("written anyway", "vertex")
+    assert len(cloud_run["posts"]) == 2 and "thinkingConfig" not in cloud_run["posts"][1]["json"]["generationConfig"]
+    assert genai.STATUS["ok"] is True and genai.status()["thinking"] is None
+    assert genai.generate_prose("s", "u") == ("written anyway", "vertex")
+    assert len(cloud_run["posts"]) == 3, "the next call does not try the setting again"
+
+
+def test_a_call_refused_for_another_reason_is_still_reported(cloud_run):
+    cloud_run["reply"] = FakeResp(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT",
+                                                  "message": "The prompt is too long"}})
+    assert genai.generate_prose("s", "u") == (None, None)
+    assert "too long" in genai.STATUS["error"] and genai.status()["thinking"] == "low", "the setting is not blamed"
 
 
 def test_the_model_can_be_changed_by_setting(cloud_run, monkeypatch):

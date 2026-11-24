@@ -172,3 +172,33 @@ again replaces the earlier copy.
 
 The file is built by `scripts/wazuh/make_dashboard.py` for OpenSearch
 Dashboards 2.x, which the Wazuh dashboard 4.x is built on.
+
+## 7. From one console to the other
+
+An analyst should never have to search for the same alert twice.
+
+**From Triagle to Wazuh.** Tell Triagle where the Wazuh dashboard is:
+
+```bash
+gcloud run services update triagle --region us-central1 \
+  --update-env-vars "TRIAGLE_WAZUH_URL=https://<your-wazuh>"
+```
+
+Every Wazuh alert's page in Triagle then has an "Open in Wazuh" button. It
+opens Discover filtered to that alert and to everything Triagle wrote back
+about it: the verdict, and what people did. Only a signed-in person sees the
+button, and only on alerts that arrived from Wazuh. If several customers send
+alerts and only one of them uses this Wazuh, name it with
+`TRIAGLE_WAZUH_CLIENT`. If your alerts index pattern is not called
+`wazuh-alerts-*`, set `TRIAGLE_WAZUH_INDEX`.
+
+**From Wazuh to Triagle.** Every verdict in Wazuh carries `data.triagle.url`,
+the address of the alert in Triagle. To make it a link you can click:
+
+1. In the Wazuh dashboard open the menu, Dashboards Management, Index patterns,
+   and choose `wazuh-alerts-*`.
+2. Find the field `data.triagle.url`. If it is not listed, press the refresh
+   button at the top right of that page first.
+3. Click the pencil beside it, set Format to Url, and save.
+
+The address now opens Triagle from Discover and from the "Triagle" dashboard.

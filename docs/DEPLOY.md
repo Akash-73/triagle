@@ -14,6 +14,10 @@ One service, one instance. Everything below is set with flags on
 | `TRIAGLE_GUEST=view` | Anyone with the address can look around without signing in. Changes still need a sign-in. |
 | `TRIAGLE_STATE_FILE` | Where the queue, decisions and filed reports are saved, so a restart does not empty the console. |
 | `TRIAGLE_GCP_FIREWALL_CLIENT`, `TRIAGLE_GCP_FIREWALL_HOSTS` | Makes "Block this address" a real firewall rule for that customer's machines. |
+| `TRIAGLE_WAZUH_URL` | Address of the Wazuh dashboard. Each Wazuh alert then has an "Open in Wazuh" button (see WAZUH.md). |
+| `TRIAGLE_DEMO=true` | Lets a signed-in analyst send a test stream from the Live page. |
+| `TRIAGLE_DEMO_SCENARIOS` | Which built-in customers the test stream offers, for example `bank`. Unset means all. |
+| `TRIAGLE_THINKING` | How long the model may think before writing: `minimal`, `low` (default), `medium`, `high`, or `default` to leave the model's own setting. |
 
 ## Saved state on a bucket
 
