@@ -124,6 +124,6 @@ def test_fired_attack_closes_the_benign_alert_live():
 
 def test_fire_button_shows_only_in_demo_mode(monkeypatch):
     c = analyst()
-    assert "Fire live attack" in c.get("/").text
+    assert "Run a scenario" in c.get("/").text
     monkeypatch.setenv("TRIAGLE_DEMO", "false")
-    assert "Fire live attack" not in c.get("/").text
+    assert "Run a scenario" not in c.get("/").text

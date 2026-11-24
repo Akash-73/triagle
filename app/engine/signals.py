@@ -207,6 +207,40 @@ def benign_artifact(alert):
     return None
 
 
+# Read-only discovery commands: what an administrator, a login script or an
+# inventory agent runs all day (whoami, net user, systeminfo, ipconfig). An
+# attacker runs them too, which is why a SIEM flags them, but one of these on
+# its own is not evidence. It is closed as routine and kept as context: if a
+# real signal appears on the same asset, the case shows it in the timeline.
+#
+# Narrow on purpose. The whole command line must be one discovery command:
+# nothing chained, nothing redirected, and no option that changes anything.
+_DISC_TOOLS = (r"whoami|hostname|systeminfo|ipconfig|getmac|tasklist|quser|qwinsta|arp|netstat|nltest|ver")
+_DISC_NET = r"net1?(?:\.exe)?\s+(?:user|users|group|localgroup|accounts|view|share|session|config|time)\b"
+_DISC_RE = re.compile(
+    r'^"?(?:[a-z]:\\+(?:[^"\\]+\\+)*)?(?:(?:' + _DISC_TOOLS + r')(?:\.exe)?"?(?:\s|$)|' + _DISC_NET + r")", re.I)
+_DISC_WRAPPER = re.compile(r'^"?(?:[a-z]:\\+(?:[^"\\]+\\+)*)?cmd(?:\.exe)?"?\s+/c\s+', re.I)
+_DISC_CHANGES = re.compile(r"/add\b|/del(ete)?\b|/active\b|/passwordreq|/expires|/times|/logonpasswordchg|[&|<>;`^]|\$\(", re.I)
+
+
+def routine_discovery(alert):
+    """The discovery command this alert is about, if that is all it is: a
+    low-severity alert whose command line is one read-only discovery command.
+    None otherwise, and always None when a hard signal is present."""
+    if kind(alert) != ACTIVITY or hard_signals(alert):
+        return None
+    if str(_get(alert, "raw_severity") or "").lower() not in _SEV_LOW:
+        return None
+    cmd = " ".join(command_line(alert).split())
+    if not cmd or _DISC_CHANGES.search(cmd):
+        return None
+    inner = _DISC_WRAPPER.sub("", cmd, count=1).strip().strip('"').strip()
+    m = _DISC_RE.match(inner)
+    if not m:
+        return None
+    return inner[:60]
+
+
 _SEV_HIGH = ("high", "critical")
 _SEV_LOW = ("low", "informational", "info")
 
@@ -219,8 +253,8 @@ def is_notable(alert):
         return bool(matched_behaviours(alert))
     if hard_signals(alert) or (_get(alert, "indicators") or {}).get("drift"):
         return True
-    if benign_artifact(alert):
-        return False                     # a known OS artifact, whatever level the tool gave it
+    if benign_artifact(alert) or routine_discovery(alert):
+        return False                     # a known OS artifact or a lone discovery command
     sev = str(_get(alert, "raw_severity") or "").lower()
     if sev in _SEV_HIGH:
         return True
@@ -233,7 +267,7 @@ def has_own_weight(alert):
     and either above low severity or carrying a suspicious or sensitive term."""
     if kind(alert) != ACTIVITY:
         return False
-    if benign_artifact(alert):
+    if benign_artifact(alert) or routine_discovery(alert):
         return False
     sev = str(_get(alert, "raw_severity") or "").lower()
     if sev not in _SEV_LOW:

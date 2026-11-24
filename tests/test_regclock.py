@@ -256,12 +256,12 @@ def test_an_analyst_can_set_a_clients_sector_and_the_clock_follows(app):
 
 def test_the_console_shows_the_deadline_on_the_incident_and_caps_the_closed_list(app, monkeypatch):
     page = app.get("/").text
-    assert "Reporting deadlines running" in page and 'data-due="' in page
+    assert "Reports due" in page and 'data-due="' in page
     assert "Probing from outside, no sign it worked" in page                # Northwind: scan + spray
     monkeypatch.setattr(main, "CLOSED_SHOWN", 3)
-    page = app.get("/").text
-    assert "closed alerts — show all" in page
-    assert "closed alerts — show all" not in app.get("/?closed=all").text
+    page = app.get("/alerts?show=closed").text
+    assert "Show all closed alerts" in page
+    assert "Show all closed alerts" not in app.get("/alerts?show=closed&closed=all").text
 
 
 def test_pages_need_a_session():

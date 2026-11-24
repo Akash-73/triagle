@@ -1,256 +1,117 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Triagle — Triage Console</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #0a0e14;
-    --panel: #111722;
-    --panel-2: #161d2b;
-    --line: #222c3d;
-    --text: #dbe4f0;
-    --muted: #7d8ba3;
-    --eye: #38bdf8;         /* Netra — "the eye" — a watchful cyan */
-    --escalate: #ff5d5d;
-    --tp: #ff7a45;
-    --suspicious: #ffb443;
-    --benign: #46d68a;
-    --needs: #a78bfa;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Sora', sans-serif; -webkit-font-smoothing: antialiased; }
-  code, .mono { font-family: 'IBM Plex Mono', monospace; }
-
-  header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 18px 28px; border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, var(--panel), var(--bg));
-  }
-  .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 20px; letter-spacing: -0.01em; }
-  .brand .eye {
-    width: 30px; height: 30px; border-radius: 50%;
-    background: radial-gradient(circle at 50% 50%, var(--eye) 0 22%, #0a0e14 23% 42%, var(--eye) 43% 50%, transparent 51%);
-    box-shadow: 0 0 16px rgba(56,189,248,0.5);
-  }
-  .brand small { color: var(--muted); font-weight: 400; font-size: 12px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; margin-left: 4px; }
-  .tag { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); }
-
-  main { padding: 28px; max-width: 1180px; margin: 0 auto; }
-
-  /* metric strip */
-  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
-  .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
-  .metric .n { font-size: 28px; font-weight: 700; font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
-  .metric .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
-  .metric.hero-metric { background: linear-gradient(135deg, rgba(56,189,248,0.14), var(--panel)); border-color: rgba(56,189,248,0.3); }
-  .metric.hero-metric .n { color: var(--eye); }
-  .metric.danger .n { color: var(--escalate); }
-
-  .banner {
-    background: rgba(255,93,93,0.08); border: 1px solid rgba(255,93,93,0.3);
-    border-radius: 12px; padding: 14px 18px; margin-bottom: 24px;
-    font-size: 14px; color: #ffd0d0; display: flex; align-items: center; gap: 10px;
-  }
-  .banner b { color: #fff; }
-  .intro { background: linear-gradient(135deg, rgba(56,189,248,0.10), var(--panel)); border:1px solid rgba(56,189,248,0.25); border-radius:12px; padding:14px 18px; margin-bottom:16px; font-size:14.5px; line-height:1.55; color:var(--text); }
-  .intro b { color: var(--eye); }
-  .intro .dot { font-size:12px; } .intro .rk { color: var(--escalate); } .intro .gk { color: var(--muted); }
-
-  .section-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 26px 0 12px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
-
-  /* incident cards */
-  .incidents { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 8px; }
-  .incident { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 10px; padding: 14px 16px; }
-  .incident.elevated { border-left-color: var(--escalate); }
-  .incident .h { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; margin-bottom: 4px; }
-  .incident .badge { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 10px; padding: 2px 7px; border-radius: 20px; background: rgba(255,93,93,0.15); color: var(--escalate); }
-  .incident .meta { font-size: 12.5px; color: var(--muted); font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
-
-  /* the queue */
-  .queue { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .qrow { display: grid; grid-template-columns: 120px 1fr 130px 170px; gap: 14px; align-items: center;
-          padding: 14px 18px; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--text); transition: background .12s; }
-  .qrow:last-child { border-bottom: none; }
-  .qrow:hover { background: var(--panel-2); }
-  .qrow.esc { background: rgba(255,93,93,0.045); }
-  .qrow.esc:hover { background: rgba(255,93,93,0.09); }
-
-  .disp { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 6px; text-align: center; white-space: nowrap; }
-  .disp.true_positive { background: rgba(255,122,69,0.15); color: var(--tp); }
-  .disp.suspicious { background: rgba(255,180,67,0.15); color: var(--suspicious); }
-  .disp.benign { background: rgba(70,214,138,0.13); color: var(--benign); }
-  .disp.needs_human { background: rgba(167,139,250,0.15); color: var(--needs); }
-
-  .qmain .title { font-weight: 600; font-size: 14.5px; }
-  .qmain .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-  .qmain .sub .client { color: var(--eye); }
-  .qmain .src { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); }
-
-  .conf { text-align: center; }
-  .conf .bar { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 5px; }
-  .conf .bar span { display: block; height: 100%; background: var(--eye); }
-  .conf .v { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 13px; font-weight: 600; }
-
-  .action { text-align: right; }
-  .pill-esc { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; color: var(--escalate); }
-  .pill-closed { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); }
-
-  .qmain .when { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); }
-  .more { display:block; text-align:center; padding:14px; color:var(--eye); text-decoration:none; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12.5px; background:var(--panel); }
-  .more:hover { background: var(--panel-2); }
-
-  /* source strip */
-  .sources { display:flex; align-items:center; gap:8px 18px; flex-wrap:wrap; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:var(--muted);
-             margin-bottom:16px; padding:10px 14px; background:var(--panel); border:1px solid var(--line); border-radius:10px; }
-  .sources .lead { color: var(--eye); }
-  .sources .s { color: var(--text); white-space: nowrap; }
-  .sources .s .n { color: var(--muted); }
-  .sources .live { color: var(--benign); }
-  .sources .live::before { content:"●"; margin-right:5px; animation: pulse 1.6s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: .25; } }
-
-  .breakdown { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:var(--muted); margin: 0 0 14px 2px; }
-  .breakdown b { color: var(--text); font-weight: 500; }
-
-  /* reporting deadline on an incident card */
-  .due { margin-top:10px; padding:8px 10px; border-radius:8px; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.22);
-         font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:var(--text); display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
-  .due .t { font-weight:600; font-size:14px; color:var(--eye); white-space:nowrap; }
-  .due.soon { background:rgba(255,180,67,0.10); border-color:rgba(255,180,67,0.35); } .due.soon .t { color:var(--suspicious); }
-  .due.late { background:rgba(255,93,93,0.10); border-color:rgba(255,93,93,0.4); } .due.late .t { color:var(--escalate); }
-  .due.done { background:rgba(70,214,138,0.08); border-color:rgba(70,214,138,0.3); } .due.done .t { color:var(--benign); }
-  .due small { color: var(--muted); }
-  .metric.warn .n { color: var(--suspicious); }
-
-  #fresh { display:none; position:fixed; left:50%; transform:translateX(-50%); top:14px; z-index:9; background:var(--eye); color:#04121c;
-           border:none; border-radius:20px; padding:9px 18px; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight:700; font-size:13px; cursor:pointer;
-           box-shadow:0 6px 24px rgba(0,0,0,.45); }
-
-  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 30px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
-  @media (max-width: 720px) { .qrow { grid-template-columns: 90px 1fr; } .conf, .action { display: none; } }
-</style>
-</head>
-<body>
-<header>
-  <div class="brand"><span class="eye"></span> Triagle <small>triage, decided</small></div>
-  <div class="tag">{% if user.role == 'analyst' %}<a href="/audit" style="color:var(--eye); text-decoration:none; margin-right:16px;">Audit log →</a>{% endif %}<a href="/clock" style="color:var(--eye); text-decoration:none; margin-right:16px;">Regulatory clock →</a><a href="/benchmark" style="color:var(--eye); text-decoration:none; margin-right:16px;">Benchmark →</a><a href="/tuning" style="color:var(--eye); text-decoration:none; margin-right:16px;">Detection Tuning →</a>{{ now }}
-    {% if auth_on %}<form method="post" action="/logout" style="display:inline; margin-left:16px;"><input type="hidden" name="csrf" value="{{ csrf }}"><span style="color:var(--text);">{{ user.name }}</span> <span style="opacity:.7">({{ user.role }})</span> <button type="submit" style="background:none; border:1px solid var(--line); color:var(--muted); border-radius:6px; padding:3px 9px; margin-left:6px; cursor:pointer; font-family:inherit; font-size:12px;">Sign out</button></form>{% else %}<span style="color:var(--escalate); margin-left:16px;">sign-in is OFF</span>{% endif %}</div>
-</header>
-
-<main>
-  <button id="fresh" onclick="location.reload()">New alerts arrived — refresh</button>
-  <div class="intro">Triagle is an <b>AI SOC analyst</b>. It decides every alert from your security tools, never closes a real attack, and starts the reporting clock the moment one is real. <span class="dot rk">●</span> red = needs you &nbsp; <span class="dot gk">●</span> grey = closed with a reason.</div>
-  <div class="sources">
-    <span class="lead">⇅ Log sources</span>
-    {% for s in sources %}
-    <span class="s">{{ source_name(s.source) }} <span class="n">· {{ s.count }}</span>{% if s.live %} <span class="live">live{% if s.last %}, last alert {{ s.last }}{% endif %}</span>{% endif %}</span>
-    {% else %}<span>No alerts yet. Point your SIEM at <span style="color:var(--text);">POST /ingest</span>.</span>{% endfor %}
-    <span style="margin-left:auto;">alerts arrive by webhook → <span style="color:var(--text);">POST /ingest</span></span>
-  </div>
-  {% if demo_mode and user.role == 'analyst' %}
-  <div style="display:flex; align-items:center; gap:14px; background:linear-gradient(90deg, rgba(255,93,93,0.10), transparent); border:1px solid rgba(255,93,93,0.3); border-radius:12px; padding:12px 18px; margin-bottom:18px;">
-    <span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:var(--escalate); text-transform:uppercase; letter-spacing:.08em;">● Live demo</span>
-    <form method="post" action="/demo/fire" style="margin:0; display:flex; gap:8px;">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <button type="submit" name="scenario" value="bank" style="background:var(--escalate); color:#1a0606; border:none; border-radius:8px; padding:9px 16px; font-weight:700; cursor:pointer; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:13px;">⚡ Fire live attack · bank</button>
-      <button type="submit" name="scenario" value="power" style="background:none; color:var(--escalate); border:1px solid rgba(255,93,93,0.6); border-radius:8px; padding:9px 16px; font-weight:700; cursor:pointer; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:13px;">⚡ power utility (OT)</button>
-    </form>
-    <form method="post" action="/demo/reset" style="margin:0;">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <button type="submit" style="background:none; color:var(--muted); border:1px solid var(--line); border-radius:8px; padding:9px 14px; cursor:pointer; font-family:'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:13px;">Reset queue</button>
-    </form>
-    {% if metrics.live_alerts %}<span style="color:var(--muted); font-size:12.5px;">{{ metrics.live_alerts }} live alert(s) ingested this session</span>{% endif %}
-    <span style="margin-left:auto; color:var(--muted); font-size:11.5px; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;">updates as alerts arrive</span>
-  </div>
-  {% endif %}
-  <div class="metrics">
-    <div class="metric hero-metric"><div class="n">{{ metrics.closed_pct_all }}%</div><div class="l">Closed with a reason</div></div>
-    <div class="metric danger"><div class="n">{{ metrics.escalated }}</div><div class="l">Escalated to you</div></div>
-    <div class="metric"><div class="n">{{ metrics.received }}</div><div class="l">Alerts received</div></div>
-    <div class="metric {% if overdue_deadlines %}danger{% elif open_deadlines %}warn{% endif %}"><div class="n">{{ open_deadlines }}</div><div class="l">Reporting deadlines running{% if overdue_deadlines %} · {{ overdue_deadlines }} overdue{% endif %}</div></div>
-    <div class="metric"><div class="n">{{ metrics.staged_actions }}</div><div class="l">Actions staged</div></div>
-    <div class="metric"><div class="n">{{ metrics.flagged_rules }}</div><div class="l">Rules to tune</div></div>
-    <div class="metric"><div class="n">{{ metrics.processing_ms }}<span style="font-size:14px"> ms</span></div><div class="l">To investigate all · {{ metrics.backend }}</div></div>
-  </div>
-  {% if breakdown %}<div class="breakdown">Closed: {% for b in breakdown %}<b>{{ b.n }}</b> {{ b.what }}{% if not loop.last %} · {% endif %}{% endfor %}{% if metrics.rolled_off %} &nbsp;(<b>{{ metrics.rolled_off }}</b> older alerts counted, no longer listed){% endif %}</div>{% endif %}
-
-  <div class="banner">
-    🛡 <span><b>Conservative closure is on.</b> Triagle never auto-closes an alert carrying ransomware, credential-theft, or lateral-movement signals — those always reach a human, even at high confidence. {{ metrics.closed_all }} alerts were closed, each with a closure code and a reason; {{ metrics.escalated }} were escalated rather than guessed.</span>
-  </div>
-
-  {% if incidents %}
-  <div class="section-label">Incidents — related alerts grouped into one case · {{ incidents|length }}</div>
-  <div class="incidents">
-    {% for inc in incidents %}
-    <div class="incident {% if inc.elevated %}elevated{% endif %}">
-      <div class="h">{{ inc.key }} {% if inc.elevated %}<span class="badge">MULTI-TOOL</span>{% endif %}</div>
-      <div class="meta">{{ inc.client }} · {{ inc.size }} alerts · {{ source_list(inc.sources) }}</div>
-      {% if inc.clock %}{% set n = inc.clock.next %}
-        {% if n %}
-        <div class="due {% if n.status == 'overdue' %}late{% elif n.seconds_left < 3600 %}soon{% endif %}">
-          <span>{{ n.name }} · {{ n.label|lower }}{% if inc.clock.open > 1 %} <small>+{{ inc.clock.open - 1 }} more</small>{% endif %}</span>
-          <span class="t" data-due="{{ n.due_iso }}">{{ n.note }}</span>
-        </div>
-        {% elif inc.clock.filed %}
-        <div class="due done"><span>Regulatory reports</span><span class="t">✓ {{ inc.clock.filed }} marked filed</span></div>
-        {% endif %}
-      {% elif inc.probing %}
-        <div class="due" style="background:none; border-color:var(--line);"><span><small>Probing from outside, no sign it worked. No report due.</small></span></div>
-      {% endif %}
-      <div class="meta" style="margin-top:10px;">
-        <a href="/report/{{ inc.id }}" style="color:var(--eye); text-decoration:none;">Incident report →</a>
-        {% if inc.reportable %}<a href="/clock#{{ inc.id }}" style="color:var(--escalate); text-decoration:none; margin-left:14px;">Reporting deadlines →</a>{% endif %}
-      </div>
+{% extends "base.html" %}
+{% import "_parts.html" as parts %}
+{% block title %}Overview · Triagle{% endblock %}
+{% block heading %}Overview{% endblock %}
+{% block content %}
+<section style="margin-bottom:22px;">
+  <p class="handover">
+    <b>{{ metrics.received }}</b> alert{{ '' if metrics.received == 1 else 's' }} received.
+    <b>{{ metrics.closed_all }}</b> closed, each with a reason.
+    {% if metrics.escalated %}<b class="n-crit">{{ metrics.escalated }}</b> need{{ 's' if metrics.escalated == 1 else '' }} a decision.{% else %}None need a decision.{% endif %}
+    {% if dues %}<b class="n-due">{{ dues|length }}</b> report{{ '' if dues|length == 1 else 's' }} due{% if overdue %}, <b class="n-crit">{{ overdue }}</b> overdue{% endif %}; the next goes to {{ dues[0].row.name }} in <b data-due="{{ dues[0].row.due_iso }}">{{ dues[0].row.note }}</b>.{% endif %}
+  </p>
+  {% if metrics.received %}
+  <div class="tbar" role="img" aria-label="{{ metrics.closed_all }} alerts closed and {{ metrics.escalated }} escalated">
+    <div class="track">
+      {% for b in breakdown %}<span class="seg s{{ loop.index if loop.index < 6 else 5 }}" style="width:{{ b.pct }}%" title="{{ b.n }} {{ b.what }}"></span>{% endfor %}
+      {% if metrics.escalated %}<span class="seg esc" style="width:{{ escalated_pct }}%" title="{{ metrics.escalated }} need a decision"></span>{% endif %}
     </div>
-    {% endfor %}
+    <div class="key">
+      {% for b in breakdown %}<span><b>{{ b.n }}</b>{{ b.what }}</span>{% endfor %}
+      {% if metrics.rolled_off %}<span><b>{{ metrics.rolled_off }}</b>older, counted but no longer listed</span>{% endif %}
+      <span class="esc right"><b>{{ metrics.escalated }}</b>need a decision</span>
+    </div>
   </div>
   {% endif %}
+</section>
 
-  <div class="section-label">Triage queue — escalated first, each with a verdict</div>
-  <div class="queue">
-    {% for r in rows %}
-    <a class="qrow {% if r.verdict.escalate %}esc{% endif %}" href="/alert/{{ r.alert.alert_id }}">
-      <div><span class="disp {{ r.verdict.disposition }}">{{ verdict_label(r.verdict.disposition) }}</span></div>
-      <div class="qmain">
-        <div class="title">{{ r.alert.title }}</div>
-        <div class="sub"><span class="client">{{ r.alert.client }}</span> · {{ r.alert.entity }} · <span class="src">{{ source_full(r.alert.source) }}</span>{% if r.alert.timestamp|ist_short %} · <span class="when">{{ r.alert.timestamp|ist_short }}</span>{% endif %}</div>
-      </div>
-      <div class="conf">
-        <div class="v">{{ r.verdict.confidence }}%</div>
-        <div class="bar"><span style="width: {{ r.verdict.confidence }}%"></span></div>
-      </div>
-      <div class="action">
-        {% if r.verdict.escalate %}<span class="pill-esc">→ ESCALATE</span>{% else %}<span class="pill-closed">✓ {{ r.verdict.closure_code }}</span>{% endif %}
-      </div>
-    </a>
-    {% endfor %}
-    {% if closed_hidden %}<a class="more" href="/?closed=all">Showing the latest {{ closed_total - closed_hidden }} of {{ closed_total }} closed alerts — show all</a>{% endif %}
+<div class="cols">
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Needs a decision</h2><span class="n">{{ need_total }}</span>
+        {% if need_total %}<a class="more" href="/alerts">All alerts</a>{% endif %}</header>
+      {% if need %}
+      <div class="scroll-x"><table class="tbl fixed">
+        {{ parts.alert_head(compact=true) }}
+        <tbody>{% for r in need %}{{ parts.alert_row(r, compact=true) }}{% endfor %}</tbody>
+      </table></div>
+      {% if need_total > need|length %}<div class="body note"><a href="/alerts">Show all {{ need_total }}</a></div>{% endif %}
+      {% else %}
+      <div class="empty"><b>Nothing is waiting on you.</b>Every alert in the queue was closed with a reason. See them under <a href="/alerts?show=closed">Alerts</a>.</div>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <header><h2>Cases</h2><span class="n">{{ cases|length }}</span>
+        {% if cases %}<a class="more" href="/cases">All cases</a>{% endif %}</header>
+      {% if cases %}
+      <div class="scroll-x"><table class="tbl fixed">
+        <thead><tr><th style="width:96px">Severity</th><th>Case</th><th style="width:24%">Alerts</th><th style="width:15%">Waiting on you</th><th style="width:24%">Next report</th></tr></thead>
+        <tbody>
+        {% for c in cases %}
+        <tr class="link sev-{{ c.severity }}" data-href="/report/{{ c.inc.id }}">
+          <td class="stripe"><span class="sev {{ c.severity }}">{{ c.severity|capitalize }}</span></td>
+          <td><a class="primary" href="/report/{{ c.inc.id }}">{{ c.uc.name if c.uc else c.inc.key }}</a>
+            <span class="sub">{{ c.inc.key }}, {{ c.inc.client }}</span></td>
+          <td>{{ c.inc.size }}<span class="sub" title="{{ source_list(c.inc.sources) }}">{{ source_list(c.inc.sources) }}</span></td>
+          <td>{% if c.pending %}{{ c.pending }} action{{ '' if c.pending == 1 else 's' }}{% else %}<span style="color:var(--text-3)">Nothing</span>{% endif %}</td>
+          <td>
+            {% if c.clock and c.clock.next %}{{ c.clock.next.name }}<span class="sub"><span data-due="{{ c.clock.next.due_iso }}">{{ c.clock.next.note }}</span> left</span>
+            {% elif c.clock and c.clock.filed %}<span class="tag ok">{{ c.clock.filed }} filed</span>
+            {% elif c.probing %}<span style="color:var(--text-2)" title="Probing from outside, no sign it worked.">No report due</span>
+            {% else %}<span style="color:var(--text-3)">None</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}
+      <div class="empty"><b>No cases.</b>When alerts on the same asset or account are related, they are grouped into one case here.</div>
+      {% endif %}
+    </section>
   </div>
-</main>
 
-<footer>Triagle · AI SOC analyst · triage, decided</footer>
-<script>
-(function(){
-  // live countdowns
-  function fmt(ms){ var s=Math.floor(Math.abs(ms)/1000), h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60;
-    var t=(h? h+'h ':'')+String(m).padStart(2,'0')+'m '+String(x).padStart(2,'0')+'s'; return ms<0 ? 'overdue '+t : t+' left'; }
-  function tick(){ document.querySelectorAll('[data-due]').forEach(function(el){
-    var iso=el.getAttribute('data-due'); if(!iso) return; el.textContent=fmt(new Date(iso)-new Date()); }); }
-  tick(); setInterval(tick,1000);
-  // refresh when the queue changes; do not yank the page from under someone reading it
-  var rev={{ rev }};
-  setInterval(function(){
-    fetch('/api/state',{credentials:'same-origin'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
-      if(!j || j.rev===rev) return;
-      if(window.scrollY<240) location.reload(); else document.getElementById('fresh').style.display='block';
-    }).catch(function(){});
-  }, 4000);
-})();
-</script>
-</body>
-</html>
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Reports due</h2><span class="n">{{ dues|length }}</span><a class="more" href="/clock">Reporting</a></header>
+      {% if dues %}
+      <div class="dues">{% for d in dues[:6] %}{{ parts.due_item(d.row, d.inc) }}{% endfor %}</div>
+      {% else %}
+      <div class="empty"><b>No report is due.</b>A clock starts when Triagle judges an alert to be an attack on its own evidence.</div>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <header><h2>Sources</h2><a class="more" href="/connectors">Connect a source</a></header>
+      {% if sources %}
+      <div class="rows">
+        {% for s in sources %}
+        <div><span class="k">{{ source_name(s.source) }}</span>
+          {% if s.live %}<span class="status ok" style="font-size:.9rem;color:var(--text-2)">live{% if s.last %}, {{ s.last }}{% endif %}</span>
+          {% else %}<span class="tag" title="Sample alerts loaded with the product">sample data</span>{% endif %}
+          <span class="v">{{ s.count }} alert{{ '' if s.count == 1 else 's' }}</span></div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty"><b>No source is connected.</b><a href="/connectors">Connect your SIEM or EDR</a> and alerts appear here within seconds.</div>
+      {% endif %}
+    </section>
+
+    {% if demo_mode and user.role == 'analyst' %}
+    <section class="panel">
+      <header><h2>Run a scenario</h2></header>
+      <div class="body">
+        <p class="note" style="margin-bottom:12px;">Sends a scripted intrusion through the same webhook a real tool uses, so you can watch it investigated.</p>
+        <div class="inline-forms">
+          <form method="post" action="/demo/fire"><input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="btn" type="submit" name="scenario" value="bank">Bank intrusion</button>
+            <button class="btn" type="submit" name="scenario" value="power">Power utility, OT</button></form>
+          <form method="post" action="/demo/reset"><input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="btn quiet" type="submit">Clear live alerts</button></form>
+        </div>
+      </div>
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

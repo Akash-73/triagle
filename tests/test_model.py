@@ -39,6 +39,7 @@ def _clean(tmp_path, monkeypatch):
               "GOOGLE_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("TRIAGLE_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+    genai._cache.clear()
     genai._cache.update(project=None, token=None, token_exp=0.0)
     genai.STATUS.update(provider=None, model=None, ok=None, error=None, at=None, seconds=None, calls=0, failures=0)
     main._ASK_TIMES.clear()

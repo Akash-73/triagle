@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Triagle{% endblock %}</title>
+<script>try{var t=localStorage.getItem('triagle-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<link rel="preload" href="/static/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/triagle.css?v={{ asset_v }}">
+{% block head %}{% endblock %}
+</head>
+<body>
+<div class="app">
+  <aside class="nav">
+    <a class="brand" href="/" aria-label="Triagle, overview"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><b>Triagle</b></a>
+    <nav aria-label="Main">
+      <a href="/" {% if active == 'overview' %}aria-current="page"{% endif %}>Overview</a>
+      <a href="/alerts" {% if active == 'alerts' %}aria-current="page"{% endif %}>Alerts{% if nav.escalated %}<span class="count is-urgent" title="Alerts that need a decision">{{ nav.escalated }}</span>{% endif %}</a>
+      <a href="/cases" {% if active == 'cases' %}aria-current="page"{% endif %}>Cases{% if nav.cases %}<span class="count">{{ nav.cases }}</span>{% endif %}</a>
+      <a href="/clock" {% if active == 'clock' %}aria-current="page"{% endif %}>Reporting{% if nav.due %}<span class="count {% if nav.overdue %}is-urgent{% else %}is-due{% endif %}" title="Reports due to a regulator">{{ nav.due }}</span>{% endif %}</a>
+      <div class="group">Set up</div>
+      <a href="/connectors" {% if active == 'connectors' %}aria-current="page"{% endif %}>Connectors</a>
+      <a href="/tuning" {% if active == 'tuning' %}aria-current="page"{% endif %}>Detection tuning{% if nav.rules %}<span class="count">{{ nav.rules }}</span>{% endif %}</a>
+      <a href="/benchmark" {% if active == 'benchmark' %}aria-current="page"{% endif %}>Evaluation</a>
+      {% if user.role == 'analyst' %}
+      <div class="group">Record</div>
+      <a href="/audit" {% if active == 'audit' %}aria-current="page"{% endif %}>Audit log</a>
+      {% endif %}
+    </nav>
+    <div class="foot">
+      {% if auth_on %}
+      <div class="who"><span>{{ user.name }} <span style="color:var(--text-3)">({{ user.role }})</span></span>
+        <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn small quiet" type="submit">Sign out</button></form></div>
+      {% else %}
+      <div class="who"><span class="tag warn" title="Anyone with the address can use this console">sign-in is OFF</span></div>
+      {% endif %}
+      <button class="btn small quiet" type="button" id="theme" style="justify-self:start; padding-left:0;">Switch to light</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <h1>{% block heading %}{% endblock %}</h1>
+      <div class="right">
+        {% block top_actions %}{% endblock %}
+        <a href="/connectors#model" class="status {{ model.state }}" style="text-decoration:none;" title="{{ model.title }}">{{ model.label }}</a>
+        <span>{{ now_ist }}</span>
+      </div>
+    </div>
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+<button id="fresh" class="btn primary toast" hidden onclick="location.reload()">New alerts arrived. Refresh</button>
+<script>
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme');
+  function label() { btn.textContent = root.getAttribute('data-theme') === 'light' ? 'Switch to dark' : 'Switch to light'; }
+  btn.addEventListener('click', function () {
+    var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('triagle-theme', next); } catch (e) {}
+    label();
+  });
+  label();
+
+  // countdowns: any element with data-due shows the time left, and its row turns amber then red
+  function fmt(ms) {
+    var s = Math.floor(Math.abs(ms) / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    var t = (h ? h + 'h ' : '') + String(m).padStart(2, '0') + 'm ' + String(x).padStart(2, '0') + 's';
+    return ms < 0 ? t + ' over' : t;
+  }
+  function tick() {
+    document.querySelectorAll('[data-due]').forEach(function (el) {
+      var iso = el.getAttribute('data-due'); if (!iso) return;
+      var ms = new Date(iso) - new Date();
+      el.textContent = fmt(ms);
+      var row = el.closest('.due');
+      if (row) {
+        row.classList.toggle('late', ms < 0);
+        row.classList.toggle('soon', ms >= 0 && ms < 3600000);
+        var bar = row.querySelector('.meter i'), total = Number(el.getAttribute('data-hours') || 0) * 3600000;
+        if (bar && total) bar.style.width = Math.max(0, Math.min(100, 100 - (ms / total) * 100)) + '%';
+      }
+    });
+  }
+  tick(); setInterval(tick, 1000);
+
+  // offer a refresh when the queue changes; never pull the page from under someone reading it
+  var rev = {{ rev|default(0) }};
+  {% if poll|default(true) %}
+  setInterval(function () {
+    fetch('/api/state', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+      if (!j || j.rev === rev) return;
+      if (window.scrollY < 200 && !document.querySelector(':focus-within textarea, input:focus')) location.reload();
+      else document.getElementById('fresh').hidden = false;
+    }).catch(function () {});
+  }, 4000);
+  {% endif %}
+
+  document.querySelectorAll('tr[data-href]').forEach(function (tr) {
+    tr.addEventListener('click', function (e) { if (!e.target.closest('a, button, form, input')) location.href = tr.getAttribute('data-href'); });
+  });
+})();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

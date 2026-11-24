@@ -55,3 +55,21 @@ def source_list(keys):
 
 def verdict_label(disposition):
     return VERDICTS.get(disposition, _pretty(disposition))
+
+
+# Plain words for the console tables.
+VERDICT_WORDS = {"true_positive": "Real attack", "suspicious": "Suspicious",
+                 "needs_human": "Needs a person", "benign": "Routine"}
+CLOSURE_WORDS = {
+    "BENIGN_EXPECTED": "Routine activity", "BENIGN_KNOWN_TOOL": "Known admin tool",
+    "POSTURE_FINDING": "Posture finding", "OPERATIONAL_EVENT": "Health event",
+    "BENIGN_DUPLICATE": "Already raised", "FP_TUNING": "False positive",
+}
+
+
+def verdict_words(disposition):
+    return VERDICT_WORDS.get(disposition, _pretty(disposition))
+
+
+def closure_words(code):
+    return CLOSURE_WORDS.get(code, _pretty(code) if code else "Closed")

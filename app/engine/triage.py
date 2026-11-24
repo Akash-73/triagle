@@ -151,6 +151,28 @@ def _deterministic_verdict(alert):
             used_ai=False,
         )
 
+    # 1d. One read-only discovery command (whoami, net user, systeminfo) on a
+    #     low-severity alert. Not evidence on its own, whatever the rule is
+    #     called; kept as context for any case on the same asset.
+    discovery = signals.routine_discovery(alert)
+    if discovery:
+        return Verdict(
+            alert_id=alert.alert_id,
+            disposition="benign",
+            closure_code="BENIGN_EXPECTED",
+            confidence=88,
+            severity="low",
+            escalate=False,
+            summary=f"Routine discovery command ({discovery.split()[0].lower()}), closed and kept as context.",
+            reasoning=(f"The command line is one read-only discovery command: {discovery}. Administrators, "
+                       f"login scripts and inventory agents run these all day, and the source tool rated "
+                       f"it {alert.raw_severity}. On its own it is not evidence of an attack. It stays on "
+                       f"record: if a real signal appears on {alert.host or alert.entity}, this command is "
+                       f"shown in that case's timeline."),
+            recommended_actions=["No action required."],
+            used_ai=False,
+        )
+
     # 2. Known-benign allowlist (narrow, evidence-backed).
     is_benign, code, why = _known_benign_signal(alert)
     if is_benign:

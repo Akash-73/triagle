@@ -20,6 +20,7 @@ from urllib.parse import quote
 from fastapi import FastAPI, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 
 from app.orchestrator import process_batch
 from app.connectors.sources import normalize
@@ -27,7 +28,7 @@ from app.engine.response import execute_action
 from app.engine import certin, regclock
 from app.agent import backend
 from app import auth, audit
-from app.engine import sources_meta, worknotes, reputation, analyst, genai
+from app.engine import sources_meta, worknotes, reputation, analyst, genai, usecases
 from app.engine.correlate import GENERIC_ENTITIES
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -35,11 +36,15 @@ SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
 app = FastAPI(title="Triagle", version="0.8.0", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+ASSET_V = str(int(os.path.getmtime(os.path.join(BASE_DIR, "static", "triagle.css"))))
 templates.env.globals.update(
     source_name=sources_meta.source_name,
     source_full=sources_meta.source_full,
     source_list=sources_meta.source_list,
     verdict_label=sources_meta.verdict_label,
+    verdict_words=sources_meta.verdict_words,
+    closure_words=sources_meta.closure_words,
 )
 
 _IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
@@ -131,11 +136,42 @@ def _is_https(request: Request):
     return request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "") == "https"
 
 
+def _model_pill():
+    """The one-line model status in the top bar."""
+    st = genai.status()
+    last = st["last"]
+    name = " ".join(w.capitalize() if not w[0].isdigit() else w for w in st["model"].split("-"))
+    if not st["configured"]:
+        return {"state": "", "label": "No model connected", "title": "Verdicts are decided by rules. Connect Gemini to add explanations."}
+    if last.get("ok") is False:
+        return {"state": "warn", "label": f"{name} is not answering", "title": last.get("error") or ""}
+    if last.get("ok"):
+        return {"state": "ok", "label": name, "title": f"Answered in {last.get('seconds')} s through {st['transport']}."}
+    return {"state": "", "label": name, "title": f"Set up through {st['transport']}. Not called yet."}
+
+
+def _nav(result):
+    """Counts shown beside the navigation."""
+    due = overdue = 0
+    for inc in result["incidents"]:
+        c = _clock(result, inc)
+        if c:
+            due += c["open"]
+            overdue += c["overdue"]
+    m = result["metrics"]
+    return {"escalated": m.get("escalated", 0), "cases": len(result["incidents"]), "due": due,
+            "overdue": overdue, "rules": m.get("flagged_rules", 0)}
+
+
 def _ctx(request: Request, user, **extra):
-    """Things every page needs: who is signed in and the form token."""
+    """Things every page needs: who is signed in, the form token, the
+    navigation counts and the model status."""
     base = {"user": user, "csrf": auth.csrf_token(_session_token(request)),
             "auth_on": auth.enabled(),
-            "demo_mode": os.environ.get("TRIAGLE_DEMO", "false").lower() == "true"}
+            "demo_mode": os.environ.get("TRIAGLE_DEMO", "false").lower() == "true",
+            "nav": _nav(_load_result()), "model": _model_pill(), "asset_v": ASSET_V,
+            "rev": _CACHE.get("rev", 0),
+            "now_ist": datetime.datetime.now(_IST).strftime("%d %b %Y, %H:%M IST")}
     base.update(extra)
     return base
 
@@ -146,7 +182,8 @@ async def _security_headers(request: Request, call_next):
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
-    resp.headers.setdefault("Cache-Control", "no-store")
+    resp.headers.setdefault("Cache-Control", "public, max-age=86400" if request.url.path.startswith("/static/")
+                            else "no-store")
     if _is_https(request):
         resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
     return resp
@@ -545,42 +582,109 @@ def _source_strip(result):
     return out
 
 
-@app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, closed: str = "", user=Depends(require_user)):
-    result = _load_result()
-    escalated, done = [], []
+def _rows(result, escalated_only=None):
+    """Every alert as a table row: the alert, Triagle's verdict, the use case
+    it belongs to and the first response action waiting on it."""
+    case_of = {aid: inc["id"] for inc in result["incidents"] for aid in inc["alert_ids"]}
+    out = []
     for a in result["alerts"]:
         v = result["verdicts"].get(a["alert_id"], {})
-        (escalated if v.get("escalate") else done).append({"alert": a, "verdict": v})
-    # escalated: most severe first, newest first inside a severity. closed: newest first.
-    escalated.sort(key=lambda r: r["alert"].get("timestamp") or "", reverse=True)
-    escalated.sort(key=lambda r: _SEV_ORDER.get(r["verdict"].get("severity"), 9))
-    done.sort(key=lambda r: r["alert"].get("timestamp") or "", reverse=True)
-    shown = done if closed == "all" else done[:CLOSED_SHOWN]
+        if escalated_only is not None and bool(v.get("escalate")) != escalated_only:
+            continue
+        acts = result.get("actions", {}).get(a["alert_id"], [])
+        waiting = next((x for x in acts if x.get("status") == "pending"), None)
+        out.append({"alert": a, "verdict": v, "uc": usecases.for_alert(a, v), "case": case_of.get(a["alert_id"]),
+                    "action": waiting or (acts[0] if acts else None)})
+    return out
 
-    open_deadlines = overdue = 0
+
+def _sort_queue(rows):
+    """Needs-a-decision first (most severe, then newest), then closed, newest first."""
+    rows.sort(key=lambda r: r["alert"].get("timestamp") or "", reverse=True)
+    rows.sort(key=lambda r: (0, _SEV_ORDER.get(r["verdict"].get("severity"), 9)) if r["verdict"].get("escalate") else (1, 0))
+    return rows
+
+
+def _cases(result):
+    """Incidents as cases: what they are, and the next report due on each."""
+    cases = []
     for inc in result["incidents"]:
         members = _incident_members(result, inc)
-        inc["clock"] = _clock(result, inc, members)
-        inc["reportable"] = inc["clock"] is not None
-        inc["probing"] = certin.probing_only(members)
-        if inc["clock"]:
-            open_deadlines += inc["clock"]["open"]
-            overdue += inc["clock"]["overdue"]
-    incidents = sorted(result["incidents"], key=lambda i: (
-        0 if i["clock"] and i["clock"]["next"] else 1,
-        i["clock"]["next"]["seconds_left"] if i["clock"] and i["clock"]["next"] else 0,
-        not i["elevated"], -i["size"]))
+        clock = _clock(result, inc, members)
+        worst = min((_SEV_ORDER.get(m["verdict"].get("severity"), 9) for m in members if m["verdict"].get("escalate")),
+                    default=9)
+        cases.append({"inc": inc, "uc": usecases.for_case(members), "clock": clock,
+                      "probing": certin.probing_only(members),
+                      "severity": {v: k for k, v in _SEV_ORDER.items()}.get(worst, "low"),
+                      "pending": sum(1 for aid in inc["alert_ids"] for x in result.get("actions", {}).get(aid, [])
+                                     if x.get("status") == "pending")})
+    cases.sort(key=lambda c: (0 if c["clock"] and c["clock"]["next"] else 1,
+                              c["clock"]["next"]["seconds_left"] if c["clock"] and c["clock"]["next"] else 0,
+                              _SEV_ORDER.get(c["severity"], 9), -c["inc"]["size"]))
+    return cases
 
+
+def _open_deadlines(cases):
+    """Every report still owed, soonest first."""
+    rows = []
+    for c in cases:
+        for r in (c["clock"] or {}).get("rows", []):
+            if r["status"] in ("running", "overdue"):
+                rows.append({"row": r, "inc": c["inc"]})
+    rows.sort(key=lambda d: d["row"]["seconds_left"] if d["row"]["seconds_left"] is not None else 0)
+    return rows
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard(request: Request, user=Depends(require_user)):
+    """Overview: the shift handover. What came in, what was closed and why,
+    what needs a person, and which reports are due."""
+    result = _load_result()
+    need = _sort_queue(_rows(result, escalated_only=True))
+    cases = _cases(result)
+    dues = _open_deadlines(cases)
     m = result["metrics"]
-    breakdown = [{"n": n, "what": CLOSURE_WORDS.get(code, code.lower().replace("_", " "))}
-                 for code, n in sorted(m.get("closed_by_code", {}).items(), key=lambda kv: -kv[1])]
+    codes = sorted(m.get("closed_by_code", {}).items(), key=lambda kv: -kv[1])
+    total = max(1, m.get("closed_all", 0) + m.get("escalated", 0))
+    breakdown = [{"n": n, "what": CLOSURE_WORDS.get(code, code.lower().replace("_", " ")),
+                  "pct": round(100 * n / total, 2)} for code, n in codes]
     return templates.TemplateResponse(request, "dashboard.html", _ctx(
-        request, user, rows=escalated + shown, metrics=m, incidents=incidents,
-        closed_total=len(done), closed_hidden=len(done) - len(shown), breakdown=breakdown,
-        sources=_source_strip(result), open_deadlines=open_deadlines, overdue_deadlines=overdue,
-        rev=_CACHE.get("rev", 0),
-        now=datetime.datetime.now(_IST).strftime("%d %b %Y, %H:%M IST")))
+        request, user, active="overview", need=need[:NEED_SHOWN], need_total=len(need), metrics=m, cases=cases,
+        dues=dues, breakdown=breakdown, escalated_pct=round(100 * m.get("escalated", 0) / total, 2),
+        sources=_source_strip(result), overdue=sum(1 for d in dues if d["row"]["status"] == "overdue")))
+
+
+NEED_SHOWN = 12        # alerts needing a decision listed on the overview
+
+
+@app.get("/alerts", response_class=HTMLResponse)
+def alerts_page(request: Request, show: str = "open", closed: str = "", q: str = "", user=Depends(require_user)):
+    """The whole queue: what needs a decision, and what was closed and why."""
+    result = _load_result()
+    show = show if show in ("open", "closed", "all") else "open"
+    rows = _sort_queue(_rows(result, escalated_only={"open": True, "closed": False, "all": None}[show]))
+    needle = " ".join(q.lower().split())[:80]
+    if needle:
+        rows = [r for r in rows if needle in " ".join(str(x) for x in (
+            r["alert"].get("title"), r["alert"].get("entity"), r["alert"].get("host"), r["alert"].get("user"),
+            r["alert"].get("client"), r["alert"].get("src_ip"), r["uc"]["name"], r["uc"]["technique"],
+            r["verdict"].get("closure_code"))).lower()]
+    total = len(rows)
+    limit = None if (closed == "all" or show == "open") else CLOSED_SHOWN + sum(1 for r in rows if r["verdict"].get("escalate"))
+    m = result["metrics"]
+    return templates.TemplateResponse(request, "alerts.html", _ctx(
+        request, user, active="alerts", rows=rows[:limit] if limit else rows, hidden=max(0, total - limit) if limit else 0,
+        total=total, show=show, q=needle, metrics=m,
+        counts={"open": m.get("escalated", 0), "closed": len(result["alerts"]) - m.get("escalated", 0),
+                "all": len(result["alerts"])}))
+
+
+@app.get("/cases", response_class=HTMLResponse)
+def cases_page(request: Request, user=Depends(require_user)):
+    """Related alerts grouped into one case each."""
+    result = _load_result()
+    return templates.TemplateResponse(request, "cases.html", _ctx(
+        request, user, active="cases", cases=_cases(result)))
 
 
 @app.get("/alert/{alert_id}", response_class=HTMLResponse)

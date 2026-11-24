@@ -86,6 +86,9 @@ def project():
         return p
     if _cache["project"]:
         return _cache["project"]
+    if time.time() < _cache.get("project_retry", 0.0):
+        return None                      # asked recently and there was no metadata server
+    _cache["project_retry"] = time.time() + 300
     try:
         r = requests.get(_METADATA + "project/project-id", headers=_META_HEADERS, timeout=2)
         if r.status_code == 200 and r.text.strip():

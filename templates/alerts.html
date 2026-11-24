@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% import "_parts.html" as parts %}
+{% block title %}Alerts · Triagle{% endblock %}
+{% block heading %}Alerts{% endblock %}
+{% block content %}
+<div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px;">
+  <div role="tablist" class="inline-forms" style="gap:4px;">
+    <a class="btn {% if show == 'open' %}primary{% endif %}" href="/alerts?show=open{% if q %}&q={{ q|urlencode }}{% endif %}">Needs a decision <span style="opacity:.7">{{ counts.open }}</span></a>
+    <a class="btn {% if show == 'closed' %}primary{% endif %}" href="/alerts?show=closed{% if q %}&q={{ q|urlencode }}{% endif %}">Closed with a reason <span style="opacity:.7">{{ counts.closed }}</span></a>
+    <a class="btn {% if show == 'all' %}primary{% endif %}" href="/alerts?show=all{% if q %}&q={{ q|urlencode }}{% endif %}">All <span style="opacity:.7">{{ counts.all }}</span></a>
+  </div>
+  <form method="get" action="/alerts" style="margin-left:auto; display:flex; gap:6px;">
+    <input type="hidden" name="show" value="{{ show }}">
+    <input type="search" name="q" value="{{ q }}" placeholder="Asset, account, address, use case" aria-label="Filter alerts" style="width:300px;">
+    <button class="btn" type="submit">Filter</button>
+  </form>
+</div>
+
+<section class="panel">
+  {% if rows %}
+  <div class="scroll-x"><table class="tbl fixed" style="min-width:980px">
+    {{ parts.alert_head() }}
+    <tbody>{% for r in rows %}{{ parts.alert_row(r) }}{% endfor %}</tbody>
+  </table></div>
+  {% if hidden %}<div class="body note">Showing the latest {{ total - hidden }} of {{ total }}. <a href="/alerts?show={{ show }}&closed=all{% if q %}&q={{ q|urlencode }}{% endif %}">Show all closed alerts</a></div>{% endif %}
+  {% elif q %}
+  <div class="empty"><b>Nothing matches "{{ q }}".</b><a href="/alerts?show={{ show }}">Clear the filter</a></div>
+  {% elif show == 'open' %}
+  <div class="empty"><b>Nothing is waiting on you.</b>Every alert in the queue was closed with a reason. <a href="/alerts?show=closed">See what was closed</a></div>
+  {% else %}
+  <div class="empty"><b>No alerts yet.</b><a href="/connectors">Connect a source</a> and they appear here within seconds.</div>
+  {% endif %}
+</section>
+{% endblock %}

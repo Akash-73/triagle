@@ -188,7 +188,11 @@ def from_wazuh(raw, client):
     manager = raw.get("manager") or {}
     data = raw.get("data") or {}
     win = data.get("win") or {}
-    ev = win.get("eventdata") or {}
+    # Wazuh writes Windows event data with every backslash doubled
+    # (C:\\Windows\\System32). Undo that once, so paths and command lines read
+    # the way Windows wrote them and match the way an analyst would search.
+    ev = {k: (v.replace("\\\\", "\\") if isinstance(v, str) else v)
+          for k, v in (win.get("eventdata") or {}).items()}
     system = win.get("system") or {}
     mitre = rule.get("mitre") or {}
     syscheck = raw.get("syscheck") or {}

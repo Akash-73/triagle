@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Cases · Triagle{% endblock %}
+{% block heading %}Cases{% endblock %}
+{% block content %}
+<section class="panel">
+  {% if cases %}
+  <div class="scroll-x"><table class="tbl">
+    <thead><tr><th style="width:92px">Severity</th><th>Case</th><th>Asset</th><th>Customer</th><th>Alerts</th><th>Tools</th><th>Waiting on you</th><th>Next report</th><th>First seen</th></tr></thead>
+    <tbody>
+    {% for c in cases %}
+    <tr class="link sev-{{ c.severity }}" data-href="/report/{{ c.inc.id }}">
+      <td class="stripe"><span class="sev {{ c.severity }}">{{ c.severity|capitalize }}</span></td>
+      <td><a class="primary" href="/report/{{ c.inc.id }}">{{ c.uc.name if c.uc else c.inc.key }}</a>{% if c.uc and c.uc.technique %} <span class="technique">{{ c.uc.technique }}</span>{% endif %}
+        <span class="sub">{{ c.inc.id }}</span></td>
+      <td class="nowrap">{{ c.inc.key }}</td>
+      <td>{{ c.inc.client }}</td>
+      <td>{{ c.inc.size }}</td>
+      <td>{{ source_list(c.inc.sources) }}</td>
+      <td>{% if c.pending %}{{ c.pending }} action{{ '' if c.pending == 1 else 's' }}{% else %}<span style="color:var(--text-3)">Nothing</span>{% endif %}</td>
+      <td class="nowrap">
+        {% if c.clock and c.clock.next %}{{ c.clock.next.name }}, <span data-due="{{ c.clock.next.due_iso }}">{{ c.clock.next.note }}</span>
+        {% elif c.clock and c.clock.filed %}<span class="tag ok">{{ c.clock.filed }} filed</span>
+        {% elif c.probing %}<span style="color:var(--text-2)" title="Probing from outside, no sign it worked.">No report due</span>
+        {% else %}<span style="color:var(--text-3)">None</span>{% endif %}
+      </td>
+      <td class="when">{{ c.inc.first_seen|ist_short }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <div class="empty"><b>No cases.</b>When alerts on the same asset or account are related, Triagle groups them into one case here.</div>
+  {% endif %}
+</section>
+{% endblock %}
