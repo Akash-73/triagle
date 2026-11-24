@@ -14,7 +14,9 @@
   <td class="stripe">{% if open %}<span class="sev {{ v.severity }}">{{ v.severity|capitalize }}</span>{% else %}<span class="sev none">Closed</span>{% endif %}</td>
   <td>
     <a class="primary" href="/alert/{{ a.alert_id }}">{{ r.uc.name }}</a>{% if v.burst %} <span class="tag" title="One event the tool reported as {{ v.burst.count }} alerts">{{ v.burst.count }} alerts</span>{% endif %}
-    <span class="sub" title="{{ a.title }}">{% if r.uc.technique %}<span class="technique">{{ r.uc.technique }}</span> {% endif %}{% if r.uc.catalogued and a.title != r.uc.name %}{{ a.title }}{% elif not r.uc.technique %}{{ r.uc.tactic }}{% endif %}</span>
+    {# Password guessing is raised once per address, and the tool's title is the same on every one of them, so the row names the address. #}
+    {% if open and v.pattern and a.src_ip %}<span class="sub" title="{{ v.summary }}">{% if r.uc.technique %}<span class="technique">{{ r.uc.technique }}</span> {% endif %}from {{ a.src_ip }}</span>
+    {% else %}<span class="sub" title="{{ a.title }}">{% if r.uc.technique %}<span class="technique">{{ r.uc.technique }}</span> {% endif %}{% if r.uc.catalogued and a.title != r.uc.name %}{{ a.title }}{% elif not r.uc.technique %}{{ r.uc.tactic }}{% endif %}</span>{% endif %}
   </td>
   <td>{{ a.host or a.entity }}
     {% if compact %}<span class="sub">{{ a.client }}</span>
@@ -26,7 +28,8 @@
     {% else %}{{ closure_words(v.closure_code) }}{% endif %}
     {% if v.resolved and not compact %}<span class="sub">closed by {{ v.resolved.by }}{% if v.resolved.note %}: {{ v.resolved.note }}{% endif %}</span>
     {% elif not compact %}<span class="sub" title="{{ v.summary }}">{{ v.summary }}</span>
-    {% elif r.action %}<span class="sub">{{ r.action.label }}{% if r.action.status == 'pending' %}, waiting for approval{% endif %}</span>{% endif %}
+    {# the state comes first: in a narrow column it is the part that must not be cut off #}
+    {% elif r.action %}<span class="sub" title="{{ r.action.label }} {{ r.action.target }}">{% if r.action.status == 'pending' %}To approve{% elif r.action.status == 'declined' %}Declined{% elif r.action.undo %}Done, for real{% elif r.action.policy == 'auto' %}Automatic{% else %}Approved{% endif %}: {{ r.action.label }}</span>{% endif %}
   </td>
   {% if not compact %}
   <td>

@@ -58,6 +58,7 @@ def test_api_docs_are_not_exposed():
 
 def test_healthz_is_public_but_says_little():
     assert set(anon().get("/healthz").json()) == {"ok", "version"}
+    assert anon().get("/health").json() == anon().get("/healthz").json(), "the address Cloud Run lets through"
     assert "audit_chain_ok" in login().get("/healthz").json()
 
 

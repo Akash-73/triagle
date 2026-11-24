@@ -85,15 +85,53 @@ def test_it_can_be_opened_again(app):
     assert any(e["event"] == "alert reopened" for e in audit.read())
 
 
+def _seconds_after_t0(aid, shift):
+    """Where an alert `shift` seconds from this one sits on the test clock.
+    Taken from the alert itself, so the test does not depend on the time of
+    day it is run at."""
+    a = next(x for x in main._load_result()["alerts"] if x["alert_id"] == aid)
+    at = dt.datetime.strptime(a["timestamp"], "%Y-%m-%dT%H:%M:%SZ")
+    return int((at - T0).total_seconds()) + shift
+
+
 def test_the_decision_survives_new_alerts_and_a_restart(app):
     aid = _burst()
     _resolve(app, aid, "handled", "Rebuilt the host")
     from tests.test_bursts import dpkg_installed
-    app.post("/ingest", headers={"X-Triagle-Key": KEY}, json=[dpkg_installed(9 * 3600, "zlib1g", n=777)])
+    another_day = dpkg_installed(_seconds_after_t0(aid, -6 * 3600), "zlib1g", n=777)     # a separate event
+    assert app.post("/ingest", headers={"X-Triagle-Key": KEY}, json=[another_day]).json()["accepted"] == 1
     assert main._load_result()["verdicts"][aid]["resolved"]["outcome"] == "handled"
     main._CACHE.clear()                                    # a restart
     v = main._load_result()["verdicts"][aid]
     assert v["resolved"]["label"] == "Real, and dealt with" and v["resolved"]["note"] == "Rebuilt the host"
+
+
+def test_the_decision_stays_with_the_event_when_an_earlier_alert_of_it_arrives_late(app):
+    """A tool can deliver alerts out of order. The late one is the earliest of
+    the burst, so the burst is now raised on it. The person already decided
+    this event and is not asked again."""
+    aid = _burst()
+    _resolve(app, aid, "expected", "Monthly patching")
+    open_before = main._load_result()["metrics"]["open"]
+    from tests.test_bursts import dpkg_installed
+    late = dpkg_installed(_seconds_after_t0(aid, -20), "libgcc-s1", n=778)
+    assert app.post("/ingest", headers={"X-Triagle-Key": KEY}, json=[late]).json()["accepted"] == 1
+
+    res = main._load_result()
+    head = _burst()
+    assert head != aid and res["verdicts"][aid]["duplicate_of"] == head, "the burst is raised on the late alert now"
+    assert res["verdicts"][head]["burst"]["count"] == 25
+    decided = res["verdicts"][head]["resolved"]
+    assert decided["outcome"] == "expected" and decided["note"] == "Monthly patching" and decided["by"] == "admin"
+    assert res["metrics"]["open"] == open_before and res["metrics"]["resolved"] == 1
+    assert f'/alert/{head}"' not in app.get("/alerts?show=open").text
+
+    main._CACHE.clear()                                    # a restart
+    assert main._load_result()["verdicts"][head]["resolved"]["outcome"] == "expected"
+    # and it can still be opened again, on the alert it is now raised on
+    _resolve(app, head, "reopen")
+    res = main._load_result()
+    assert "resolved" not in res["verdicts"][head] and res["metrics"]["open"] == open_before + 1
 
 
 def test_only_a_signed_in_analyst_can_close_or_reopen(app):

@@ -32,7 +32,7 @@ from app import store
 from app.engine import certin, regclock
 from app.agent import backend
 from app import auth, audit
-from app.engine import sources_meta, worknotes, reputation, analyst, genai, usecases, siem_link
+from app.engine import sources_meta, worknotes, reputation, analyst, genai, usecases, siem_link, tuning
 from app.engine.correlate import GENERIC_ENTITIES
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -527,6 +527,16 @@ def _apply_resolutions(result):
     Triagle's own verdict is kept as it was: the record shows both what
     Triagle said and what the person decided."""
     done = _CACHE.get("resolutions", {})
+    # A decision is about the event, not the row it was made on. If an earlier
+    # alert of the same burst arrives late, that alert becomes the one the
+    # burst is raised on and the decided one is counted under it. The decision
+    # moves with the event, so it is not asked for twice.
+    for aid in list(done):
+        v = result["verdicts"].get(aid) or {}
+        head = v.get("duplicate_of") if not v.get("escalate") else None
+        if head and (result["verdicts"].get(head) or {}).get("escalate"):
+            done.setdefault(head, done[aid])
+            del done[aid]
     still_open = closed_by_person = 0
     for aid, v in result["verdicts"].items():
         v.pop("resolved", None)
@@ -539,6 +549,10 @@ def _apply_resolutions(result):
             still_open += 1
     result["metrics"]["open"] = still_open
     result["metrics"]["resolved"] = closed_by_person
+    # What a person decided changes what there is to say about the rule
+    # behind the alert, so the rules are looked at again with it.
+    result["rule_health"] = tuning.analyze_rules(result["alerts"], result["verdicts"])
+    result["metrics"]["flagged_rules"] = sum(1 for r in result["rule_health"] if r["flagged"])
 
 
 def _is_open(verdict):
@@ -2177,9 +2191,12 @@ async def api_demo_step(request: Request, user=Depends(require_analyst)):
             "case": state["run"]["case"], "state": state}
 
 
+@app.get("/health")
 @app.get("/healthz")
 def healthz(request: Request):
-    """Public: just enough for an uptime check. Details only when signed in."""
+    """Public: just enough for an uptime check. Details only when signed in.
+    Two addresses, because Cloud Run answers /healthz itself and never passes
+    it to the service."""
     out = {"ok": True, "version": app.version}
     user = current_user(request)
     if user and not user.get("guest"):

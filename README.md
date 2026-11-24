@@ -177,6 +177,33 @@ Assets are recognised by name, or listed in `TRIAGLE_OT_CONTROLLERS` and
 `TRIAGLE_OT_STATIONS`. In a real deployment the list comes from the OT
 monitor's inventory. See `app/engine/ot.py` and `tests/test_ot.py`.
 
+## Telling the SIEM what to fix
+
+The Detection tuning page looks at the rule behind each alert: what the tool
+rates it, how many of its alerts went to a person, how many Triagle closed,
+and why. Its first run on a real feed was also worth recording. It marked 15
+of 28 rules as tuning candidates, because every alert from them had been
+closed. Thirteen of those were sign-ins, sessions closing and an administrator
+using sudo: records the tool itself rates low, with nothing to tune. It also
+called the repeats of a password-guessing address "86% noise", when they were
+the attack. What changed:
+
+- A rule the tool rates low whose alerts were all routine is a record, not a
+  candidate.
+- A rule is a candidate when every alert was closed and the tool still rates
+  it medium or higher, or the alerts were all one recognised harmless thing.
+  The page says what they had in common and, for Wazuh, names the rule to
+  override with a child rule at level 0.
+- An alert counted under another one (a member of a burst, a repeat of an
+  address already raised, the earlier failed sign-ins from that address)
+  belongs to that event. It is never called noise.
+- What a person decided outranks what Triagle did: alerts marked as false
+  positives make the rule a candidate, alerts confirmed as expected do not.
+
+Triagle only flags. It never switches a rule off, because a noisy rule can
+still catch the one real attack. See `app/engine/tuning.py` and
+`tests/test_tuning.py`.
+
 ## Watching it work, and testing it
 
 The **Live** page lists alerts as they arrive, newest first. Each row shows

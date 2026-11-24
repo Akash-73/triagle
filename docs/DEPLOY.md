@@ -57,6 +57,9 @@ after a quiet spell is not slow.
 The Connectors page says whether the queue is being saved and how many alerts
 were restored at the last start.
 
+For an uptime check use `/health`. Cloud Run answers `/healthz` itself and
+never passes it to the service.
+
 ## What is saved and what is not
 
 Saved: every live alert still in the queue, the running totals, which tools

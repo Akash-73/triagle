@@ -2,18 +2,20 @@
 {% block title %}Detection tuning · Triagle{% endblock %}
 {% block heading %}Detection tuning{% endblock %}
 {% block content %}
-<p class="note" style="max-width:80ch; margin-bottom:16px;">How each detection rule has performed in this queue: how often it fired, how often that was real, how often it was noise. A rule that is all noise is marked for tuning. Triagle never switches a rule off itself, because a noisy rule can still catch the one real attack.</p>
+<p class="note" style="max-width:86ch; margin-bottom:16px;">What became of each detection rule's alerts in this queue, beside what the tool itself rates the rule. A rule is marked for tuning when every one of its alerts was closed and the tool still rates it medium or higher, or they were all the same harmless thing. Triagle never switches a rule off itself, because a noisy rule can still catch the one real attack.</p>
 <section class="panel">
   <header><h2>Rules</h2><span class="n">{{ rule_health|length }}, {{ metrics.flagged_rules }} to tune</span></header>
   {% if rule_health %}
   <div class="scroll-x"><table class="tbl">
-    <thead><tr><th>Rule</th><th class="num" style="width:90px">Fired</th><th class="num" style="width:110px">Real signal</th><th class="num" style="width:90px">Noise</th><th style="width:180px">Share that was noise</th><th style="width:34%">What to do</th></tr></thead>
+    <thead><tr><th>Rule</th><th style="width:132px">The tool rates it</th><th class="num" style="width:70px">Fired</th><th class="num" style="width:128px">Went to a person</th><th class="num" style="width:138px">Closed by Triagle</th><th style="width:38%">What to do</th></tr></thead>
     <tbody>{% for r in rule_health %}
-    <tr>
-      <td><span class="primary">{{ r.title or r.rule }}</span>{% if r.flagged %} <span class="tag warn">Tuning candidate</span>{% endif %}<span class="sub">{{ source_name(r.source) if r.source else '' }}</span></td>
-      <td class="num">{{ r.volume }}</td><td class="num">{{ r.signal }}</td><td class="num">{{ r.noise }}</td>
-      <td><div style="display:flex; align-items:center; gap:8px;"><span style="flex:1; height:6px; background:var(--raised); border-radius:3px; overflow:hidden;"><i style="display:block; height:100%; width:{{ (r.noise_ratio*100)|round|int }}%; background:var(--text-3);"></i></span><span style="width:38px; text-align:right;">{{ (r.noise_ratio*100)|round|int }}%</span></div></td>
-      <td style="color:var(--text-2); font-size:.93rem;">{{ r.recommendation or '' }}</td>
+    <tr{% if not r.flagged and r.kind != 'keep' %} class="closed"{% endif %}>
+      <td><a class="primary" href="/alerts?show=all&amp;closed=all&amp;q={{ (r.title or '')[:80]|urlencode }}" title="The alerts this rule raised">{{ r.title or r.rule }}</a>{% if r.flagged %} <span class="tag warn">Tuning candidate</span>{% endif %}<span class="sub">{{ source_name(r.source) if r.source else '' }}{% if r.rule_id %}, rule {{ r.rule_id }}{% endif %}</span></td>
+      <td class="nowrap">{{ r.rating|capitalize }}{% if r.level %}<span class="sub">level {{ r.level }}</span>{% endif %}</td>
+      <td class="num">{{ r.volume }}</td>
+      <td class="num">{{ r.to_person }}{% if r.under %}<span class="sub" title="Counted under another alert: part of a burst, or a repeat of something already raised">{{ r.under }} under another</span>{% endif %}</td>
+      <td class="num">{{ r.closed }}</td>
+      <td style="color:var(--text-2); font-size:.93rem;">{{ r.recommendation }}</td>
     </tr>
     {% endfor %}</tbody>
   </table></div>
