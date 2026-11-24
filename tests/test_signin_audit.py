@@ -262,3 +262,9 @@ def test_on_cloud_run_each_entry_also_goes_to_the_platform_log(monkeypatch, caps
     monkeypatch.setenv("TRIAGLE_AUDIT_STDOUT", "off")
     audit.record("quiet again", "nobody")
     assert "triagle_audit" not in capsys.readouterr().out
+
+
+def test_pages_carry_a_content_security_policy():
+    r = anon().get("/login")
+    csp = r.headers["content-security-policy"]
+    assert "default-src 'self'" in csp and "frame-ancestors 'none'" in csp and "form-action 'self'" in csp

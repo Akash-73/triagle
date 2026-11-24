@@ -209,6 +209,13 @@ async def _security_headers(request: Request, call_next):
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
+    # Everything the pages load is served from here. Scripts and styles are
+    # written inline in the templates, so those stay allowed; nothing may be
+    # loaded from another site, framed, or posted to another site.
+    resp.headers.setdefault("Content-Security-Policy",
+                            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                            "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+                            "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
     resp.headers.setdefault("Cache-Control", "public, max-age=86400" if request.url.path.startswith("/static/")
                             else "no-store")
     if _is_https(request):
