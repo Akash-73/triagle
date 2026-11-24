@@ -143,13 +143,13 @@ def objects():
         "triagle-search-escalated", "Triagle: sent to a person",
         "Alerts Triagle did not close, and why.",
         "rule.groups:triagle_escalated",
-        ["rule.description", "data.triagle.reason", "data.triagle.wazuh_rule_level", "data.triagle.url"])
+        ["rule.description", "data.triagle.wazuh_rule_level", "data.triagle.reason"])
 
     response = saved_search(
         "triagle-search-response", "Triagle: what people did",
         "Blocks, lifted blocks, approved and declined actions, alerts closed by an analyst and reports filed.",
         "rule.groups:triagle_response",
-        ["rule.description", "data.triagle.note", "data.triagle.url"])
+        ["rule.description", "data.triagle.note"])
 
     everything = saved_search(
         "triagle-search-verdicts", "Triagle: every verdict",
@@ -157,15 +157,21 @@ def objects():
         "rule.groups:triagle_closed or rule.groups:triagle_escalated",
         ["rule.description", "data.triagle.agent", "data.triagle.wazuh_rule_level", "data.triagle.reason"])
 
-    layout = [                                           # the grid is 48 wide
-        (verdicts, 0, 0, 12, 9), (why, 12, 0, 14, 9), (over_time, 26, 0, 22, 9),
-        (overrated, 0, 9, 24, 14), (escalated, 24, 9, 24, 14),
-        (response, 0, 23, 48, 12),
+    # The grid is 48 wide. Each panel carries its own short title; the saved
+    # objects keep the "Triagle: ..." names so they are easy to find in a list.
+    layout = [
+        (verdicts, "Decided by Triagle", 0, 0, 12, 9),
+        (why, "Why it closed them", 12, 0, 14, 9),
+        (over_time, "Closed and sent to a person, over time", 26, 0, 22, 9),
+        (overrated, "Wazuh rated these high or critical. Triagle closed them.", 0, 9, 22, 14),
+        (escalated, "Sent to a person, with the level Wazuh gave it and the reason", 22, 9, 26, 14),
+        (response, "What people did about it", 0, 23, 48, 12),
     ]
     panels, refs = [], []
-    for i, (obj, x, y, w, h) in enumerate(layout):
+    for i, (obj, title, x, y, w, h) in enumerate(layout):
         panels.append({"version": PANEL_VERSION, "gridData": {"x": x, "y": y, "w": w, "h": h, "i": str(i + 1)},
-                       "panelIndex": str(i + 1), "embeddableConfig": {}, "panelRefName": f"panel_{i}"})
+                       "panelIndex": str(i + 1), "embeddableConfig": {}, "title": title,
+                       "panelRefName": f"panel_{i}"})
         refs.append({"name": f"panel_{i}", "type": obj["type"], "id": obj["id"]})
     dashboard = {
         "attributes": {

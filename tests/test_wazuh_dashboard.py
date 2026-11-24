@@ -101,6 +101,7 @@ def test_the_dashboard_lays_out_every_panel_inside_the_grid_without_overlap():
     for p in panels:
         g = p["gridData"]
         assert p["panelIndex"] == g["i"] and isinstance(g["i"], str) and p["embeddableConfig"] == {}
+        assert p["title"] and not p["title"].startswith("Triagle:"), "a short title of its own on the dashboard"
         assert g["x"] >= 0 and g["x"] + g["w"] <= 48 and g["w"] >= 10 and g["h"] >= 8
         cells = {(x, y) for x in range(g["x"], g["x"] + g["w"]) for y in range(g["y"], g["y"] + g["h"])}
         assert not cells & taken, "panels overlap"
