@@ -264,6 +264,11 @@ def test_nine_exports_of_the_security_policy_are_not_an_incident():
     words it "binary in a suspicious location", so the nine corroborated each
     other, became one high case, and a six-hour clock to CERT-In started."""
     r = process_batch([_secedit(i) for i in range(9)])
+    assert all(not v["escalate"] for v in r["verdicts"].values())
+    # the command line exactly as Wazuh delivered it: the quotes arrive escaped
+    as_delivered = '\\"C:\\Windows\\system32\\SecEdit.exe\\" /export /cfg C:\\WINDOWS\\TEMP\\secpol.cfg'
+    assert as_delivered.startswith('\\"C:')
+    r = process_batch([_secedit(i, as_delivered) for i in range(9)])
     assert all(not v["escalate"] and v["closure_code"] == "BENIGN_EXPECTED" for v in r["verdicts"].values())
     one = next(iter(r["verdicts"].values()))
     assert one["summary"] == "Routine discovery command (secedit), closed and kept as context."

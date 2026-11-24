@@ -293,7 +293,8 @@ def routine_discovery(alert):
         return None
     if str(_get(alert, "raw_severity") or "").lower() not in _SEV_LOW:
         return None
-    cmd = " ".join(command_line(alert).split())
+    # Wazuh hands over some command lines with the quotes still escaped (\"C:\...\exe\" /arg)
+    cmd = " ".join(command_line(alert).replace('\\"', '"').split())
     if not cmd or _DISC_CHANGES.search(cmd):
         return None
     inner = _DISC_WRAPPER.sub("", cmd, count=1).strip().strip('"').strip()
