@@ -208,7 +208,12 @@ def from_wazuh(raw, client):
 
     kind, reason, drift = classify(raw)
     groups = _groups(rule)
-    cmdline = ev.get("commandLine") or data.get("command") or ""
+    # The behaviour patterns are matched against the command line. PowerShell
+    # script-block logging (event 4104) does not fill commandLine — it logs the
+    # code that ran in scriptBlockText — so a download cradle or an encoded
+    # payload would be invisible if that field were ignored. Read it as the
+    # command line when there is no process command line.
+    cmdline = ev.get("commandLine") or data.get("command") or ev.get("scriptBlockText") or ""
 
     def joined(v):
         return ", ".join(str(x) for x in v) if isinstance(v, (list, tuple)) else (str(v) if v else None)
