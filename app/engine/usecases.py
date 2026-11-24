@@ -38,6 +38,10 @@ CATALOGUE = {
                           "Can the user be in both places, or is the session stolen?"),
     "scan": ("UC-107", "Network or port scan from outside", "T1595", "Reconnaissance",
              "Probing only, or did anything answer that should not be exposed?"),
+    "web_attack": ("UC-108", "Attack on a web application", "T1190", "Initial access",
+                   "Did the request get through, and what does the application's own log show for it?"),
+    "unfamiliar_signin": ("UC-109", "Sign-in that does not fit the user's pattern", "T1078", "Initial access",
+                          "Does the user recognise this sign-in, and was a second factor passed?"),
     "user_execution": ("UC-205", "User tricked into running a command", "T1204", "Execution",
                        "What did the command do, and is the same lure reaching other users?"),
     "token_theft": ("UC-106", "Session token theft (phishing proxy)", "T1557", "Credential access",
@@ -134,8 +138,10 @@ _SOFT_TO = [
 # identity tools name their detections in camelCase (impossibleTravel,
 # passwordSpray); read those as words
 _TITLE_TO = [
-    (("impossible travel", "unfamiliar features", "unfamiliar sign", "atypical travel", "anonymized ip",
-      "anonymous ip", "malicious ip"), "impossible_travel"),
+    (("impossible travel", "atypical travel"), "impossible_travel"),
+    (("unfamiliar features", "unfamiliar sign", "anonymized ip", "anonymous ip", "malicious ip"), "unfamiliar_signin"),
+    (("sql injection", "sqli", "cross-site scripting", "cross site scripting", "xss", "path traversal",
+      "directory traversal", "command injection", "web attack", "web application attack"), "web_attack"),
     (("password spray",), "password_spray"),
     (("leaked credentials",), "token_theft"),
     (("infostealer", "stealer"), "infostealer"),

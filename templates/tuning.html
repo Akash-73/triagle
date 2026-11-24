@@ -10,7 +10,7 @@
     <thead><tr><th>Rule</th><th class="num" style="width:90px">Fired</th><th class="num" style="width:110px">Real signal</th><th class="num" style="width:90px">Noise</th><th style="width:180px">Share that was noise</th><th style="width:34%">What to do</th></tr></thead>
     <tbody>{% for r in rule_health %}
     <tr>
-      <td><span class="primary">{{ r.rule }}</span>{% if r.flagged %} <span class="tag warn">Tuning candidate</span>{% endif %}</td>
+      <td><span class="primary">{{ r.title or r.rule }}</span>{% if r.flagged %} <span class="tag warn">Tuning candidate</span>{% endif %}<span class="sub">{{ source_name(r.source) if r.source else '' }}</span></td>
       <td class="num">{{ r.volume }}</td><td class="num">{{ r.signal }}</td><td class="num">{{ r.noise }}</td>
       <td><div style="display:flex; align-items:center; gap:8px;"><span style="flex:1; height:6px; background:var(--raised); border-radius:3px; overflow:hidden;"><i style="display:block; height:100%; width:{{ (r.noise_ratio*100)|round|int }}%; background:var(--text-3);"></i></span><span style="width:38px; text-align:right;">{{ (r.noise_ratio*100)|round|int }}%</span></div></td>
       <td style="color:var(--text-2); font-size:.93rem;">{{ r.recommendation or '' }}</td>

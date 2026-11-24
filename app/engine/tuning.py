@@ -41,7 +41,7 @@ def analyze_rules(alerts, verdicts):
     Returns a list of per-rule health records, noisiest-flagged first:
       { rule, volume, signal, noise, noise_ratio, flagged, recommendation }
     """
-    stats = defaultdict(lambda: {"volume": 0, "signal": 0, "noise": 0, "sources": set()})
+    stats = defaultdict(lambda: {"volume": 0, "signal": 0, "noise": 0, "sources": set(), "title": "", "source": ""})
 
     for a in alerts:
         v = verdicts.get(a["alert_id"], {})
@@ -49,6 +49,7 @@ def analyze_rules(alerts, verdicts):
         s = stats[key]
         s["volume"] += 1
         s["sources"].add(a.get("source", "unknown"))
+        s["title"], s["source"] = a.get("title", "unknown"), a.get("source", "unknown")
         disp = v.get("disposition")
         if v.get("escalate") or disp in ("true_positive", "suspicious"):
             s["signal"] += 1
@@ -67,13 +68,13 @@ def analyze_rules(alerts, verdicts):
         )
         rec = None
         if flagged:
-            rec = (f"This detection fired {vol} times and every one was benign. "
-                   f"It's a strong tuning candidate — add an environment-specific "
-                   f"allowlist (by host + parent process + account) so it stops "
-                   f"generating noise, while keeping it active for other contexts. "
-                   f"Review before suppressing: confirm none of the {vol} were real.")
+            rec = (f"Fired {vol} times and none was real. Narrow it in the tool that owns it: "
+                   f"allow the known host, parent process and account, and keep the rule on for "
+                   f"everything else. Check the {vol} alerts first.")
         records.append({
             "rule": rule,
+            "title": s["title"],
+            "source": s["source"],
             "volume": vol,
             "signal": s["signal"],
             "noise": s["noise"],
