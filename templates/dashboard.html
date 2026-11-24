@@ -7,19 +7,20 @@
   <p class="handover">
     <b>{{ metrics.received }}</b> alert{{ '' if metrics.received == 1 else 's' }} received.
     <b>{{ metrics.closed_all }}</b> closed, each with a reason.
-    {% if metrics.escalated %}<b class="n-crit">{{ metrics.escalated }}</b> need{{ 's' if metrics.escalated == 1 else '' }} a decision.{% else %}None need a decision.{% endif %}
+    {% if metrics.resolved %}<b>{{ metrics.resolved }}</b> decided by a person.{% endif %}
+    {% if metrics.open %}<b class="n-crit">{{ metrics.open }}</b> need{{ 's' if metrics.open == 1 else '' }} a decision.{% else %}None need a decision.{% endif %}
     {% if dues %}<b class="n-due">{{ dues|length }}</b> report{{ '' if dues|length == 1 else 's' }} due{% if overdue %}, <b class="n-crit">{{ overdue }}</b> overdue{% endif %}; the next goes to {{ dues[0].row.name }} in <b data-due="{{ dues[0].row.due_iso }}">{{ dues[0].row.note }}</b>.{% endif %}
   </p>
   {% if metrics.received %}
-  <div class="tbar" role="img" aria-label="{{ metrics.closed_all }} alerts closed and {{ metrics.escalated }} escalated">
+  <div class="tbar" role="img" aria-label="{{ metrics.closed_all }} alerts closed and {{ metrics.open }} waiting for a decision">
     <div class="track">
       {% for b in breakdown %}<span class="seg s{{ loop.index if loop.index < 6 else 5 }}" style="width:{{ b.pct }}%" title="{{ b.n }} {{ b.what }}"></span>{% endfor %}
-      {% if metrics.escalated %}<span class="seg esc" style="width:{{ escalated_pct }}%" title="{{ metrics.escalated }} need a decision"></span>{% endif %}
+      {% if metrics.open %}<span class="seg esc" style="width:{{ escalated_pct }}%" title="{{ metrics.open }} need a decision"></span>{% endif %}
     </div>
     <div class="key">
       {% for b in breakdown %}<span><b>{{ b.n }}</b>{{ b.what }}</span>{% endfor %}
       {% if metrics.rolled_off %}<span><b>{{ metrics.rolled_off }}</b>older, counted but no longer listed</span>{% endif %}
-      <span class="esc right"><b>{{ metrics.escalated }}</b>need a decision</span>
+      <span class="esc right"><b>{{ metrics.open }}</b>need a decision</span>
     </div>
   </div>
   {% endif %}

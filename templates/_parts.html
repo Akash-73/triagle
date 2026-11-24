@@ -9,11 +9,11 @@
 {% endmacro %}
 
 {% macro alert_row(r, compact=false) %}
-{% set v = r.verdict %}{% set a = r.alert %}
-<tr class="link {% if v.escalate %}sev-{{ v.severity }}{% else %}closed{% endif %}" data-href="/alert/{{ a.alert_id }}">
-  <td class="stripe">{% if v.escalate %}<span class="sev {{ v.severity }}">{{ v.severity|capitalize }}</span>{% else %}<span class="sev none">Closed</span>{% endif %}</td>
+{% set v = r.verdict %}{% set a = r.alert %}{% set open = v.escalate and not v.resolved %}
+<tr class="link {% if open %}sev-{{ v.severity }}{% else %}closed{% endif %}" data-href="/alert/{{ a.alert_id }}">
+  <td class="stripe">{% if open %}<span class="sev {{ v.severity }}">{{ v.severity|capitalize }}</span>{% else %}<span class="sev none">Closed</span>{% endif %}</td>
   <td>
-    <a class="primary" href="/alert/{{ a.alert_id }}">{{ r.uc.name }}</a>
+    <a class="primary" href="/alert/{{ a.alert_id }}">{{ r.uc.name }}</a>{% if v.burst %} <span class="tag" title="One event the tool reported as {{ v.burst.count }} alerts">{{ v.burst.count }} alerts</span>{% endif %}
     <span class="sub" title="{{ a.title }}">{% if r.uc.technique %}<span class="technique">{{ r.uc.technique }}</span> {% endif %}{% if r.uc.catalogued and a.title != r.uc.name %}{{ a.title }}{% elif not r.uc.technique %}{{ r.uc.tactic }}{% endif %}</span>
   </td>
   <td>{{ a.host or a.entity }}
@@ -21,16 +21,18 @@
     {% elif a.user and a.user != (a.host or a.entity) %}<span class="sub">{{ a.user }}</span>{% endif %}</td>
   {% if not compact %}<td>{{ a.client }}<span class="sub">{{ source_name(a.source) }}</span></td>{% endif %}
   <td>
-    {% if v.escalate %}{{ verdict_words(v.disposition) }} <span style="color:var(--text-3)">{{ v.confidence }}%</span>
+    {% if v.resolved %}{{ v.resolved.label }}
+    {% elif v.escalate %}{{ verdict_words(v.disposition) }} <span style="color:var(--text-3)">{{ v.confidence }}%</span>
     {% else %}{{ closure_words(v.closure_code) }}{% endif %}
-    {% if not compact %}<span class="sub" title="{{ v.summary }}">{{ v.summary }}</span>
+    {% if v.resolved and not compact %}<span class="sub">closed by {{ v.resolved.by }}{% if v.resolved.note %}: {{ v.resolved.note }}{% endif %}</span>
+    {% elif not compact %}<span class="sub" title="{{ v.summary }}">{{ v.summary }}</span>
     {% elif r.action %}<span class="sub">{{ r.action.label }}{% if r.action.status == 'pending' %}, waiting for approval{% endif %}</span>{% endif %}
   </td>
   {% if not compact %}
   <td>
     {% if r.action %}{{ r.action.label }}
       <span class="sub">{% if r.action.status == 'pending' %}waiting for approval{% elif r.action.status == 'declined' %}declined{% elif r.action.policy == 'auto' %}done automatically{% else %}approved{% endif %}</span>
-    {% elif v.escalate and v.recommended_actions %}<span style="color:var(--text-2)">{{ v.recommended_actions[0] }}</span>
+    {% elif open and v.recommended_actions %}<span style="color:var(--text-2)">{{ v.recommended_actions[0] }}</span>
     {% else %}<span style="color:var(--text-3)">None</span>{% endif %}
   </td>
   {% endif %}

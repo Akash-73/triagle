@@ -83,7 +83,7 @@ templates.env.filters["ist_short"] = _ist_short
 CLOSURE_WORDS = {
     "BENIGN_EXPECTED": "routine activity", "BENIGN_KNOWN_TOOL": "known admin tools",
     "POSTURE_FINDING": "posture findings", "OPERATIONAL_EVENT": "health events",
-    "BENIGN_DUPLICATE": "duplicates", "FP_TUNING": "false positives",
+    "BENIGN_DUPLICATE": "repeats of an alert already raised", "FP_TUNING": "false positives",
 }
 
 
@@ -174,7 +174,7 @@ def _nav(result):
             due += c["open"]
             overdue += c["overdue"]
     m = result["metrics"]
-    return {"escalated": m.get("escalated", 0), "cases": len(result["incidents"]), "due": due,
+    return {"escalated": m.get("open", m.get("escalated", 0)), "cases": len(result["incidents"]), "due": due,
             "overdue": overdue, "rules": m.get("flagged_rules", 0)}
 
 
@@ -313,6 +313,7 @@ def _ensure_state():
     _CACHE["tenants"] = regclock.load_tenants()      # client -> sector, from config
     _CACHE["sector_overrides"] = {}                  # client -> sector, set by an analyst
     _CACHE["filings"] = []                           # regulatory reports a person marked as sent
+    _CACHE["resolutions"] = {}                       # alert id -> how an analyst closed it
     _CACHE.pop("result", None)
     _restore()
 
@@ -323,7 +324,8 @@ def _snapshot():
     return {"saved_at": _now_iso(), "live": _CACHE["live"], "seen_ids": sorted(_CACHE["seen_ids"]),
             "live_count": _CACHE.get("live_count", 0), "rolled": _CACHE["rolled"],
             "feeds": list(_CACHE["feeds"].values()), "decisions": _CACHE["decisions"],
-            "filings": _CACHE["filings"], "sector_overrides": _CACHE["sector_overrides"]}
+            "filings": _CACHE["filings"], "sector_overrides": _CACHE["sector_overrides"],
+            "resolutions": _CACHE["resolutions"]}
 
 
 def _restore():
@@ -356,6 +358,8 @@ def _restore():
     _CACHE["filings"] = [f for f in state.get("filings") or [] if isinstance(f, dict)]
     _CACHE["sector_overrides"] = {str(k): v for k, v in (state.get("sector_overrides") or {}).items()
                                   if v in regclock.SECTORS}
+    _CACHE["resolutions"] = {str(k): v for k, v in (state.get("resolutions") or {}).items()
+                             if isinstance(v, dict) and v.get("outcome") in RESOLUTIONS}
     _CACHE["restored"] = {"alerts": len(live), "saved_at": state.get("saved_at")}
     return True
 
@@ -424,9 +428,41 @@ def _reprocess():
     m["rolled_off"] = rolled["total"]
 
     _remember_decisions(result)
+    _apply_resolutions(result)
     _CACHE["result"] = result
     _CACHE["rev"] = _CACHE.get("rev", 0) + 1
     return result
+
+
+# How an analyst can close an alert Triagle sent to a person.
+RESOLUTIONS = {
+    "handled": "Real, and dealt with",
+    "expected": "Expected activity",
+    "false_positive": "False positive",
+}
+
+
+def _apply_resolutions(result):
+    """Mark the alerts a person has closed, and count what is still open.
+    Triagle's own verdict is kept as it was: the record shows both what
+    Triagle said and what the person decided."""
+    done = _CACHE.get("resolutions", {})
+    still_open = closed_by_person = 0
+    for aid, v in result["verdicts"].items():
+        v.pop("resolved", None)
+        if not v.get("escalate"):
+            continue
+        if aid in done:
+            v["resolved"] = done[aid]
+            closed_by_person += 1
+        else:
+            still_open += 1
+    result["metrics"]["open"] = still_open
+    result["metrics"]["resolved"] = closed_by_person
+
+
+def _is_open(verdict):
+    return bool(verdict.get("escalate")) and not verdict.get("resolved")
 
 
 def _load_result():
@@ -671,7 +707,7 @@ def _rows(result, escalated_only=None):
     out = []
     for a in result["alerts"]:
         v = result["verdicts"].get(a["alert_id"], {})
-        if escalated_only is not None and bool(v.get("escalate")) != escalated_only:
+        if escalated_only is not None and _is_open(v) != escalated_only:
             continue
         acts = result.get("actions", {}).get(a["alert_id"], [])
         waiting = next((x for x in acts if x.get("status") == "pending"), None)
@@ -683,7 +719,7 @@ def _rows(result, escalated_only=None):
 def _sort_queue(rows):
     """Needs-a-decision first (most severe, then newest), then closed, newest first."""
     rows.sort(key=lambda r: r["alert"].get("timestamp") or "", reverse=True)
-    rows.sort(key=lambda r: (0, _SEV_ORDER.get(r["verdict"].get("severity"), 9)) if r["verdict"].get("escalate") else (1, 0))
+    rows.sort(key=lambda r: (0, _SEV_ORDER.get(r["verdict"].get("severity"), 9)) if _is_open(r["verdict"]) else (1, 0))
     return rows
 
 
@@ -730,9 +766,11 @@ def dashboard(request: Request, user=Depends(require_user)):
     total = max(1, m.get("closed_all", 0) + m.get("escalated", 0))
     breakdown = [{"n": n, "what": CLOSURE_WORDS.get(code, code.lower().replace("_", " ")),
                   "pct": round(100 * n / total, 2)} for code, n in codes]
+    if m.get("resolved"):
+        breakdown.append({"n": m["resolved"], "what": "closed by a person", "pct": round(100 * m["resolved"] / total, 2)})
     return templates.TemplateResponse(request, "dashboard.html", _ctx(
         request, user, active="overview", need=need[:NEED_SHOWN], need_total=len(need), metrics=m, cases=cases,
-        dues=dues, breakdown=breakdown, escalated_pct=round(100 * m.get("escalated", 0) / total, 2),
+        dues=dues, breakdown=breakdown, escalated_pct=round(100 * m.get("open", 0) / total, 2),
         sources=_source_strip(result), overdue=sum(1 for d in dues if d["row"]["status"] == "overdue")))
 
 
@@ -752,12 +790,12 @@ def alerts_page(request: Request, show: str = "open", closed: str = "", q: str =
             r["alert"].get("client"), r["alert"].get("src_ip"), r["uc"]["name"], r["uc"]["technique"],
             r["verdict"].get("closure_code"))).lower()]
     total = len(rows)
-    limit = None if (closed == "all" or show == "open") else CLOSED_SHOWN + sum(1 for r in rows if r["verdict"].get("escalate"))
+    limit = None if (closed == "all" or show == "open") else CLOSED_SHOWN + sum(1 for r in rows if _is_open(r["verdict"]))
     m = result["metrics"]
     return templates.TemplateResponse(request, "alerts.html", _ctx(
         request, user, active="alerts", rows=rows[:limit] if limit else rows, hidden=max(0, total - limit) if limit else 0,
         total=total, show=show, q=needle, metrics=m,
-        counts={"open": m.get("escalated", 0), "closed": len(result["alerts"]) - m.get("escalated", 0),
+        counts={"open": m.get("open", 0), "closed": len(result["alerts"]) - m.get("open", 0),
                 "all": len(result["alerts"])}))
 
 
@@ -784,7 +822,7 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
     return templates.TemplateResponse(request, "detail.html", _ctx(
         request, user, active="alerts", alert=alert, verdict=verdict, trail=trail, actions=actions, intel=intel,
         uc=usecases.for_alert(alert, verdict), steps=_step_words(trail), ask_suggested=analyst.SUGGESTED,
-        report_key=report_key, just_decided=just_decided,
+        report_key=report_key, just_decided=just_decided, resolutions=RESOLUTIONS,
         notice=NOTICES.get(notice, ""), can_approve=user["role"] == "analyst",
         now=datetime.datetime.now().strftime("%d %b %Y, %H:%M")))
 
@@ -794,6 +832,7 @@ STEP_WORDS = {
     "entity_history": "Compared this with what is normal for the asset",
     "threat_intel": "Checked every address, hash and domain against threat intelligence",
     "timeline": "Put the events in order",
+    "burst": "Grouped alerts that are one event",
 }
 
 
@@ -966,6 +1005,7 @@ NOTICES = {
                "so the approval would have no name on it. Turn sign-in on, then approve again."),
     "failed": "Not done. Nothing was changed. The reason is shown on the action below.",
     "lifted": "The block was lifted. The action is open again and can be approved a second time.",
+    "closed": "Triagle closed this alert itself, so there is nothing for a person to decide on it.",
     "notlifted": "The block was not lifted. The reason is shown on the action below.",
 }
 
@@ -1050,6 +1090,39 @@ def _decide(request, alert_id, action_id, ack, decision, reason, user, next_path
     audit.record("action approved", user["name"], acknowledged_blast_radius=bool(act.get("requires_ack")),
                  executed=res["ok"], simulated=res.get("mode") in ("dry_run", "not_connected"), mode=res.get("mode"),
                  rule=(res.get("undo") or {}).get("rule"), **common)
+    return RedirectResponse(url=back, status_code=303)
+
+
+@app.post("/alert/resolve")
+def resolve_alert(request: Request, alert_id: str = Form(...), outcome: str = Form(...), note: str = Form(default=""),
+                  csrf: str = Form(default=""), user=Depends(require_analyst)):
+    """An analyst closes an alert Triagle sent to a person, or opens it again.
+    The outcome, the name and the note go on the alert and in the audit log."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload the page and try again.")
+    if outcome not in RESOLUTIONS and outcome != "reopen":
+        raise HTTPException(status_code=400, detail="Unknown outcome.")
+    back = f"/alert/{quote(alert_id, safe=':')}"
+    with _LOCK:
+        result = _load_result()
+        v = result["verdicts"].get(alert_id)
+        if v is None:
+            raise HTTPException(status_code=404, detail="No such alert.")
+        if not v.get("escalate"):
+            return RedirectResponse(url=back + "?notice=closed", status_code=303)
+        done = _CACHE["resolutions"]
+        if outcome == "reopen":
+            if done.pop(alert_id, None):
+                audit.record("alert reopened", user["name"], alert_id=alert_id, ip=_client_ip(request))
+        else:
+            words = " ".join(note.split())[:300]
+            done[alert_id] = {"outcome": outcome, "label": RESOLUTIONS[outcome], "note": words, "by": user["name"],
+                              "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
+            audit.record("alert closed by analyst", user["name"], alert_id=alert_id, outcome=outcome,
+                         note=words or None, triagle_verdict=v.get("disposition"), ip=_client_ip(request))
+        _apply_resolutions(result)
+        _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+        _changed(now=True)
     return RedirectResponse(url=back, status_code=303)
 
 

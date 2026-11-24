@@ -32,6 +32,8 @@
         <dl class="notes" style="margin-top:14px;">
           {% if verdict.escalate %}<dt>Outcome</dt><dd>Sent to a person. Triagle does not close an alert like this on its own.</dd>
           {% else %}<dt>Outcome</dt><dd>Closed with a reason: {{ closure_words(verdict.closure_code) }} <span class="technique">{{ verdict.closure_code }}</span></dd>{% endif %}
+          {% if verdict.burst %}<dt>Stands for</dt><dd>{{ verdict.burst.count }} alerts in {{ verdict.burst.span }}. The other {{ verdict.burst.count - 1 }} are closed as already raised.{% if verdict.burst['items'] %}<br><span class="mono" style="font-size:.9em; overflow-wrap:anywhere;">{{ verdict.burst['items']|join(', ') }}</span>{% if verdict.burst.more %} and {{ verdict.burst.more }} more{% endif %}{% endif %}</dd>{% endif %}
+          {% if verdict.duplicate_of %}<dt>Raised on</dt><dd><a href="/alert/{{ verdict.duplicate_of }}">the first alert of the burst</a></dd>{% endif %}
           {% if verdict.recommended_actions %}<dt>Do next</dt><dd>{% for a in verdict.recommended_actions %}{{ a }}{% if not loop.last %}<br>{% endif %}{% endfor %}</dd>{% endif %}
           {% if verdict.tuning_recommendation %}<dt>Fix the noise</dt><dd>{{ verdict.tuning_recommendation }}</dd>{% endif %}
           <dt>Question to answer</dt><dd>{{ uc.question }}</dd>
@@ -98,6 +100,33 @@
   </div>
 
   <div class="stack">
+    {% if verdict.escalate %}
+    <section class="panel" id="decision">
+      <header><h2>Your decision</h2>{% if verdict.resolved %}<span class="n">Closed</span>{% endif %}</header>
+      <div class="act">
+      {% if verdict.resolved %}
+        <div class="t">{{ verdict.resolved.label }}</div>
+        {% if verdict.resolved.note %}<div class="why">{{ verdict.resolved.note }}</div>{% endif %}
+        <div class="by">closed by {{ verdict.resolved.by }}, {{ verdict.resolved.at|ist_short }}</div>
+        {% if can_approve %}
+        <form method="post" action="/alert/resolve">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alert_id" value="{{ alert.alert_id }}">
+          <div class="row"><button class="btn" type="submit" name="outcome" value="reopen">Open it again</button></div>
+        </form>
+        {% endif %}
+      {% elif can_approve %}
+        <div class="why">Triagle sent this to a person. Close it once you know what it was. Your answer is recorded with your name.</div>
+        <form method="post" action="/alert/resolve">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alert_id" value="{{ alert.alert_id }}">
+          <input type="text" name="note" maxlength="300" placeholder="What it was (optional, recorded)" aria-label="Note">
+          <div class="row">{% for key, label in resolutions.items() %}<button class="btn" type="submit" name="outcome" value="{{ key }}">{{ label }}</button>{% endfor %}</div>
+        </form>
+      {% else %}
+        <div class="why">Waiting for an analyst to decide what this was.</div>
+      {% endif %}
+      </div>
+    </section>
+    {% endif %}
     <section class="panel">
       <header><h2>Response</h2><span class="n">{{ actions|length }}</span></header>
       {% if actions %}{% for act in actions %}{{ parts.action_card(act, csrf, can_approve, '/alert/' ~ alert.alert_id) }}{% endfor %}

@@ -95,6 +95,10 @@ CATALOGUE = {
                               "Who stopped it, and what ran while it was off?"),
     "config_drift": ("UC-701", "Security setting changed from passed to failed", "T1562", "Defence evasion",
                      "Who changed the setting, and was it deliberate?"),
+    "package_change": ("UC-702", "Software installed or changed on a server", None, "Change",
+                       "Was this change planned, and who ran it?"),
+    "file_integrity": ("UC-703", "Monitored files changed or deleted", "T1565.001", "Change",
+                       "Do the files match a planned change, or did something else touch them?"),
 
     "posture": ("UC-801", "Configuration or vulnerability finding", None, "Posture",
                 "No attack. Goes to the hardening backlog."),
@@ -159,6 +163,26 @@ def _get(alert, key):
     return alert.get(key) if isinstance(alert, dict) else getattr(alert, key, None)
 
 
+_PACKAGE_GROUPS = {"dpkg", "yum", "rpm", "apt", "pacman", "zypper"}
+_PACKAGE_WORDS = ("dpkg", "yum package", "rpm package", "package installed", "package removed", "package updated")
+_FILE_WORDS = ("integrity checksum changed", "file deleted", "file added to the system", "file modified",
+               "registry value integrity", "registry key integrity")
+
+
+def change_family(alert):
+    """package_change or file_integrity for an alert that reports a change to
+    a machine (a package manager ran, a monitored file changed), else None.
+    Read from the tool's own rule groups first, then from its title."""
+    ind = _get(alert, "indicators") or {}
+    groups = {g.strip() for g in str(ind.get("rule_groups") or "").lower().split(",") if g.strip()}
+    title = str(_get(alert, "title") or "").lower()
+    if groups & _PACKAGE_GROUPS or any(w in title for w in _PACKAGE_WORDS):
+        return "package_change"
+    if "syscheck" in groups or any(w in title for w in _FILE_WORDS):
+        return "file_integrity"
+    return None
+
+
 def _key_for(alert, verdict):
     verdict = verdict or {}
     if verdict.get("pattern") in CATALOGUE:
@@ -182,6 +206,9 @@ def _key_for(alert, verdict):
     ind = _get(alert, "indicators") or {}
     if signals.benign_artifact(alert):
         return "known_tool"                  # a system file the tool over-rated, whatever its title says
+    family = change_family(alert)
+    if family:
+        return family
     if ind.get("target_file") and any(w in title for w in ("dropped", "created under", "file created")):
         return "script_in_temp"
     spaced = _words(_get(alert, "title"))

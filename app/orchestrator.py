@@ -16,6 +16,7 @@ from app.engine.correlate import correlate
 from app.engine.relate import EntityIndex
 from app.engine.tuning import analyze_rules
 from app.engine.response import propose_actions
+from app.engine import bursts
 
 AGENTIC = os.environ.get("TRIAGLE_AGENTIC", "true").lower() == "true"
 _ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "samples", "investigation_env.json")
@@ -54,6 +55,9 @@ def process_batch(raw_alerts, decided=None):
             verdicts[a.alert_id] = triage(a).to_dict()
             trails[a.alert_id] = []
 
+    # One event that the tool reported as many alerts is raised once.
+    folded = bursts.fold(alert_dicts, verdicts, trails)
+
     incidents = correlate(normalized, verdicts)
     rule_health = analyze_rules(alert_dicts, verdicts)
 
@@ -85,6 +89,6 @@ def process_batch(raw_alerts, decided=None):
             "elevated_incidents": sum(1 for i in incidents if i["elevated"]),
             "flagged_rules": sum(1 for r in rule_health if r["flagged"]),
             "staged_actions": sum(len(v) for v in actions.values()),
-            "agentic": AGENTIC,
+            "agentic": AGENTIC, "folded": folded,
         },
     }

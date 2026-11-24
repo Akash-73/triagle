@@ -240,7 +240,7 @@ def from_wazuh(raw, client):
         "event_id": system.get("eventID"),
         "channel": system.get("channel"),
         "cve": vuln.get("cve"),
-        "package": (vuln.get("package") or {}).get("name"),
+        "package": (vuln.get("package") or {}).get("name") or data.get("package"),
         "rule_id": str(rule.get("id") or "") or None,
         "rule_level": str(rule.get("level")) if rule.get("level") is not None else None,
         "rule_groups": joined(groups),
