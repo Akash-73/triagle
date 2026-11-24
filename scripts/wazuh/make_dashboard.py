@@ -143,13 +143,13 @@ def objects():
         "triagle-search-escalated", "Triagle: sent to a person",
         "Alerts Triagle did not close, and why.",
         "rule.groups:triagle_escalated",
-        ["rule.description", "data.triagle.wazuh_rule_level", "data.triagle.reason"])
+        ["rule.description", "data.triagle.reason", "data.triagle.wazuh_rule_level"])
 
     response = saved_search(
         "triagle-search-response", "Triagle: what people did",
         "Blocks, lifted blocks, approved and declined actions, alerts closed by an analyst and reports filed.",
         "rule.groups:triagle_response",
-        ["rule.description", "data.triagle.note"])
+        ["rule.description"])
 
     everything = saved_search(
         "triagle-search-verdicts", "Triagle: every verdict",
@@ -159,13 +159,18 @@ def objects():
 
     # The grid is 48 wide. Each panel carries its own short title; the saved
     # objects keep the "Triagle: ..." names so they are easy to find in a list.
+    #
+    # A list panel gives each column at least the width of its header, which
+    # is the full field name and does not wrap, and breaks the text anywhere to
+    # fit what is left. So a list needs room: few columns, and the one with
+    # three columns gets the full width of the dashboard.
     layout = [
         (verdicts, "Decided by Triagle", 0, 0, 12, 9),
         (why, "Why it closed them", 12, 0, 14, 9),
         (over_time, "Closed and sent to a person, over time", 26, 0, 22, 9),
-        (overrated, "Wazuh rated these high or critical. Triagle closed them.", 0, 9, 22, 14),
-        (escalated, "Sent to a person, with the level Wazuh gave it and the reason", 22, 9, 26, 14),
-        (response, "What people did about it", 0, 23, 48, 12),
+        (overrated, "Wazuh rated these high or critical. Triagle closed them.", 0, 9, 20, 11),
+        (response, "What people did about it", 20, 9, 28, 11),
+        (escalated, "Sent to a person, with the reason and the level Wazuh gave it", 0, 20, 48, 14),
     ]
     panels, refs = [], []
     for i, (obj, title, x, y, w, h) in enumerate(layout):
