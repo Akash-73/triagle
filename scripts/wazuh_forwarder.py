@@ -21,6 +21,10 @@ What it takes care of:
     dropped unless the backlog passes --max-backlog lines
   - --replay N sends the last N alerts already in the file on first start,
     so a fresh console is not empty
+  - writes Triagle's verdict for each alert to --verdicts (one JSON object per
+    line). Point Wazuh at that file and the verdict shows up in the Wazuh
+    dashboard next to the alert: "Triagle closed: ..." / "Triagle escalated:
+    ...". Those entries are never forwarded back, so there is no loop.
 
 Settings can also come from the environment (TRIAGLE_URL, TRIAGLE_INGEST_KEY,
 TRIAGLE_CLIENT), which is how the systemd unit passes the key without it
@@ -59,6 +63,9 @@ def wanted(alert, min_level):
     rule = alert.get("rule")
     if not isinstance(rule, dict) or not rule.get("description"):
         return False
+    groups = rule.get("groups") or []
+    if "triagle" in groups or (isinstance(alert.get("data"), dict) and "triagle" in alert["data"]):
+        return False                      # Triagle's own verdict, read back by Wazuh: never send it round again
     try:
         return int(rule.get("level", 0)) >= min_level
     except (TypeError, ValueError):
@@ -66,24 +73,82 @@ def wanted(alert, min_level):
 
 
 def post(url, key, items, timeout=30):
-    """POST one batch. Returns (ok, text)."""
+    """POST one batch. Returns (ok, text, verdicts). verdicts is the list
+    Triagle sends back, one entry per alert it could read (empty on failure
+    or from an older Triagle)."""
     req = urllib.request.Request(
-        url.rstrip("/") + "/ingest", data=json.dumps(items).encode(),
+        url.rstrip("/") + "/ingest?verdicts=1", data=json.dumps(items).encode(),
         headers={"Content-Type": "application/json", "X-Triagle-Key": key,
-                 "User-Agent": "triagle-wazuh-forwarder/1.0"}, method="POST")
+                 "User-Agent": "triagle-wazuh-forwarder/1.1"}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return True, r.read().decode("utf-8", "replace")[:200]
+            text = r.read().decode("utf-8", "replace")
+        try:
+            verdicts = json.loads(text).get("verdicts") or []
+        except (ValueError, AttributeError):
+            verdicts = []
+        return True, text[:200], verdicts if isinstance(verdicts, list) else []
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "replace")[:200]
         if e.code in (401, 403):
             # a wrong key is a setup fault: keep the alerts and keep trying
-            return False, f"HTTP {e.code}: the key was refused. Check it matches Triagle's TRIAGLE_INGEST_KEY"
+            return False, f"HTTP {e.code}: the key was refused. Check it matches Triagle's TRIAGLE_INGEST_KEY", []
         # other 4xx (bad payload) will not get better by retrying the same batch
         fatal = 400 <= e.code < 500 and e.code not in (408, 429)
-        return (None if fatal else False), f"HTTP {e.code}: {body}"
+        return (None if fatal else False), f"HTTP {e.code}: {body}", []
     except (urllib.error.URLError, OSError, ValueError) as e:
-        return False, f"{type(e).__name__}: {e}"
+        return False, f"{type(e).__name__}: {e}", []
+
+
+VERDICTS_MAX_BYTES = 16 << 20       # start the verdicts file again past this size
+SKIP_KINDS = ("posture", "operational")
+
+
+def verdict_lines(batch, verdicts, mode="activity"):
+    """One JSON line per verdict, in the shape triagle_rules.xml reads.
+    mode: "all", "activity" (leave out benchmark results and health events,
+    which are not triage decisions), or "off"."""
+    if mode == "off" or not verdicts:
+        return []
+    raw_by_id = {str(it["raw"].get("id")): it["raw"] for it in batch if isinstance(it.get("raw"), dict)}
+    out = []
+    for v in verdicts:
+        if not isinstance(v, dict) or v.get("verdict") not in ("closed", "escalated"):
+            continue
+        if mode == "activity" and v.get("kind") in SKIP_KINDS:
+            continue
+        raw = raw_by_id.get(str(v.get("id")), {})
+        rule = raw.get("rule") or {}
+        agent = raw.get("agent") or {}
+        out.append(json.dumps({"triagle": {
+            "verdict": v["verdict"],
+            "closure": str(v.get("closure") or ""), "closure_code": str(v.get("closure_code") or ""),
+            "severity": str(v.get("severity") or ""), "confidence": str(v.get("confidence") or ""),
+            "use_case": str(v.get("use_case") or ""), "use_case_id": str(v.get("use_case_id") or ""),
+            "technique": str(v.get("technique") or ""), "reason": str(v.get("reason") or "")[:400],
+            "case": str(v.get("case") or ""), "url": str(v.get("url") or ""),
+            "agent": str(agent.get("name") or ""), "wazuh_alert_id": str(raw.get("id") or v.get("id") or ""),
+            "wazuh_rule_id": str(rule.get("id") or ""), "wazuh_rule_level": str(rule.get("level") or ""),
+            "wazuh_rule": str(rule.get("description") or "")[:200],
+        }}, separators=(",", ":")))
+    return out
+
+
+def write_verdicts(path, lines):
+    """Append lines to the verdicts file. Never fatal: forwarding alerts
+    matters more than writing verdicts back."""
+    if not path or not lines:
+        return 0
+    try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        if os.path.exists(path) and os.path.getsize(path) > VERDICTS_MAX_BYTES:
+            open(path, "w").close()
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        return len(lines)
+    except OSError as e:
+        log(f"could not write verdicts to {path}: {e}")
+        return 0
 
 
 class Follower:
@@ -182,8 +247,16 @@ def run(args):
         f.start_at_end(args.replay)
     log(f"following {args.alerts} from byte {f.offset} -> {args.triagle} as client '{args.client}' "
         f"(level >= {args.min_level})")
+    if args.verdicts and args.writeback != "off" and not args.dry_run:
+        write_verdicts(args.verdicts, [])
+        try:                                         # make sure the file exists for Wazuh to open
+            os.makedirs(os.path.dirname(args.verdicts) or ".", exist_ok=True)
+            open(args.verdicts, "a").close()
+            log(f"writing Triagle's verdicts to {args.verdicts} ({args.writeback})")
+        except OSError as e:
+            log(f"verdicts will not be written back ({e})")
 
-    sent_total, dropped_total, last_report, backoff = 0, 0, time.time(), 0
+    sent_total, dropped_total, written_total, last_report, backoff = 0, 0, 0, time.time(), 0
     while True:
         lines, new_offset = f.read()
         items = []
@@ -212,10 +285,11 @@ def run(args):
                     log(f"[dry-run] level {r.get('level')} {r.get('description')}")
                 sent_total += len(batch)
                 continue
-            ok, text = post(args.triagle, args.key, batch)
+            ok, text, verdicts = post(args.triagle, args.key, batch)
             if ok:
                 sent_total += len(batch)
                 backoff = 0
+                written_total += write_verdicts(args.verdicts, verdict_lines(batch, verdicts, args.writeback))
             elif ok is None:
                 log(f"Triagle refused a batch and retrying will not help ({text}); skipping {len(batch)} alert(s)")
                 dropped_total += len(batch)
@@ -239,7 +313,8 @@ def run(args):
             log(f"done: {sent_total} forwarded, {dropped_total} dropped")
             return 0
         if time.time() - last_report >= 60:
-            log(f"{sent_total} alert(s) forwarded so far, {dropped_total} dropped")
+            log(f"{sent_total} alert(s) forwarded so far, {dropped_total} dropped, "
+                f"{written_total} verdict(s) written back")
             last_report = time.time()
         if not lines:
             time.sleep(args.interval)
@@ -259,6 +334,12 @@ def main():
     ap.add_argument("--from-start", action="store_true", help="ignore saved position and send the whole file")
     ap.add_argument("--interval", type=float, default=2.0, help="seconds between checks for new alerts")
     ap.add_argument("--max-backlog", type=int, default=5000)
+    ap.add_argument("--verdicts", default=os.environ.get("TRIAGLE_VERDICTS", "/var/lib/triagle-forwarder/verdicts.json"),
+                    help="file to append Triagle's verdicts to, for Wazuh to read ('' to disable)")
+    ap.add_argument("--writeback", choices=("activity", "all", "off"),
+                    default=os.environ.get("TRIAGLE_WRITEBACK", "activity"),
+                    help="which verdicts to write back: activity (default; leaves out benchmark results and "
+                         "health events), all, or off")
     ap.add_argument("--once", action="store_true", help="send what is there, then exit")
     ap.add_argument("--dry-run", action="store_true", help="print what would be sent; send nothing")
     args = ap.parse_args()

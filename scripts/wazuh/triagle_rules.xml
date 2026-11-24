@@ -1,0 +1,45 @@
+<!--
+  Triagle verdicts inside Wazuh.
+
+  The Triagle forwarder writes one line per verdict to
+  /var/lib/triagle-forwarder/verdicts.json. Wazuh reads that file (see the
+  localfile block in docs/WAZUH.md) and these rules turn each line into an
+  entry you can see in the Wazuh dashboard, next to the alert it is about.
+
+  In the dashboard: Threat Hunting, Events, filter  rule.groups: triagle
+  Useful columns: data.triagle.agent, data.triagle.wazuh_rule,
+  data.triagle.reason, data.triagle.case, data.triagle.url
+
+  Install:  /var/ossec/etc/rules/triagle_rules.xml  (owner wazuh, mode 660),
+  then restart wazuh-manager.
+-->
+<group name="triagle,">
+
+  <rule id="100500" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="triagle.verdict">\.+</field>
+    <description>Triagle verdict</description>
+  </rule>
+
+  <rule id="100501" level="3">
+    <if_sid>100500</if_sid>
+    <field name="triagle.verdict">^closed$</field>
+    <description>Triagle closed: $(triagle.use_case) on $(triagle.agent) ($(triagle.closure))</description>
+    <group>triagle_closed,</group>
+  </rule>
+
+  <rule id="100502" level="10">
+    <if_sid>100500</if_sid>
+    <field name="triagle.verdict">^escalated$</field>
+    <description>Triagle escalated: $(triagle.use_case) on $(triagle.agent)</description>
+    <group>triagle_escalated,</group>
+  </rule>
+
+  <rule id="100503" level="13">
+    <if_sid>100502</if_sid>
+    <field name="triagle.severity">^critical$</field>
+    <description>Triagle escalated, critical: $(triagle.use_case) on $(triagle.agent)</description>
+    <group>triagle_escalated,</group>
+  </rule>
+
+</group>

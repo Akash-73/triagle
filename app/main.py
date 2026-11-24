@@ -1231,7 +1231,46 @@ async def ingest(request: Request):
     accepted = _add_alerts(items)
     if accepted:
         audit.record("alerts ingested", who, count=accepted, ip=_client_ip(request))
-    return {"accepted": accepted, "received": len(items), "queue": len(_CACHE.get("raw", []))}
+    out = {"accepted": accepted, "received": len(items), "queue": len(_CACHE.get("raw", []))}
+    if request.query_params.get("verdicts") in ("1", "true", "yes"):
+        out["verdicts"] = _verdicts_for(items, _base_url(request))
+    return out
+
+
+def _verdicts_for(items, base_url):
+    """Triagle's verdict for each alert in a batch, for a tool that wants to
+    show it next to its own alert (the Wazuh forwarder writes these back so
+    they appear in the Wazuh dashboard). It is the verdict now: a later alert
+    can still raise an earlier one."""
+    from app.engine import signals
+    result = _load_result()
+    by_id = {a["alert_id"]: a for a in result["alerts"]}
+    case_of = {aid: inc["id"] for inc in result["incidents"] for aid in inc["alert_ids"]}
+    out = []
+    for it in items:
+        if not (isinstance(it, dict) and it.get("source") and isinstance(it.get("raw"), dict)):
+            continue
+        try:
+            a = normalize(it["source"], it["raw"], it.get("client") or "Unknown")
+        except (ValueError, KeyError, TypeError, AttributeError):
+            continue
+        alert, v = by_id.get(a.alert_id), result["verdicts"].get(a.alert_id)
+        if not alert or not v:
+            continue                         # aged out of the queue already
+        uc = usecases.for_alert(alert, v)
+        out.append({
+            "id": str(it["raw"].get("id") or a.alert_id), "alert_id": a.alert_id,
+            "verdict": "escalated" if v.get("escalate") else "closed",
+            "disposition": v.get("disposition"), "closure_code": v.get("closure_code") or "",
+            "closure": sources_meta.closure_words(v.get("closure_code")) if not v.get("escalate")
+            else sources_meta.verdict_words(v.get("disposition")),
+            "severity": v.get("severity"), "confidence": v.get("confidence"),
+            "use_case": uc["name"], "use_case_id": uc["id"], "technique": uc["technique"] or "",
+            "kind": signals.kind(alert), "reason": v.get("summary") or "",
+            "case": case_of.get(a.alert_id, ""),
+            "url": f"{base_url}/alert/{quote(a.alert_id, safe=':')}",
+        })
+    return out
 
 
 @app.get("/api/state")

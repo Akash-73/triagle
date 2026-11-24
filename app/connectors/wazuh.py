@@ -212,6 +212,10 @@ def from_wazuh(raw, client):
 
     kind, reason, drift = classify(raw)
     groups = _groups(rule)
+    if "triagle" in groups or "triagle" in (raw.get("data") or {}):
+        # Triagle's own verdict, written back to Wazuh and read by it as a log
+        # line. It is not an alert to triage; taking it in would loop.
+        raise ValueError("a Triagle verdict read back from Wazuh is not an alert")
     # The behaviour patterns are matched against the command line. PowerShell
     # script-block logging (event 4104) does not fill commandLine — it logs the
     # code that ran in scriptBlockText — so a download cradle or an encoded

@@ -86,3 +86,44 @@ Decisions that follow from this:
 against 68 labelled alerts built from the stock Wazuh 4.14 ruleset
 (`eval/wazuh_dataset.json`). The requirement: no attack step closed, no
 routine alert escalated.
+
+## 5. Triagle's verdicts inside the Wazuh dashboard
+
+The forwarder asks Triagle for its verdict on every alert it sends and appends
+it, one JSON object per line, to `/var/lib/triagle-forwarder/verdicts.json`.
+Point Wazuh at that file and each verdict becomes an entry in the Wazuh
+dashboard: "Triagle closed: Known tool or system file on FIN-LAPTOP-07" or
+"Triagle escalated: Obfuscated PowerShell execution on FIN-LAPTOP-07".
+
+```bash
+sudo curl -fsSL -o /var/ossec/etc/rules/triagle_rules.xml \
+  https://raw.githubusercontent.com/Akash-73/triagle/v0.8-regional/scripts/wazuh/triagle_rules.xml
+sudo chown wazuh:wazuh /var/ossec/etc/rules/triagle_rules.xml
+sudo chmod 660 /var/ossec/etc/rules/triagle_rules.xml
+
+# tell Wazuh to read the verdicts file (skipped if already there)
+sudo grep -q triagle-forwarder/verdicts.json /var/ossec/etc/ossec.conf || \
+  printf '%s\n' '<ossec_config>' '  <localfile>' '    <log_format>json</log_format>' \
+  '    <location>/var/lib/triagle-forwarder/verdicts.json</location>' '  </localfile>' \
+  '</ossec_config>' | sudo tee -a /var/ossec/etc/ossec.conf >/dev/null
+
+# check the rules load, and only then restart
+sudo /var/ossec/bin/wazuh-analysisd -t && sudo systemctl restart wazuh-manager
+```
+
+In the dashboard open Threat Hunting, Events, and filter `rule.groups: triagle`.
+Useful columns: `data.triagle.agent`, `data.triagle.wazuh_rule`,
+`data.triagle.reason`, `data.triagle.case`.
+
+| Rule | Level | Meaning |
+|---|---|---|
+| 100501 | 3 | Triagle closed the alert, with the reason |
+| 100502 | 10 | Triagle escalated it to a person |
+| 100503 | 13 | Escalated, and Triagle rated it critical |
+
+What to know:
+- By default benchmark results and health events are not written back
+  (`TRIAGLE_WRITEBACK=activity`). Use `all` for everything or `off` for nothing.
+- It is the verdict at the time the alert arrived. A later alert can raise an
+  earlier one in Triagle; that change is not written back.
+- Verdict entries are never forwarded to Triagle again, so there is no loop.

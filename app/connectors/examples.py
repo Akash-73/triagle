@@ -118,6 +118,18 @@ def setup_steps(key, base_url, client="Your Company"):
             {"say": "Start it as a service. It sends the last 200 alerts, then follows new ones.",
              "code": "sudo install -m 644 triagle-forwarder.service /etc/systemd/system/\n"
                      "sudo systemctl daemon-reload && sudo systemctl enable --now triagle-forwarder"},
+            {"say": "Optional: show Triagle's verdicts inside the Wazuh dashboard. The forwarder writes each verdict "
+                    "to a file and these lines make Wazuh read it. The rules are checked before Wazuh restarts. "
+                    "Afterwards, filter Threat Hunting by rule.groups: triagle",
+             "code": "sudo curl -fsSL -o /var/ossec/etc/rules/triagle_rules.xml "
+                     "https://raw.githubusercontent.com/Akash-73/triagle/v0.8-regional/scripts/wazuh/triagle_rules.xml\n"
+                     "sudo chown wazuh:wazuh /var/ossec/etc/rules/triagle_rules.xml\n"
+                     "sudo chmod 660 /var/ossec/etc/rules/triagle_rules.xml\n"
+                     "sudo grep -q triagle-forwarder/verdicts.json /var/ossec/etc/ossec.conf || "
+                     "printf '%s\\n' '<ossec_config>' '  <localfile>' '    <log_format>json</log_format>' "
+                     "'    <location>/var/lib/triagle-forwarder/verdicts.json</location>' '  </localfile>' "
+                     "'</ossec_config>' | sudo tee -a /var/ossec/etc/ossec.conf >/dev/null\n"
+                     "sudo /var/ossec/bin/wazuh-analysisd -t && sudo systemctl restart wazuh-manager"},
         ]
     body = '{"source": "%s", "client": "%s", "raw": { ...the alert exactly as the tool emits it... }}' % (key, client)
     if key == "generic":
