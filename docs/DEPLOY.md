@@ -28,7 +28,7 @@ SA=$(gcloud run services describe triagle --region us-central1 \
 
 gcloud storage buckets create "gs://$BUCKET" --location=us-central1 --uniform-bucket-level-access
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
-  --member="serviceAccount:$SA" --role="roles/storage.objectAdmin"
+  --member="serviceAccount:$SA" --role="roles/storage.objectUser"
 ```
 
 Then deploy with the bucket mounted at `/data`:
@@ -38,9 +38,13 @@ gcloud run deploy triagle --source . --region us-central1 \
   --execution-environment gen2 \
   --add-volume name=state,type=cloud-storage,bucket="$BUCKET" \
   --add-volume-mount volume=state,mount-path=/data \
-  --min-instances 1 --max-instances 1 \
+  --min-instances 1 --max-instances 1 --memory 1Gi \
   --update-env-vars "TRIAGLE_STATE_FILE=/data/triagle-state.json.gz"
 ```
+
+A mounted bucket needs the second-generation environment, which Cloud Run
+picks on its own when a volume is present; the flag just makes it explicit.
+Each save is an upload that is staged in memory, hence the 1 GiB.
 
 `--max-instances 1` matters: the queue lives in one process and one process
 writes the file. `--min-instances 1` keeps that process warm so the first page
