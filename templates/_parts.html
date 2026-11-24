@@ -58,7 +58,7 @@
   <div class="why">Effect: {{ act.blast_radius }} Through {{ act.platform }}.</div>
   {% if act.status == 'auto_executed' %}
     <div class="state"><span class="tag ok">{{ 'Automatic' if rehearsed else 'Done automatically' }}</span> {{ act.result_message }}</div>
-    <div class="by">by {{ act.decided_by }}, {{ act.decided_at|ist_short }}. A person can roll this back.</div>
+    <div class="by">by {{ act.decided_by }}, {{ act.decided_at|ist_short }}. {% if rehearsed %}Nothing was sent.{% else %}A person can roll this back.{% endif %}</div>
   {% elif act.status in ['executed', 'approved'] %}
     <div class="state"><span class="tag ok">{% if act.status != 'executed' %}Approved{% elif act.undo %}Done, for real{% elif rehearsed %}Approved{% else %}Done{% endif %}</span> {{ act.result_message or 'Approved' }}</div>
     {% if act.decided_by %}<div class="by">decided by {{ act.decided_by }}, {{ act.decided_at|ist_short }}</div>{% endif %}
