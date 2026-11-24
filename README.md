@@ -1,4 +1,4 @@
-# Triagle — AI SOC analyst for regulated companies
+# Triagle — AI SOC analyst
 
 **Triage, decided.**
 
