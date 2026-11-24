@@ -164,7 +164,14 @@ def test_each_scenario_fires_into_its_own_tenant_with_its_own_regulators(app):
     page = app.get("/clock").text
     card = page[page.index('<h2>Tirupati Power Grid'):]
     card = card[:card.index('</section>')]
-    assert "CSIRT-Power" in card and "Power utility" in card and "not binding yet" in card
+    assert "CSIRT-Power" in card and "Power utility" in card
+    # CSIRT-Power's rule binds from 1 April 2027 and the Data Protection Board's from 13 May 2027.
+    # Until both have passed the card says so; after that every deadline on it is running.
+    import datetime
+    from app.engine import regclock
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    starts = [regclock.REGULATORS[k]["in_force_from"] for k in regclock.SECTORS["power"]["regulators"]]
+    assert ("not binding yet" in card) == any(d and d > today for d in starts)
     r = app.post("/demo/fire", data={"csrf": _csrf(app), "scenario": "bank"}, follow_redirects=False)
     res = main._load_result()
     landed = main._find_incident(res, r.headers["location"].rsplit("/", 1)[1])
