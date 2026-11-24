@@ -36,6 +36,11 @@
       {% endfor %}
       </tbody>
     </table></div>
+    <div class="body" style="border-top:1px solid var(--line);"><p class="by" id="saved-state">
+      {% if saved.enabled and saved.error %}The queue is not being saved: {{ saved.error }}. A restart will empty it.
+      {% elif saved.enabled %}The queue, every decision and every filed report are saved, so a restart does not empty this console.{% if restored %} {{ restored.alerts }} alerts were restored at the last start.{% endif %}
+      {% else %}The queue is held in memory on this deployment. A restart empties it and the tools send their recent alerts again.{% endif %}
+    </p></div>
   </section>
 
   <section class="panel" id="try">

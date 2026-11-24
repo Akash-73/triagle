@@ -193,6 +193,8 @@ Nobody reaches the console without signing in.
 | `TRIAGLE_SESSION_HOURS` | Session length, default 8 |
 | `TRIAGLE_AUDIT_LOG` | Where the audit log is written, default `data/audit.jsonl` |
 | `TRIAGLE_AUTH=off` | Turns sign-in off. Laptop demos only; the dashboard shows a red "sign-in is OFF" |
+| `TRIAGLE_GUEST=view` | Anyone with the address can look around, try an alert and ask about a case without signing in. Every change still needs a signed-in analyst |
+| `TRIAGLE_STATE_FILE` | Saves the queue, decisions and filed reports to this file so a restart does not empty the console. See [docs/DEPLOY.md](docs/DEPLOY.md) |
 
 If no user is configured the app does not run open: it creates `admin` with
 a random password and prints it once in the server log.
@@ -311,12 +313,14 @@ tests/                    test suite
 - [x] Gemini backend, personal-data masking, CERT-In draft, benchmark
 - [ ] Live run of the benchmark on a model backend
 - [x] Sign-in with roles and a hash-chained audit log of approvals
-- [ ] Per-client access control; storage so action status survives a restart
+- [x] Saved state: the queue, decisions and filed reports survive a restart
+- [ ] Per-client access control
 - [ ] Analyst feedback loop — learn per-client "normal"
 - [x] Live connector: Wazuh, with a forwarder and a queue that holds up on a real stream
 - [x] Regulatory clock: CERT-In, RBI, SEBI, CSIRT-Power, Data Protection Board
 - [x] OT-safe response: no isolation of controllers or operator stations, containment at the boundary
-- [ ] Live threat-intelligence feeds; one real containment action end to end
+- [x] One real containment action end to end: an approved block becomes a Google Cloud firewall rule, and can be lifted ([docs/RESPONSE.md](docs/RESPONSE.md))
+- [ ] Live threat-intelligence feeds
 - [ ] Vector-DB context store for richer investigation
 - [ ] Per-client SLA + closure-code analytics
 

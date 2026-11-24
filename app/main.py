@@ -8,6 +8,7 @@ plus a client-ready incident report to forward to the end customer.
 
 Triagle — triage, decided.
 """
+import atexit
 import os
 import json
 import time
@@ -25,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from app.orchestrator import process_batch
 from app.connectors.sources import normalize
 from app.engine.response import execute_action, DECISION_KEYS
+from app import store
 from app.engine import certin, regclock
 from app.agent import backend
 from app import auth, audit
@@ -189,9 +191,13 @@ def _ctx(request: Request, user, **extra):
     return base
 
 
+atexit.register(lambda: _flush(force=True))         # a clean stop writes whatever is still unsaved
+
+
 @app.middleware("http")
 async def _security_headers(request: Request, call_next):
     resp = await call_next(request)
+    _flush()                                         # writes only if something changed and a save is due
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
@@ -308,6 +314,72 @@ def _ensure_state():
     _CACHE["sector_overrides"] = {}                  # client -> sector, set by an analyst
     _CACHE["filings"] = []                           # regulatory reports a person marked as sent
     _CACHE.pop("result", None)
+    _restore()
+
+
+# ---- saved state: the queue and what people decided survive a restart --------
+
+def _snapshot():
+    return {"saved_at": _now_iso(), "live": _CACHE["live"], "seen_ids": sorted(_CACHE["seen_ids"]),
+            "live_count": _CACHE.get("live_count", 0), "rolled": _CACHE["rolled"],
+            "feeds": list(_CACHE["feeds"].values()), "decisions": _CACHE["decisions"],
+            "filings": _CACHE["filings"], "sector_overrides": _CACHE["sector_overrides"]}
+
+
+def _restore():
+    """Read back what was saved before the last restart. Each alert is read
+    again by its connector, so an alert this version can no longer read is
+    dropped instead of breaking the queue."""
+    state = store.load()
+    if not state:
+        return False
+    live, meta = [], []
+    for it in state.get("live") or []:
+        try:
+            a = normalize(it["source"], it["raw"], it.get("client") or "Unknown")
+        except (ValueError, KeyError, TypeError, AttributeError):
+            continue
+        if a.alert_id in _CACHE["seen_ids"]:
+            continue                                 # also in the sample set
+        live.append({"source": it["source"], "client": it.get("client") or "Unknown", "raw": it["raw"]})
+        meta.append((a.alert_id, a.timestamp))
+        _CACHE["seen_ids"].add(a.alert_id)
+    _CACHE["live"], _CACHE["live_meta"] = live, meta
+    _CACHE["seen_ids"].update(str(x) for x in state.get("seen_ids") or [])
+    _CACHE["live_count"] = max(int(state.get("live_count") or 0), len(live))
+    rolled = state.get("rolled") or {}
+    _CACHE["rolled"] = {"total": int(rolled.get("total") or 0), "closed": int(rolled.get("closed") or 0),
+                        "escalated": int(rolled.get("escalated") or 0), "codes": dict(rolled.get("codes") or {})}
+    _CACHE["feeds"] = {(f.get("client"), f.get("source")): f for f in state.get("feeds") or []
+                       if isinstance(f, dict) and f.get("source")}
+    _CACHE["decisions"] = {str(k): v for k, v in (state.get("decisions") or {}).items() if isinstance(v, dict)}
+    _CACHE["filings"] = [f for f in state.get("filings") or [] if isinstance(f, dict)]
+    _CACHE["sector_overrides"] = {str(k): v for k, v in (state.get("sector_overrides") or {}).items()
+                                  if v in regclock.SECTORS}
+    _CACHE["restored"] = {"alerts": len(live), "saved_at": state.get("saved_at")}
+    return True
+
+
+def _flush(force=False):
+    """Write the state if something changed. The alert queue is written at
+    most every few seconds; force=True writes now."""
+    if not store.enabled() or not _CACHE.get("dirty") or "seed" not in _CACHE:
+        return False
+    if not force and time.time() - _CACHE.get("flushed_at", 0.0) < store.interval():
+        return False
+    with _LOCK:
+        ok = store.save(_snapshot())
+        _CACHE["flushed_at"] = time.time()           # also after a failure: a broken disk is not retried on every request
+        if ok:
+            _CACHE["dirty"] = False
+        return ok
+
+
+def _changed(now=False):
+    """Something worth keeping changed. now=True for a person's decision."""
+    if store.enabled():
+        _CACHE["dirty"] = True
+        _flush(force=now)
 
 
 def _remember_decisions(result):
@@ -429,6 +501,7 @@ def _add_alerts(items):
         _CACHE["live_count"] = _CACHE.get("live_count", 0) + fresh
         _reprocess()
         _trim()
+        _changed()
         return fresh
 
 
@@ -447,6 +520,7 @@ def _drop_live(keep=lambda item: False):
             _CACHE["rolled"] = {"total": 0, "closed": 0, "escalated": 0, "codes": {}}
             _CACHE["feeds"] = {}
         _reprocess()
+        _changed(now=True)
 
 
 _TIME_KEYS = ("created_timestamp", "eventtime", "createdDateTime")
@@ -931,6 +1005,7 @@ def _find_action(alert_id, action_id):
 
 def _remember(act):
     _CACHE["decisions"][act["action_id"]] = {k: act.get(k) for k in DECISION_KEYS}
+    _changed(now=True)
 
 
 def _decide(request, alert_id, action_id, ack, decision, reason, user, next_path=""):
@@ -1229,6 +1304,7 @@ def clock_file(request: Request, incident: str = Form(...), regulator: str = For
                      minutes_before_deadline=(row["seconds_left"] // 60 if row["seconds_left"] is not None else None),
                      binding=row["binding"], reference=ref, ip=_client_ip(request))
         _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+        _changed(now=True)
     return RedirectResponse(url=f"/clock#{inc['id']}", status_code=303)
 
 
@@ -1250,6 +1326,7 @@ def tenant_sector(request: Request, client: str = Form(...), sector: str = Form(
             audit.record("client sector changed", user["name"], client=client, sector=sector,
                          previous=previous, ip=_client_ip(request))
             _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+            _changed(now=True)
     return RedirectResponse(url="/clock", status_code=303)
 
 
@@ -1388,6 +1465,7 @@ def connectors_page(request: Request, user=Depends(require_user)):
         request, user, active="connectors", sources=sources, base_url=base,
         ingest_key=INGEST_KEY if show_key else "", key_set=bool(INGEST_KEY),
         model_status=genai.status(), firewall=gcp_firewall.summary(), auth_on=auth.enabled(),
+        saved=store.status(), restored=_CACHE.get("restored"),
         examples=examples.EXAMPLES, can_test=user["role"] == "analyst", poll=False))
 
 
@@ -1567,6 +1645,7 @@ async def api_firewall_lift(request: Request, user=Depends(require_analyst)):
                     rec.update(status="pending", decided_by=None, decided_at=None, undo=None, error="",
                                result_message=res["message"])
             _CACHE.pop("result", None)
+            _changed(now=True)
     return res
 
 
@@ -1637,7 +1716,7 @@ def healthz(request: Request):
     """Public: just enough for an uptime check. Details only when signed in."""
     out = {"ok": True, "version": app.version}
     if current_user(request):
-        out.update(backend=backend.BACKEND, mask_pii=backend.MASK_PII,
+        out.update(saved_state=store.status(), backend=backend.BACKEND, mask_pii=backend.MASK_PII,
                    model_calls=backend.STATS["calls"], identifiers_masked=backend.STATS["masked"],
                    sign_in=auth.enabled(), audit_chain_ok=audit.verify()["ok"])
     return out
