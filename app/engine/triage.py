@@ -127,6 +127,30 @@ def _deterministic_verdict(alert):
             used_ai=False,
         )
 
+    # 1c. A file or process a trusted producer creates in normal operation
+    #     (e.g. PowerShell's own execution-policy probe file, which the stock
+    #     ruleset rates critical). Recognised by a signature only that producer
+    #     uses, and never when a hard signal is present.
+    artifact = signals.benign_artifact(alert)
+    if artifact:
+        return Verdict(
+            alert_id=alert.alert_id,
+            disposition="benign",
+            closure_code="BENIGN_KNOWN_TOOL",
+            confidence=92,
+            severity="low",
+            escalate=False,
+            summary=f"Benign — {artifact}.",
+            reasoning=(f"The alert is about a {artifact}. The operating system creates this in the "
+                       f"course of normal work; the file name is a signature only that producer uses. "
+                       f"The source tool rated it {alert.raw_severity}, but the artifact is not an "
+                       f"attack, so it is closed with evidence rather than raised."),
+            recommended_actions=["No action required."],
+            tuning_recommendation=(f"Suppress this detection for the {artifact} signature so the "
+                                   f"console is not flooded with a critical alert every time it appears."),
+            used_ai=False,
+        )
+
     # 2. Known-benign allowlist (narrow, evidence-backed).
     is_benign, code, why = _known_benign_signal(alert)
     if is_benign:

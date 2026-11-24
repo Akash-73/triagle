@@ -171,6 +171,42 @@ def sensitive_terms(alert):
     return list(_scan_text(human_text(alert))[2])
 
 
+# Files and processes that a tool flags as suspicious but that the operating
+# system or a trusted program creates in the course of normal work. Each
+# pattern is a signature only one benign producer uses, matched against the
+# file or image the alert names — never against free text an attacker writes.
+# Narrow on purpose: this is not "anything in Temp", it is a named artifact.
+#
+# __PSScriptPolicyTest_<rand>.<rand>.ps1 is the clearest example: PowerShell
+# writes and deletes it on every launch to test its own execution policy, and
+# the stock Wazuh ruleset reports each one as a level-15 "executable dropped
+# in a folder commonly used by malware". A SOC on stock rules gets a critical
+# alert every time anyone opens a PowerShell window.
+BENIGN_ARTIFACTS = [
+    ("PowerShell execution-policy probe file",
+     r"__psscriptpolicytest_[a-z0-9]+\.[a-z0-9]+\.ps1"),
+]
+_BENIGN_ARTIFACT_RE = [(name, re.compile(rx, re.I)) for name, rx in BENIGN_ARTIFACTS]
+
+
+def _artifact_text(alert):
+    ind = _get(alert, "indicators") or {}
+    return " ".join(str(x) for x in (ind.get("target_file"), ind.get("image"), ind.get("cmdline")) if x).lower()
+
+
+def benign_artifact(alert):
+    """The name of a trusted-producer artifact this alert is about, or None.
+    Never consulted when a hard signal is present, so a real behaviour on the
+    same alert always wins."""
+    if hard_signals(alert):
+        return None
+    text = _artifact_text(alert)
+    for name, rx in _BENIGN_ARTIFACT_RE:
+        if rx.search(text):
+            return name
+    return None
+
+
 _SEV_HIGH = ("high", "critical")
 _SEV_LOW = ("low", "informational", "info")
 
@@ -183,6 +219,8 @@ def is_notable(alert):
         return bool(matched_behaviours(alert))
     if hard_signals(alert) or (_get(alert, "indicators") or {}).get("drift"):
         return True
+    if benign_artifact(alert):
+        return False                     # a known OS artifact, whatever level the tool gave it
     sev = str(_get(alert, "raw_severity") or "").lower()
     if sev in _SEV_HIGH:
         return True
@@ -191,9 +229,11 @@ def is_notable(alert):
 
 def has_own_weight(alert):
     """Can related activity raise this alert? Only if it is security-relevant
-    in its own right: not a posture or health event, and either above low
-    severity or carrying a suspicious or sensitive term."""
+    in its own right: not a posture or health event, not a known OS artifact,
+    and either above low severity or carrying a suspicious or sensitive term."""
     if kind(alert) != ACTIVITY:
+        return False
+    if benign_artifact(alert):
         return False
     sev = str(_get(alert, "raw_severity") or "").lower()
     if sev not in _SEV_LOW:

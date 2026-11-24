@@ -104,3 +104,40 @@ def test_the_host_is_proposed_for_isolation():
     r = process_batch(chain)
     acts = [x for v in r["actions"].values() for x in v]
     assert any(x["action_type"] == "isolate_host" and x["target"] == HOST for x in acts)
+
+
+def test_powershell_policy_probe_file_is_not_a_critical_malware_drop():
+    """Stock Wazuh rule 92213 rates PowerShell's own execution-policy probe
+    file a level-15 'executable dropped in a folder used by malware'. It is
+    created and deleted on every PowerShell launch. Triagle must close it."""
+    probe = _sysmon(0, "92213", 15, "Executable file dropped in folder commonly used by malware",
+                    {"targetFilename": "C:\\Users\\akash\\AppData\\Local\\Temp\\__PSScriptPolicyTest_lpocpbf5.ccl.ps1",
+                     "image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"},
+                    groups=("sysmon", "sysmon_eid11", "windows"))
+    r = process_batch([probe])
+    v = r["verdicts"][r["alerts"][0]["alert_id"]]
+    assert not v["escalate"] and v["closure_code"] == "BENIGN_KNOWN_TOOL"
+    assert v["tuning_recommendation"]
+
+
+def test_the_policy_probe_does_not_corroborate_or_join_an_incident():
+    """At level 15 it would otherwise look like strong corroboration. It must
+    not raise a neighbouring alert or pad an incident."""
+    import datetime as _dt
+    probes = [_sysmon(i, "92213", 15, "Executable file dropped in folder commonly used by malware",
+                      {"targetFilename": f"C:\\Users\\akash\\AppData\\Local\\Temp\\__PSScriptPolicyTest_{i}aaaa.{i}bb.ps1",
+                       "image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"},
+                      groups=("sysmon", "sysmon_eid11", "windows")) for i in range(4)]
+    r = process_batch(probes)
+    assert r["metrics"]["escalated"] == 0 and r["metrics"]["incident_count"] == 0
+
+
+def test_a_real_drop_in_temp_is_still_escalated():
+    """The recognition is the specific probe signature, not 'anything in Temp'.
+    A different executable dropped in Temp must still be caught."""
+    drop = _sysmon(0, "92213", 15, "Executable file dropped in folder commonly used by malware",
+                   {"targetFilename": "C:\\Users\\akash\\AppData\\Local\\Temp\\svchost_update.exe",
+                    "image": "C:\\Users\\akash\\Downloads\\invoice.exe"},
+                   groups=("sysmon", "sysmon_eid11", "windows"))
+    r = process_batch([drop])
+    assert r["verdicts"][r["alerts"][0]["alert_id"]]["escalate"]

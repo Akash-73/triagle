@@ -165,6 +165,23 @@ def _rule_determine(ctx):
             basis="signal" if hard else "intel",
         )
 
+    # A known operating-system artifact (e.g. PowerShell's execution-policy
+    # probe file) the stock ruleset over-rates. Closed before correlation can
+    # pull it into an incident — it is not evidence of anything.
+    artifact = signals.benign_artifact(alert)
+    if artifact:
+        return Verdict(
+            alert_id=alert["alert_id"], disposition="benign", closure_code="BENIGN_KNOWN_TOOL",
+            confidence=92, severity="low", escalate=False,
+            summary=f"Benign — {artifact}.",
+            reasoning=(f"The alert is about a {artifact}, which the operating system creates in normal "
+                       f"operation. The source tool rated it {alert.get('raw_severity')}, but the file "
+                       f"name is a signature only that producer uses, so it is closed with evidence."),
+            recommended_actions=["No action required."],
+            tuning_recommendation=(f"Suppress this detection for the {artifact} signature."),
+            used_ai=False,
+        )
+
     # Password guessing from one address. No single failed sign-in is worth a
     # person's time, and a SIEM only raises "brute force" when they come fast.
     # So the attempt that brings one address to the threshold inside the
