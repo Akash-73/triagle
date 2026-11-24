@@ -260,6 +260,25 @@ def _rule_determine(ctx):
         verdict.reasoning += (f" {related_count} alert(s) of note were raised on the same asset or "
                               f"account in the same window; this routine event is kept as context "
                               f"for them, not escalated by itself.")
+    if verdict.disposition == "needs_human" and sign_in(alert) == "failed":
+        # A failed sign-in the tool rates above routine (sshd's "maximum
+        # authentication attempts exceeded", say) that has not reached the
+        # password-guessing count. Say what it is and what to check.
+        who = f" for {alert['user']}" if alert.get("user") else ""
+        origin = f" from {src}" if src else ""
+        so_far = int(related.get("failed_from_source", 0) or 0)
+        verdict.summary = f"Failed sign-in{who}{origin}, rated {alert.get('raw_severity') or 'medium'} by the tool."
+        verdict.reasoning = (
+            f"The tool rates this failed sign-in{who} above a routine one. "
+            + (f"{src} has {so_far} failed sign-in{'s' if so_far != 1 else ''} within {span}, below the "
+               f"{threshold} that Triagle raises as password guessing. " if src else
+               "The alert names no source address, so it cannot be counted against one. ")
+            + "No sign-in has succeeded. A person decides because the account matters more than the count.")
+        verdict.recommended_actions = [
+            (f"Check whether {src} is an address you know. If it is not, block it." if src
+             else "Find the source address in the raw event."),
+            "Confirm the account cannot sign in with a password from the internet.",
+        ]
     return verdict
 
 

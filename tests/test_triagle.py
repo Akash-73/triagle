@@ -344,3 +344,16 @@ def test_demo_clock_keeps_order_and_puts_window_in_the_future(monkeypatch):
         assert times == sorted(times)
     finally:
         main._CACHE.clear()
+
+
+def test_a_failed_sign_in_rated_medium_gets_a_specific_next_step(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    alert = {"alert_id": "wz-9", "source": "wazuh", "client": "c", "timestamp": "2026-11-24T15:54:00Z",
+             "title": "Maximum authentication attempts exceeded.", "raw_severity": "medium",
+             "entity": "h", "user": "root", "host": "h", "src_ip": "203.0.113.9", "dst_ip": None,
+             "description": "sshd: maximum authentication attempts exceeded for root",
+             "indicators": {"auth": "failed"}, "raw": {}}
+    v, _ = loop.investigate(alert, [alert])
+    assert v["escalate"] and v["disposition"] == "needs_human"
+    assert "203.0.113.9" in v["recommended_actions"][0]
+    assert "root" in v["summary"] and "Analyst review needed" not in " ".join(v["recommended_actions"])
