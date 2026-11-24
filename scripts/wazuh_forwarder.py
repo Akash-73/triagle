@@ -25,6 +25,10 @@ What it takes care of:
     line). Point Wazuh at that file and the verdict shows up in the Wazuh
     dashboard next to the alert: "Triagle closed: ..." / "Triagle escalated:
     ...". Those entries are never forwarded back, so there is no loop.
+  - every few seconds asks Triagle what people have done since (approved a
+    block, lifted it, closed an alert, filed a report) and writes that to the
+    same file: "Triagle: admin blocked 2.57.121.25 at the firewall". Wazuh
+    then shows the detection, the verdict and the response in one place.
 
 Settings can also come from the environment (TRIAGLE_URL, TRIAGLE_INGEST_KEY,
 TRIAGLE_CLIENT), which is how the systemd unit passes the key without it
@@ -36,6 +40,7 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 BATCH = 50                      # Triagle's /ingest limit per request
@@ -79,7 +84,7 @@ def post(url, key, items, timeout=30):
     req = urllib.request.Request(
         url.rstrip("/") + "/ingest?verdicts=1", data=json.dumps(items).encode(),
         headers={"Content-Type": "application/json", "X-Triagle-Key": key,
-                 "User-Agent": "triagle-wazuh-forwarder/1.1"}, method="POST")
+                 "User-Agent": "triagle-wazuh-forwarder/1.2"}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             text = r.read().decode("utf-8", "replace")
@@ -132,6 +137,88 @@ def verdict_lines(batch, verdicts, mode="activity"):
             "wazuh_rule": str(rule.get("description") or "")[:200],
         }}, separators=(",", ":")))
     return out
+
+
+# what Triagle says about each thing a person did; every one is written as a plain string
+EVENT_FIELDS = ("event", "by", "target", "action", "result", "sent", "outcome", "note", "rule", "agent",
+                "use_case", "regulator", "report", "case", "reference", "url", "at")
+EVENTS_PAGE = 100
+
+
+def fetch_events(url, key, client, after=0, epoch="", timeout=15):
+    """Ask Triagle what people have done since `after`. Returns its reply
+    ({epoch, events, cursor}) or None if it could not be fetched: Triagle is
+    unreachable, or is a version that does not offer this yet."""
+    query = urllib.parse.urlencode({"client": client, "after": int(after or 0), "epoch": epoch or ""})
+    req = urllib.request.Request(url.rstrip("/") + "/api/outbox?" + query,
+                                 headers={"X-Triagle-Key": key, "User-Agent": "triagle-wazuh-forwarder/1.2"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("events"), list):
+        return None
+    return data
+
+
+def event_lines(events):
+    """One JSON line per thing a person did, in the shape triagle_rules.xml
+    reads. Empty values are left out."""
+    out = []
+    for e in events or []:
+        if not isinstance(e, dict) or not e.get("event"):
+            continue
+        row = {k: str(e[k]) for k in EVENT_FIELDS if e.get(k) not in (None, "")}
+        if e.get("source") == "wazuh" and e.get("source_alert_id"):
+            row["wazuh_alert_id"] = str(e["source_alert_id"])
+        out.append(json.dumps({"triagle": row}, separators=(",", ":")))
+    return out
+
+
+class Cursor:
+    """How far into Triagle's list of events this forwarder has got."""
+
+    def __init__(self, path):
+        self.path, self.epoch, self.after = path, "", 0
+        try:
+            with open(path) as f:
+                st = json.load(f)
+            self.epoch, self.after = str(st.get("epoch") or ""), int(st.get("after") or 0)
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+
+    def move(self, epoch, after):
+        self.epoch, self.after = str(epoch or ""), int(after or 0)
+        if not self.path:
+            return
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+            tmp = self.path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"epoch": self.epoch, "after": self.after}, f)
+            os.replace(tmp, self.path)
+        except OSError as e:
+            log(f"could not save the events position to {self.path}: {e}")
+
+
+def collect_events(args, cursor):
+    """Fetch what people have done since last time and write it for Wazuh.
+    Returns how many were written. The position only moves once they are on
+    disk, so nothing is lost if the write fails."""
+    written = 0
+    for _ in range(5):                               # a few pages at most per round
+        reply = fetch_events(args.triagle, args.key, args.client, cursor.after, cursor.epoch)
+        if reply is None:
+            break
+        lines = event_lines(reply["events"])
+        if lines and write_verdicts(args.verdicts, lines) == 0:
+            break
+        written += len(lines)
+        cursor.move(reply.get("epoch"), reply.get("cursor", cursor.after))
+        if len(reply["events"]) < EVENTS_PAGE:
+            break
+    return written
 
 
 def write_verdicts(path, lines):
@@ -256,6 +343,11 @@ def run(args):
         except OSError as e:
             log(f"verdicts will not be written back ({e})")
 
+    # what people do in Triagle afterwards is collected on a timer, alerts or no alerts
+    events_on = bool(args.verdicts) and args.writeback != "off" and not args.dry_run
+    cursor = Cursor(os.path.join(os.path.dirname(args.verdicts) or ".", "events-position.json")) if events_on else None
+    events_total, next_events = 0, 0.0
+
     sent_total, dropped_total, written_total, last_report, backoff = 0, 0, 0, time.time(), 0
     while True:
         lines, new_offset = f.read()
@@ -309,12 +401,19 @@ def run(args):
             time.sleep(backoff)
             continue                                 # same position, same lines, try again
 
+        if events_on and (time.time() >= next_events or (args.once and not lines)):
+            got = collect_events(args, cursor)
+            if got:
+                log(f"{got} thing(s) people did in Triagle written back")
+            events_total += got
+            next_events = time.time() + float(getattr(args, "events_every", 5.0))
+
         if args.once and not lines:
             log(f"done: {sent_total} forwarded, {dropped_total} dropped")
             return 0
         if time.time() - last_report >= 60:
             log(f"{sent_total} alert(s) forwarded so far, {dropped_total} dropped, "
-                f"{written_total} verdict(s) written back")
+                f"{written_total} verdict(s) and {events_total} response event(s) written back")
             last_report = time.time()
         if not lines:
             time.sleep(args.interval)
@@ -340,6 +439,8 @@ def main():
                     default=os.environ.get("TRIAGLE_WRITEBACK", "activity"),
                     help="which verdicts to write back: activity (default; leaves out benchmark results and "
                          "health events), all, or off")
+    ap.add_argument("--events-every", type=float, default=float(os.environ.get("TRIAGLE_EVENTS_SECONDS", "5")),
+                    help="seconds between asking Triagle what people have done (written to --verdicts too)")
     ap.add_argument("--once", action="store_true", help="send what is there, then exit")
     ap.add_argument("--dry-run", action="store_true", help="print what would be sent; send nothing")
     args = ap.parse_args()

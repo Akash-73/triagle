@@ -87,13 +87,25 @@ against 68 labelled alerts built from the stock Wazuh 4.14 ruleset
 (`eval/wazuh_dataset.json`). The requirement: no attack step closed, no
 routine alert escalated.
 
-## 5. Triagle's verdicts inside the Wazuh dashboard
+## 5. Triagle inside the Wazuh dashboard
 
-The forwarder asks Triagle for its verdict on every alert it sends and appends
-it, one JSON object per line, to `/var/lib/triagle-forwarder/verdicts.json`.
-Point Wazuh at that file and each verdict becomes an entry in the Wazuh
-dashboard: "Triagle closed: Known tool or system file on FIN-LAPTOP-07" or
-"Triagle escalated: Obfuscated PowerShell execution on FIN-LAPTOP-07".
+Wazuh keeps each alert as a fixed record: there is no status to set and
+nothing to mark as closed. So Triagle writes its answer beside the alert
+instead, as entries of its own, and Wazuh shows the detection, the verdict and
+the response in one place.
+
+Two kinds of entry:
+
+- **The verdict.** The forwarder asks Triagle for its verdict on every alert it
+  sends: "Triagle closed: Known tool or system file on FIN-LAPTOP-07" or
+  "Triagle escalated: Obfuscated PowerShell execution on FIN-LAPTOP-07".
+- **What people did next.** Every few seconds the forwarder asks Triagle what
+  has been done since: "Triagle: admin blocked 2.57.121.25 at the firewall",
+  "Triagle: admin closed "Software installed or changed on a server" on
+  db-01 as: Expected activity".
+
+Both are appended, one JSON object per line, to
+`/var/lib/triagle-forwarder/verdicts.json`. Point Wazuh at that file:
 
 ```bash
 sudo curl -fsSL -o /var/ossec/etc/rules/triagle_rules.xml \
@@ -101,7 +113,7 @@ sudo curl -fsSL -o /var/ossec/etc/rules/triagle_rules.xml \
 sudo chown wazuh:wazuh /var/ossec/etc/rules/triagle_rules.xml
 sudo chmod 660 /var/ossec/etc/rules/triagle_rules.xml
 
-# tell Wazuh to read the verdicts file (skipped if already there)
+# tell Wazuh to read the file (skipped if already there)
 sudo grep -q triagle-forwarder/verdicts.json /var/ossec/etc/ossec.conf || \
   printf '%s\n' '<ossec_config>' '  <localfile>' '    <log_format>json</log_format>' \
   '    <location>/var/lib/triagle-forwarder/verdicts.json</location>' '  </localfile>' \
@@ -112,18 +124,51 @@ sudo /var/ossec/bin/wazuh-analysisd -t && sudo systemctl restart wazuh-manager
 ```
 
 In the dashboard open Threat Hunting, Events, and filter `rule.groups: triagle`.
-Useful columns: `data.triagle.agent`, `data.triagle.wazuh_rule`,
-`data.triagle.reason`, `data.triagle.case`.
+Useful columns: `rule.description`, `data.triagle.agent`,
+`data.triagle.wazuh_rule_level`, `data.triagle.reason`, `data.triagle.url`.
 
-| Rule | Level | Meaning |
-|---|---|---|
-| 100501 | 3 | Triagle closed the alert, with the reason |
-| 100502 | 10 | Triagle escalated it to a person |
-| 100503 | 13 | Escalated, and Triagle rated it critical |
+| Rule | Level | Group | Meaning |
+|---|---|---|---|
+| 100501 | 3 | `triagle_closed` | Triagle closed the alert, with the reason |
+| 100502 | 10 | `triagle_escalated` | Triagle sent it to a person |
+| 100503 | 13 | `triagle_escalated` | Sent to a person, and rated critical |
+| 100511 | 8 | `triagle_response` | A person blocked an address at the firewall |
+| 100512 | 8 | `triagle_response` | A person lifted a block |
+| 100513 | 4 | `triagle_response` | A person approved an action (says if it was a rehearsal) |
+| 100514 | 3 | `triagle_response` | A person declined an action |
+| 100515 | 4 | `triagle_response` | A person closed the alert, with the outcome |
+| 100516 | 4 | `triagle_response` | A person reopened it |
+| 100517 | 5 | `triagle_response` | A person marked a regulator's report as filed |
 
 What to know:
 - By default benchmark results and health events are not written back
   (`TRIAGLE_WRITEBACK=activity`). Use `all` for everything or `off` for nothing.
 - It is the verdict at the time the alert arrived. A later alert can raise an
   earlier one in Triagle; that change is not written back.
-- Verdict entries are never forwarded to Triagle again, so there is no loop.
+- What people did is collected every 5 seconds (`TRIAGLE_EVENTS_SECONDS`). The
+  forwarder remembers how far it has read, so nothing is written twice.
+- These entries are never forwarded to Triagle again, so there is no loop.
+
+## 6. A ready-made dashboard
+
+`scripts/wazuh/triagle_dashboard.ndjson` is a dashboard called "Triagle" for
+the Wazuh dashboard. It shows how many alerts Triagle closed and how many it
+sent to a person, why it closed them, both over time, what Wazuh rated high or
+critical that Triagle closed, what was sent to a person, and what people did
+about it. It refreshes every 30 seconds.
+
+Import it once the first verdicts have arrived:
+
+1. Download `triagle_dashboard.ndjson` from this repository.
+2. In the Wazuh dashboard open the menu, Dashboards Management, Saved objects.
+3. Click Import, choose the file, and import.
+4. Open it from the menu under Explore, Dashboards, or go straight to
+   `https://<your-wazuh>/app/dashboards#/view/triagle-dashboard`.
+
+If the import asks which index pattern to use, choose `wazuh-alerts-*`. If a
+panel says a field is not found, open the Wazuh home page once, so it
+refreshes its list of fields, and reload the dashboard. Importing the file
+again replaces the earlier copy.
+
+The file is built by `scripts/wazuh/make_dashboard.py` for OpenSearch
+Dashboards 2.x, which the Wazuh dashboard 4.x is built on.

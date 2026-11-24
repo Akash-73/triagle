@@ -1,19 +1,29 @@
 <!--
-  Triagle verdicts inside Wazuh.
+  Triagle inside Wazuh: what it decided, and what people did next.
 
-  The Triagle forwarder writes one line per verdict to
-  /var/lib/triagle-forwarder/verdicts.json. Wazuh reads that file (see the
-  localfile block in docs/WAZUH.md) and these rules turn each line into an
-  entry you can see in the Wazuh dashboard, next to the alert it is about.
+  The Triagle forwarder writes one line per verdict, and one line per thing a
+  person then did in Triagle, to /var/lib/triagle-forwarder/verdicts.json.
+  Wazuh reads that file (see the localfile block in docs/WAZUH.md) and these
+  rules turn each line into an entry in the Wazuh dashboard, next to the
+  alert it is about.
 
   In the dashboard: Threat Hunting, Events, filter  rule.groups: triagle
-  Useful columns: data.triagle.agent, data.triagle.wazuh_rule,
-  data.triagle.reason, data.triagle.case, data.triagle.url
+    triagle_closed      Triagle closed the alert, with the reason
+    triagle_escalated   Triagle sent it to a person
+    triagle_response    what a person did: blocked an address, lifted a block,
+                        approved or declined an action, closed the alert,
+                        filed a report
+  Useful columns: rule.description, data.triagle.agent,
+  data.triagle.wazuh_rule_level, data.triagle.reason, data.triagle.url
+
+  docs/WAZUH.md also has a ready-made dashboard to import.
 
   Install:  /var/ossec/etc/rules/triagle_rules.xml  (owner wazuh, mode 660),
   then restart wazuh-manager.
 -->
 <group name="triagle,">
+
+  <!-- Triagle's verdict on an alert -->
 
   <rule id="100500" level="0">
     <decoded_as>json</decoded_as>
@@ -40,6 +50,63 @@
     <field name="triagle.severity">^critical$</field>
     <description>Triagle escalated, critical: $(triagle.use_case) on $(triagle.agent)</description>
     <group>triagle_escalated,</group>
+  </rule>
+
+  <!-- What a person did in Triagle afterwards -->
+
+  <rule id="100510" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="triagle.event">\.+</field>
+    <description>Triagle: something a person did</description>
+  </rule>
+
+  <rule id="100511" level="8">
+    <if_sid>100510</if_sid>
+    <field name="triagle.event">^blocked$</field>
+    <description>Triagle: $(triagle.by) blocked $(triagle.target) at the firewall</description>
+    <group>triagle_response,triagle_real_change,</group>
+  </rule>
+
+  <rule id="100512" level="8">
+    <if_sid>100510</if_sid>
+    <field name="triagle.event">^block_lifted$</field>
+    <description>Triagle: $(triagle.by) lifted the block on $(triagle.target)</description>
+    <group>triagle_response,triagle_real_change,</group>
+  </rule>
+
+  <rule id="100513" level="4">
+    <if_sid>100510</if_sid>
+    <field name="triagle.event">^approved$</field>
+    <description>Triagle: $(triagle.by) approved "$(triagle.action)" for $(triagle.target) ($(triagle.sent))</description>
+    <group>triagle_response,</group>
+  </rule>
+
+  <rule id="100514" level="3">
+    <if_sid>100510</if_sid>
+    <field name="triagle.event">^declined$</field>
+    <description>Triagle: $(triagle.by) declined "$(triagle.action)" for $(triagle.target)</description>
+    <group>triagle_response,</group>
+  </rule>
+
+  <rule id="100515" level="4">
+    <if_sid>100510</if_sid>
+    <field name="triagle.event">^closed_by_analyst$</field>
+    <description>Triagle: $(triagle.by) closed "$(triagle.use_case)" on $(triagle.agent) as: $(triagle.outcome)</description>
+    <group>triagle_response,</group>
+  </rule>
+
+  <rule id="100516" level="4">
+    <if_sid>100510</if_sid>
+    <field name="triagle.event">^reopened$</field>
+    <description>Triagle: $(triagle.by) reopened "$(triagle.use_case)" on $(triagle.agent)</description>
+    <group>triagle_response,</group>
+  </rule>
+
+  <rule id="100517" level="5">
+    <if_sid>100510</if_sid>
+    <field name="triagle.event">^report_filed$</field>
+    <description>Triagle: $(triagle.by) marked the $(triagle.regulator) report as filed ($(triagle.report))</description>
+    <group>triagle_response,</group>
   </rule>
 
 </group>

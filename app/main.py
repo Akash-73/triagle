@@ -14,6 +14,8 @@ import json
 import time
 import datetime
 import hmac
+import re
+import secrets
 import threading
 
 from urllib.parse import quote
@@ -325,7 +327,7 @@ def _snapshot():
             "live_count": _CACHE.get("live_count", 0), "rolled": _CACHE["rolled"],
             "feeds": list(_CACHE["feeds"].values()), "decisions": _CACHE["decisions"],
             "filings": _CACHE["filings"], "sector_overrides": _CACHE["sector_overrides"],
-            "resolutions": _CACHE["resolutions"]}
+            "resolutions": _CACHE["resolutions"], "outbox": _CACHE.get("outbox")}
 
 
 def _restore():
@@ -360,6 +362,10 @@ def _restore():
                                   if v in regclock.SECTORS}
     _CACHE["resolutions"] = {str(k): v for k, v in (state.get("resolutions") or {}).items()
                              if isinstance(v, dict) and v.get("outcome") in RESOLUTIONS}
+    box = state.get("outbox")
+    if isinstance(box, dict) and box.get("epoch") and isinstance(box.get("events"), list):
+        _CACHE["outbox"] = {"epoch": str(box["epoch"]), "seq": int(box.get("seq") or 0),
+                            "events": [e for e in box["events"] if isinstance(e, dict) and e.get("seq")]}
     _CACHE["restored"] = {"alerts": len(live), "saved_at": state.get("saved_at")}
     return True
 
@@ -384,6 +390,71 @@ def _changed(now=False):
     if store.enabled():
         _CACHE["dirty"] = True
         _flush(force=now)
+
+
+# ---- what people did, for the tool the alert came from -----------------------
+#
+# Triagle's verdict goes back to the SIEM when the alert arrives. What a person
+# does afterwards (approves a block, lifts it, closes the alert, files a
+# report) happens later, so it is queued here and the tool collects it: the
+# Wazuh forwarder asks every few seconds and Wazuh then shows "Triagle: admin
+# blocked 2.57.121.25 at the firewall" beside its own alert. Nothing is pushed
+# from here, so this works for a SIEM that Triagle cannot reach.
+
+OUTBOX_KEEP = 500        # the most recent events held for collection
+OUTBOX_PAGE = 100        # events handed over per request
+
+
+def _outbox():
+    box = _CACHE.get("outbox")
+    if not (isinstance(box, dict) and box.get("epoch")):
+        # the epoch changes if the queue is ever lost, so a collector knows to start again
+        box = _CACHE["outbox"] = {"epoch": secrets.token_hex(6), "seq": 0, "events": []}
+    return box
+
+
+def _tell(request, event, by, alert_id="", client="", **fields):
+    """Queue one thing a person did. Every value is kept as a short string."""
+    result = _CACHE.get("result") or {}
+    alert = next((a for a in result.get("alerts", []) if a["alert_id"] == alert_id), None) if alert_id else None
+    verdict = (result.get("verdicts") or {}).get(alert_id) or {}
+    base = _base_url(request)
+    box = _outbox()
+    box["seq"] += 1
+    entry = {
+        "seq": box["seq"], "at": _now_iso(), "event": event, "by": str(by or ""),
+        "client": str(client or (alert or {}).get("client") or ""),
+        "alert_id": str(alert_id or ""), "source": str((alert or {}).get("source") or ""),
+        "source_alert_id": str(((alert or {}).get("raw") or {}).get("id") or ""),
+        "agent": str((alert or {}).get("host") or (alert or {}).get("entity") or ""),
+        "use_case": usecases.for_alert(alert, verdict)["name"] if alert else "",
+        "url": f"{base}/alert/{quote(alert_id, safe=':')}" if alert_id else base,
+    }
+    for k, v in fields.items():
+        if v not in (None, ""):
+            entry[k] = " ".join(str(v).split())[:400]
+    box["events"].append(entry)
+    del box["events"][:-OUTBOX_KEEP]
+    return entry
+
+
+@app.get("/api/outbox")
+def api_outbox(request: Request, client: str = "", after: int = 0, epoch: str = ""):
+    """What people have done since `after`, for one customer's tool to show.
+    Same key as /ingest. `cursor` is what to pass as `after` next time; if
+    `epoch` is not the one this reply carries, the queue started again and
+    the caller should too."""
+    if not _ingest_authorized(request):
+        raise HTTPException(status_code=401, detail="Provide a valid X-Triagle-Key header or sign in as an analyst.")
+    with _LOCK:
+        _ensure_state()
+        box = _outbox()
+        if epoch != box["epoch"]:
+            after = 0
+        mine = [e for e in box["events"] if e["seq"] > after and (not client or e.get("client") == client)]
+        page = mine[:OUTBOX_PAGE]
+        return {"epoch": box["epoch"], "events": page,
+                "cursor": page[-1]["seq"] if len(mine) > len(page) else box["seq"]}
 
 
 def _remember_decisions(result):
@@ -1060,6 +1131,8 @@ def _decide(request, alert_id, action_id, ack, decision, reason, user, next_path
     if decision == "decline":
         act.update(status="declined", decided_by=user["name"], decided_at=stamp, error="",
                    result_message=f"Declined by {user['name']}" + (f": {reason[:200]}" if reason.strip() else "."))
+        _tell(request, "declined", user["name"], alert_id, action=act["label"], target=act["target"],
+              note=reason[:200])
         _remember(act)
         audit.record("action declined", user["name"], reason=reason[:200] or None, **common)
         return RedirectResponse(url=back, status_code=303)
@@ -1086,6 +1159,14 @@ def _decide(request, alert_id, action_id, ack, decision, reason, user, next_path
         return RedirectResponse(url=back + "?notice=failed", status_code=303)
     act.update(status="executed" if res["ok"] else "approved", decided_by=user["name"],
                decided_at=stamp, result_message=res["message"], undo=res.get("undo"), error="")
+    if real and res.get("undo"):
+        _tell(request, "blocked", user["name"], alert_id, action=act["label"], target=act["target"],
+              rule=res["undo"].get("rule"), result=res["message"], note=reason[:200])
+    else:
+        # recorded as approved; say plainly whether anything was sent
+        sent = {"manual": "a step a person carries out", "live": "sent"}.get(res.get("mode"), "rehearsal, nothing was sent")
+        _tell(request, "approved", user["name"], alert_id, action=act["label"], target=act["target"],
+              sent=sent, note=reason[:200])
     _remember(act)
     audit.record("action approved", user["name"], acknowledged_blast_radius=bool(act.get("requires_ack")),
                  executed=res["ok"], simulated=res.get("mode") in ("dry_run", "not_connected"), mode=res.get("mode"),
@@ -1113,11 +1194,13 @@ def resolve_alert(request: Request, alert_id: str = Form(...), outcome: str = Fo
         done = _CACHE["resolutions"]
         if outcome == "reopen":
             if done.pop(alert_id, None):
+                _tell(request, "reopened", user["name"], alert_id)
                 audit.record("alert reopened", user["name"], alert_id=alert_id, ip=_client_ip(request))
         else:
             words = " ".join(note.split())[:300]
             done[alert_id] = {"outcome": outcome, "label": RESOLUTIONS[outcome], "note": words, "by": user["name"],
                               "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
+            _tell(request, "closed_by_analyst", user["name"], alert_id, outcome=RESOLUTIONS[outcome], note=words)
             audit.record("alert closed by analyst", user["name"], alert_id=alert_id, outcome=outcome,
                          note=words or None, triagle_verdict=v.get("disposition"), ip=_client_ip(request))
         _apply_resolutions(result)
@@ -1152,6 +1235,8 @@ def lift_action(request: Request, alert_id: str = Form(...), action_id: str = Fo
             return RedirectResponse(url=back + "?notice=notlifted", status_code=303)
         act.update(status="pending", decided_by=None, decided_at=None, undo=None, error="",
                    result_message=res["message"])
+        _tell(request, "block_lifted", user["name"], alert_id, action=act["label"], target=act["target"],
+              rule=undo.get("rule"), result=res["message"])
         _remember(act)
         audit.record("block lifted", user["name"], **common)
         return RedirectResponse(url=back + "?notice=lifted", status_code=303)
@@ -1372,6 +1457,8 @@ def clock_file(request: Request, incident: str = Form(...), regulator: str = For
         _CACHE["filings"].append({"alert_ids": list(inc["alert_ids"]), "regulator": regulator,
                                   "deadline": deadline, "by": user["name"], "at": stamp, "reference": ref,
                                   "incident": inc["id"], "client": inc["client"]})
+        _tell(request, "report_filed", user["name"], client=inc["client"], regulator=row["name"], report=row["label"],
+              case=inc["id"], agent=inc.get("key"), reference=ref, url=f"{_base_url(request)}/case/{inc['id']}")
         audit.record("regulatory report marked filed", user["name"], incident=inc["id"], client=inc["client"],
                      regulator=row["name"], report=row["label"], due=row["due_iso"],
                      minutes_before_deadline=(row["seconds_left"] // 60 if row["seconds_left"] is not None else None),
@@ -1712,6 +1799,16 @@ async def api_firewall_lift(request: Request, user=Depends(require_analyst)):
                  ip=_client_ip(request), error=None if res["ok"] else res["message"][:300])
     if res["ok"]:
         with _LOCK:
+            added_by = [a for acts in (_CACHE.get("result") or {}).get("actions", {}).values() for a in acts
+                        if (a.get("undo") or {}).get("rule") == rule]
+            if added_by:
+                a = added_by[0]
+                _tell(request, "block_lifted", user["name"], a["alert_id"], action=a["label"], target=a["target"],
+                      rule=rule, result=res["message"])
+            else:                       # the action is no longer in memory; the rule name still says which address
+                ip4 = re.match(r"^triagle-block-(\d+)-(\d+)-(\d+)-(\d+)-(?:in|out)$", rule)
+                _tell(request, "block_lifted", user["name"], client=gcp_firewall.client(),
+                      target=".".join(ip4.groups()) if ip4 else rule, rule=rule, result=res["message"])
             # any action that added this rule is open again
             for rec in _CACHE.get("decisions", {}).values():
                 if (rec.get("undo") or {}).get("rule") == rule:

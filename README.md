@@ -41,6 +41,14 @@ of every incident. What changed:
 On the same 68 alerts now: 15 of 15 attack steps escalated, 41 of 41 routine
 alerts closed with a reason, 18 escalated in all.
 
+It also answers inside the SIEM. Each verdict, and everything a person then
+does about it, is written back to Wazuh as its own entry: "Triagle closed:
+Known tool or system file on FIN-LAPTOP-07", "Triagle: admin blocked
+2.57.121.25 at the firewall". A ready-made Wazuh dashboard shows how many
+alerts were closed and why, what Wazuh rated critical that Triagle closed,
+and what people did. The analyst sees the detection, the verdict and the
+response without leaving the tool they already use.
+
 ## Agentic, not just AI-assisted
 
 Most "AI triage" makes a single classification call. Triagle runs a real

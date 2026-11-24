@@ -104,7 +104,8 @@ def test_the_forwarder_writes_verdicts_as_it_forwards(app, tmp_path, monkeypatch
     args = types.SimpleNamespace(alerts=str(alerts), state=str(tmp_path / "state" / "pos.json"), from_start=True,
                                  replay=0, triagle="http://t", key=KEY, client="Greenvale Co-operative Bank",
                                  min_level=3, max_backlog=5000, dry_run=False, once=True, interval=0.01,
-                                 verdicts=str(verdicts), writeback="activity")
+                                 verdicts=str(verdicts), writeback="activity", events_every=5.0)
+    monkeypatch.setattr(fw, "fetch_events", lambda *a, **k: None)          # that part has its own tests
     assert fw.run(args) == 0
     lines = [json.loads(x)["triagle"] for x in verdicts.read_text().splitlines()]
     assert [x["verdict"] for x in lines] == ["closed", "escalated", "closed"]      # whoami, encoded, probe; no benchmark
@@ -146,9 +147,11 @@ def test_the_wazuh_rules_file_is_well_formed_and_uses_the_custom_id_range():
     tree = ET.parse(os.path.join(ROOT, "scripts", "wazuh", "triagle_rules.xml"))
     rules = tree.getroot().findall("rule")
     ids = [int(r.get("id")) for r in rules]
-    assert ids == [100500, 100501, 100502, 100503] and all(100000 <= i <= 120000 for i in ids)
+    assert ids == [100500, 100501, 100502, 100503] + list(range(100510, 100518))
+    assert all(100000 <= i <= 120000 for i in ids) and len(set(ids)) == len(ids)
     assert tree.getroot().get("name") == "triagle,"
     used = {f.get("name") for r in rules for f in r.findall("field")}
     used |= {x for r in rules for x in re.findall(r"\$\(([a-z_.]+)\)", r.findtext("description"))}
     line = json.loads(fw.verdict_lines(_items(ENCODED), [{"id": ENCODED["id"], "verdict": "escalated"}])[0])
-    assert all(f.split(".", 1)[1] in line["triagle"] for f in used), "every field a rule uses is written by the forwarder"
+    written = set(line["triagle"]) | set(fw.EVENT_FIELDS)
+    assert all(f.split(".", 1)[1] in written for f in used), "every field a rule uses is written by the forwarder"
