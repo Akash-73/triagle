@@ -1715,7 +1715,8 @@ def demo_reset(request: Request, csrf: str = Form(default=""), user=Depends(requ
 def healthz(request: Request):
     """Public: just enough for an uptime check. Details only when signed in."""
     out = {"ok": True, "version": app.version}
-    if current_user(request):
+    user = current_user(request)
+    if user and not user.get("guest"):
         out.update(saved_state=store.status(), backend=backend.BACKEND, mask_pii=backend.MASK_PII,
                    model_calls=backend.STATS["calls"], identifiers_masked=backend.STATS["masked"],
                    sign_in=auth.enabled(), audit_chain_ok=audit.verify()["ok"])

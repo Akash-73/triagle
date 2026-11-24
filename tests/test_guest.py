@@ -64,6 +64,7 @@ def test_a_guest_can_change_nothing_and_sees_no_secrets(site):
     assert site.post("/api/model/test", json={"csrf": token}).status_code == 403
     assert site.post("/api/firewall/check", json={"csrf": token}).status_code == 403
     assert site.get("/audit").status_code == 403
+    assert set(site.get("/healthz").json()) == {"ok", "version"}, "no deployment details for a guest"
     assert KEY not in site.get("/connectors").text
     assert next(a for a in main._load_result()["actions"][aid] if a["action_id"] == act["action_id"])["status"] == "pending"
 
