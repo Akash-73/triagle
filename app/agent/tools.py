@@ -47,6 +47,10 @@ class InvestigationContext:
         self.related()
         return self._index.strong_count(self.focus_alert)
 
+    def failed_signins(self):
+        self.related()
+        return self._index.failed_signins(self.focus_alert)
+
     def record(self, tool, args, result):
         self.steps.append({"tool": tool, "args": args, "result_summary": result.get("summary", "")})
         self.evidence.append(result)
@@ -86,6 +90,16 @@ def tool_related_alerts(ctx, args):
                f"within {_span(ctx.hours)}.")
     if routine:
         summary += f" {routine} routine event(s) on the same entities were not counted."
+    failed = ctx.failed_signins()
+    if failed > 1:
+        summary += (f" {failed} failed sign-in(s) from {ctx.focus_alert.get('src_ip')} "
+                    f"within {_span(ctx.hours)}, up to this one.")
+    # Did the SIEM already raise its own brute-force alert for this source? If
+    # so, the per-attempt events are context for it, not a second escalation.
+    from app.engine import signals as _sig
+    src = ctx.focus_alert.get("src_ip")
+    brute_already = bool(src) and any(
+        a.get("src_ip") == src and _sig.suspicious_terms(a) for a in notable)
     return {
         "tool": "related_alerts",
         "summary": summary,
@@ -93,6 +107,9 @@ def tool_related_alerts(ctx, args):
         "notable_count": len(notable),
         "strong_count": ctx.strong_count(),     # of those, sharing an account or address
         "routine_count": routine,
+        "failed_from_source": failed,           # failed sign-ins from the same address, up to this alert
+        "brute_already_flagged": brute_already, # the SIEM already raised its own brute force for this src
+        "window_hours": ctx.hours,
     }
 
 

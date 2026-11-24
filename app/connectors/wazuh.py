@@ -123,6 +123,20 @@ def _groups(rule):
     return [str(g).strip().lower() for g in (rule.get("groups") or []) if str(g).strip()]
 
 
+AUTH_FAILED_GROUPS = {"authentication_failed", "authentication_failures", "invalid_login"}
+AUTH_SUCCESS_GROUPS = {"authentication_success"}
+
+
+def sign_in(groups):
+    """failed | success | None, from Wazuh's own rule groups."""
+    g = set(groups)
+    if g & AUTH_FAILED_GROUPS:
+        return "failed"
+    if g & AUTH_SUCCESS_GROUPS:
+        return "success"
+    return None
+
+
 def classify(raw):
     """(kind, reason, drift) from Wazuh's own rule groups."""
     rule = raw.get("rule") or {}
@@ -226,6 +240,7 @@ def from_wazuh(raw, client):
         "kind": kind if kind != "activity" else None,
         "kind_reason": reason or None,
         "drift": True if drift else None,
+        "auth": sign_in(groups),
     }
 
     return NormalizedAlert(

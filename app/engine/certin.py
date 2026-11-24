@@ -69,6 +69,14 @@ def _evidence_text(alert):
     return (signals.human_text(alert) + " " + " ".join(signals.matched_behaviours(alert))).lower()
 
 
+# A pattern Triagle found across several alerts names its own incident type:
+# the words are not in any one alert.
+PATTERN_TYPES = {
+    "password_guessing": "Targeted scanning / probing of critical networks / systems",
+    "guessing_then_success": "Unauthorised access of IT systems / data",
+}
+
+
 def classify(members):
     """[(incident type, [alert titles that support it])]"""
     out = []
@@ -78,7 +86,7 @@ def classify(members):
             if not m["verdict"].get("escalate"):
                 continue
             text = _evidence_text(m["alert"])
-            if any(w.lower() in text for w in words):
+            if any(w.lower() in text for w in words) or PATTERN_TYPES.get(m["verdict"].get("pattern")) == name:
                 basis.append(m["alert"]["title"])
         if basis:
             out.append({"type": name, "basis": sorted(set(basis))})

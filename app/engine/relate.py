@@ -19,6 +19,13 @@ Two rules, both learned from running against a real SIEM stream:
 
 Lookups cost the number of notable alerts in the window, not the size of the
 batch, so a host with thousands of routine events stays cheap.
+
+One pattern is counted separately, because no single alert in it is notable:
+FAILED SIGN-INS FROM ONE ADDRESS. A SIEM raises "brute force" when failures
+come fast (Wazuh: 8 in 2 minutes). An attacker who tries one password every
+few minutes never trips that, and every attempt is a low-severity event. So
+the index keeps, per source address, the failed sign-ins in time order, and
+can say "this is the 5th from that address in 24 hours".
 """
 import bisect
 import os
@@ -56,6 +63,20 @@ def parse_ts(ts):
     return dt.timestamp()
 
 
+def guessing_threshold():
+    """Failed sign-ins from one address, inside the window, before it is
+    raised as password guessing (TRIAGLE_GUESSING_THRESHOLD, 5 by default)."""
+    try:
+        return max(2, int(os.environ.get("TRIAGLE_GUESSING_THRESHOLD", "5")))
+    except ValueError:
+        return 5
+
+
+def sign_in(alert):
+    """failed | success | None, as the source tool classified it."""
+    return (alert.get("indicators") or {}).get("auth")
+
+
 def entity_values(alert, fields=ENTITY_FIELDS):
     """Lower-cased host / user / addresses of an alert dict, minus generic ones."""
     vals = set()
@@ -82,6 +103,8 @@ class EntityIndex:
         self._n_untimed = {}    # key -> [idx] of notable alerts with no usable time
         self._r_times = {}      # key -> sorted [t] of routine alerts
         self._r_untimed = {}    # key -> count
+        self._f_times = {}      # (client, source address) -> sorted [t] of failed sign-ins
+        self._f_rank = {}       # alert index -> its position in that list
 
         rows = []
         for i, a in enumerate(alerts):
@@ -94,6 +117,11 @@ class EntityIndex:
         rows.sort()
         for t, i, untimed, n in rows:
             client = alerts[i].get("client")
+            src = alerts[i].get("src_ip")
+            if src and not untimed and sign_in(alerts[i]) == "failed":
+                seen = self._f_times.setdefault((client, str(src).lower()), [])
+                self._f_rank[i] = len(seen)
+                seen.append(t)
             for e in entity_values(alerts[i]):
                 key = (client, e)
                 if n and untimed:
@@ -110,6 +138,23 @@ class EntityIndex:
         if t is None or not self.window:
             return 0, len(times)
         return bisect.bisect_left(times, t - self.window), bisect.bisect_right(times, t + self.window)
+
+    def failed_signins(self, alert):
+        """Failed sign-ins from this alert's source address, inside the window
+        and up to this alert (itself included when it is one). 0 if the alert
+        has no source address or no usable time."""
+        src = alert.get("src_ip")
+        me = self.pos.get(alert.get("alert_id"), -1)
+        t = self.times[me] if me >= 0 else parse_ts(alert.get("timestamp"))
+        if not src or t is None:
+            return 0
+        times = self._f_times.get((alert.get("client"), str(src).lower()))
+        if not times:
+            return 0
+        start = bisect.bisect_left(times, t - self.window) if self.window else 0
+        rank = self._f_rank.get(me)
+        end = rank + 1 if rank is not None else bisect.bisect_right(times, t)
+        return max(0, end - start)
 
     def strong_count(self, alert):
         """How many notable alerts in the window share an account or an

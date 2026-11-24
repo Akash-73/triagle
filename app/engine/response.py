@@ -287,6 +287,17 @@ def propose_actions(alert, verdict, decided=None):
             "Source IP conducting scanning/spray activity; blocking stops it.",
             f"Blocks {src_ip} at the perimeter. Reversible.")
 
+    # Password guessing found across several sign-in alerts. Only an outside
+    # address is blocked at the perimeter; an inside one is an asset to look at.
+    pattern = verdict.get("pattern")
+    if src_ip and pattern in ("password_guessing", "guessing_then_success") \
+            and not reputation._is_internal_ip(str(src_ip)):
+        add("block_indicator", src_ip,
+            ("This address kept guessing passwords and then signed in; blocking it ends the session's way back in."
+             if pattern == "guessing_then_success" else
+             "This address keeps guessing passwords against this system; blocking stops the attempts."),
+            f"Blocks {src_ip} at the perimeter. Reversible.")
+
     return actions
 
 

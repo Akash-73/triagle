@@ -22,6 +22,7 @@ from app.agent import tools as toolmod
 from app.agent import backend
 from app.engine.triage import _enforce_guardrails, _deterministic_verdict, settled_by_kind
 from app.engine import signals, ot
+from app.engine.relate import guessing_threshold, sign_in
 
 MAX_STEPS = 4
 
@@ -162,6 +163,66 @@ def _rule_determine(ctx):
             ]),
             used_ai=False,
             basis="signal" if hard else "intel",
+        )
+
+    # Password guessing from one address. No single failed sign-in is worth a
+    # person's time, and a SIEM only raises "brute force" when they come fast.
+    # So the attempt that brings one address to the threshold inside the
+    # window is raised once; the attempts after it are counted there.
+    #
+    # This only ever applies to a plain per-attempt alert. Wazuh's own
+    # aggregated brute-force alert already carries "brute force" in its title
+    # (a suspicious term) and is high-value in its own right — it must never be
+    # grouped away as "another failed sign-in", so anything that is suspicious
+    # on its own weight skips this and takes the normal path below.
+    src = alert.get("src_ip")
+    own_weight = bool(signals.suspicious_terms(alert)) or \
+        str(alert.get("raw_severity") or "").lower() in ("high", "critical")
+    failed = 0 if (own_weight or related.get("brute_already_flagged")) \
+        else int(related.get("failed_from_source", 0) or 0)
+    threshold = guessing_threshold()
+    window = related.get("window_hours")
+    span = f"{window:g} hours" if window else "the period on record"
+    if src and sign_in(alert) == "failed" and failed == threshold:
+        return Verdict(
+            alert_id=alert["alert_id"], disposition="suspicious", closure_code=None,
+            confidence=78, severity="medium", escalate=True,
+            summary=f"Password guessing from {src}: {failed} failed sign-ins in {span} — raised once.",
+            reasoning=(f"This is failed sign-in number {failed} from {src} within {span}. Each attempt "
+                       f"is a low-severity event and the attempts are too far apart for the SIEM's own "
+                       f"brute-force rule, so nothing else would raise it. No sign-in from this address "
+                       f"has succeeded. Further attempts from it are counted here, not raised again."),
+            recommended_actions=[
+                f"Block {src} at the perimeter.",
+                "Confirm the service needs to be reachable from the internet at all.",
+            ],
+            used_ai=False, basis="correlation", pattern="password_guessing",
+        )
+    if src and sign_in(alert) == "failed" and failed > threshold:
+        return Verdict(
+            alert_id=alert["alert_id"], disposition="benign", closure_code="BENIGN_DUPLICATE",
+            confidence=88, severity="low", escalate=False,
+            summary=f"Another failed sign-in from {src} — already raised as password guessing.",
+            reasoning=(f"Failed sign-in number {failed} from {src} within {span}. This address was "
+                       f"raised for password guessing at attempt {threshold}; this attempt is counted "
+                       f"under that escalation and does not need a second look."),
+            recommended_actions=["No separate action. Handle it under the open password-guessing escalation."],
+            used_ai=False,
+        )
+    if src and sign_in(alert) == "success" and failed >= threshold:
+        return Verdict(
+            alert_id=alert["alert_id"], disposition="suspicious", closure_code=None,
+            confidence=82, severity="high", escalate=True,
+            summary=f"Sign-in succeeded from {src} after {failed} failed attempts — escalated.",
+            reasoning=(f"{src} made {failed} failed sign-in attempts within {span} and has now signed in "
+                       f"successfully. That is what a password-guessing attack looks like when it works. "
+                       f"It can also be a person who kept mistyping, which is why a human decides."),
+            recommended_actions=[
+                "Confirm with the account owner whether this sign-in was theirs.",
+                "If it was not: reset the credential, end the session and review what the session did.",
+                f"Block {src} at the perimeter.",
+            ],
+            used_ai=False, basis="sequence", pattern="guessing_then_success",
         )
 
     # Related activity can raise an alert that already has some weight of its

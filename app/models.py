@@ -76,8 +76,13 @@ class Verdict:
     tuning_recommendation: Optional[str] = None   # how to fix the detection, if noisy
     used_ai: bool = False
     # what the escalation rests on: "signal" (a risk signal on the alert itself),
-    # "intel" (a threat-intelligence match), "correlation" (only the alerts around it)
+    # "intel" (a threat-intelligence match), "correlation" (only the alerts around it),
+    # "sequence" (this alert completes a pattern: it is the step that matters)
     basis: str = ""
+    # a named pattern across several alerts, when the escalation is one:
+    # "password_guessing" (repeated failed sign-ins from one address) or
+    # "guessing_then_success" (the same address then signed in)
+    pattern: str = ""
 
     def to_dict(self):
         return asdict(self)
