@@ -203,10 +203,31 @@ BENIGN_COMMANDS = [
      "Windows runs this itself from a scheduled task. The command names no database file, so nothing "
      "is being installed"),
 ]
+# Files a trusted program writes in normal operation, recognised only when
+# BOTH hold: the file sits in the folder that program uses for it, and the
+# alert says the program that wrote it is that program's own installed copy.
+# The folder name alone is not enough; anything can create a folder.
+#
+# Chromium browsers (Edge, Chrome, Brave) update their components by unpacking
+# each one into %TEMP%\chrome_Unpacker_BeginUnzipping<pid>_<n>\ and then moving
+# it into place. The stock ruleset reports every unpacked DLL as a level-15
+# "executable dropped in a folder commonly used by malware".
+_BROWSER = (r"\\program files(?: \(x86\))?\\+(?:microsoft\\+edge\\+application\\+msedge"
+            r"|google\\+chrome\\+application\\+chrome"
+            r"|bravesoftware\\+brave-browser\\+application\\+brave)\.exe$")
+BENIGN_FILES = [
+    ("browser component update file",
+     r"\\temp\\+(?:msedge_)?chrome_unpacker_beginunzipping\d+_\d+\\",
+     _BROWSER,
+     "The browser's own updater unpacks each component into a temporary folder with this name before "
+     "installing it, and the alert shows the file was written by the browser installed under Program Files"),
+]
+_BENIGN_FILE_RE = [(name, re.compile(path, re.I), re.compile(img, re.I), why) for name, path, img, why in BENIGN_FILES]
+
 # (name, whole command line, where the program must live when the alert says, why)
 _BENIGN_COMMAND_RE = [(name, re.compile(rx, re.I), re.compile(img, re.I), why)
                       for name, rx, img, why in BENIGN_COMMANDS]
-_ARTIFACT_WHY = {name: why for name, _, _, why in BENIGN_COMMANDS}
+_ARTIFACT_WHY = {name: why for name, _, _, why in BENIGN_COMMANDS + BENIGN_FILES}
 
 
 def _artifact_text(alert):
@@ -229,6 +250,10 @@ def benign_artifact(alert):
     for name, rx, where, _ in _BENIGN_COMMAND_RE:
         if cmd and rx.match(cmd) and (not image or where.search(image)):
             return name                  # a copy of the program run from anywhere else is not covered
+    target = str(ind.get("target_file") or "").strip()
+    for name, path, where, _ in _BENIGN_FILE_RE:
+        if target and image and path.search(target) and where.search(image):
+            return name                  # the folder name without the browser as the writer is not covered
     return None
 
 

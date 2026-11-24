@@ -181,3 +181,48 @@ def test_installing_a_compatibility_database_is_still_raised():
         r = process_batch([item])
         v = r["verdicts"][r["alerts"][0]["alert_id"]]
         assert v["escalate"], item["raw"]["data"]["win"]["eventdata"]["commandLine"]
+
+
+# ---- a browser updating one of its own components ----------------------------
+
+EDGE = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+UNPACK = "C:\\Users\\User\\AppData\\Local\\Temp\\msedge_chrome_Unpacker_BeginUnzipping25284_2098831803\\domain_actions.dll"
+
+
+def _drop(target, image, sec=0):
+    return _sysmon(sec, "92213", 15, "Executable file dropped in folder commonly used by malware",
+                   {"targetFilename": target, "image": image}, groups=("sysmon", "sysmon_eid11_detections", "windows"))
+
+
+def test_a_browser_unpacking_its_own_component_is_not_a_critical_malware_drop():
+    """Seen on a real laptop: Edge updated a component and the stock rule
+    rated the unpacked DLL level 15. Triagle raised it as high and proposed
+    isolating the laptop. It is the browser's updater doing its job."""
+    cases = [
+        (UNPACK, EDGE),
+        ("C:\\Users\\a\\AppData\\Local\\Temp\\chrome_Unpacker_BeginUnzipping9120_1554\\widevinecdm.dll",
+         "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"),
+        ("C:\\Users\\a\\AppData\\Local\\Temp\\chrome_Unpacker_BeginUnzipping77_1\\x.dll",
+         "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"),
+    ]
+    for target, image in cases:
+        r = process_batch([_drop(target, image)])
+        v = r["verdicts"][r["alerts"][0]["alert_id"]]
+        assert not v["escalate"] and v["closure_code"] == "BENIGN_KNOWN_TOOL", target
+        assert "browser" in v["reasoning"] and v["tuning_recommendation"]
+        assert not r["actions"], "and nothing proposes isolating the machine"
+
+
+def test_the_folder_name_alone_is_not_enough():
+    """Both must hold: the unpack folder, and the installed browser as the
+    writer. Anything else is still raised."""
+    raised = [
+        _drop(UNPACK, "C:\\Users\\User\\Downloads\\invoice.exe"),                        # something else used the folder name
+        _drop(UNPACK, "C:\\Users\\User\\AppData\\Local\\Temp\\msedge.exe"),               # a file named like the browser, elsewhere
+        _drop("C:\\Users\\User\\AppData\\Local\\Temp\\update.dll", EDGE),                  # the browser, but not its unpack folder
+        _drop(UNPACK, ""),                                                                 # the alert does not say who wrote it
+    ]
+    for item in raised:
+        r = process_batch([item])
+        v = r["verdicts"][r["alerts"][0]["alert_id"]]
+        assert v["escalate"], item["raw"]["data"]["win"]["eventdata"]
