@@ -25,6 +25,10 @@ from urllib.parse import quote
 
 _SAFE_ID = re.compile(r"[\w.:\-]+")
 _LOOK_BACK = datetime.timedelta(hours=1)      # show the hour before the alert as well
+# What Discover shows for each hit, so the page opens as a readable table and
+# not as one block of raw fields: the rule, its level, the machine, and the
+# way back to this alert in Triagle.
+COLUMNS = ("rule.description", "rule.level", "agent.name", "data.triagle.url")
 
 
 def base():
@@ -79,6 +83,6 @@ def for_alert(alert):
         return None
     query = f'id:"{wid}" or data.triagle.wazuh_alert_id:"{wid}"'
     g = f"(time:(from:{_since(alert.get('timestamp'))},to:now))"
-    a = f"(index:{_rison(index())},query:(language:kuery,query:{_rison(query)}))"
+    a = f"(columns:!({','.join(COLUMNS)}),index:{_rison(index())},query:(language:kuery,query:{_rison(query)}))"
     safe = "()!:,'*-._~"
     return {"name": "Wazuh", "url": f"{base()}/app/discover#/?_g={quote(g, safe=safe)}&_a={quote(a, safe=safe)}"}

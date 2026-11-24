@@ -57,6 +57,7 @@ def test_a_wazuh_alert_links_to_itself_in_wazuh(site):
     wid = str(RAW["id"])
     assert f"""query:'id:"{wid}" or data.triagle.wazuh_alert_id:"{wid}"'""" in plain
     assert "index:'wazuh-alerts-*'" in plain and "language:kuery" in plain and plain.endswith("))")
+    assert "_a=(columns:!(rule.description,rule.level,agent.name,data.triagle.url)," in plain, "a table, not raw fields"
     assert 'target="_blank" rel="noopener noreferrer"' in page
 
 
