@@ -41,7 +41,11 @@ def _index_ref():
 
 
 def _count(label):
-    return {"id": "1", "enabled": True, "type": "count", "schema": "metric", "params": {"customLabel": label}}
+    """How many alerts, counted by the Wazuh alert each verdict is about. A
+    plain count would count a verdict twice if the forwarder ever sent the
+    same alert again (after a replay, say)."""
+    return {"id": "1", "enabled": True, "type": "cardinality", "schema": "metric",
+            "params": {"field": "data.triagle.wazuh_alert_id", "customLabel": label}}
 
 
 def _terms(agg_id, schema, field, label, size=10):
