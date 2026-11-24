@@ -118,7 +118,12 @@ def is_reportable_candidate(members):
     to decide: an alert in it was escalated as true positive or suspicious,
     and it is more than probing from outside that shows no sign of success.
     The internet knocks on every server all day; nobody reports each knock."""
-    return bool(_attack_members(members)) and not probing_only(members)
+    attack = _attack_members(members)
+    # Judged an attack on its own evidence: a risk signal, a threat-intelligence
+    # match, a named pattern. Alerts that are raised only because other alerts
+    # sit beside them are for a person to look at, and start no clock.
+    own = [m for m in attack if m["verdict"].get("basis") != "correlation" or m["verdict"].get("pattern")]
+    return bool(own) and not probing_only(members)
 
 
 def when_noticed(members):

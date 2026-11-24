@@ -273,10 +273,16 @@ def artifact_reason(name):
 # nothing chained, nothing redirected, and no option that changes anything.
 _DISC_TOOLS = (r"whoami|hostname|systeminfo|ipconfig|getmac|tasklist|quser|qwinsta|arp|netstat|nltest|ver")
 _DISC_NET = r"net1?(?:\.exe)?\s+(?:user|users|group|localgroup|accounts|view|share|session|config|time)\b"
+# Exporting the local security policy to a file reads it and changes nothing.
+# Audit and compliance agents do it on a schedule (Wazuh's own configuration
+# scan runs exactly this), and the stock ruleset words the alert as "binary in
+# a suspicious location". The other secedit verbs (/configure, /import) change
+# the policy and are not matched.
+_DISC_SECEDIT = r'secedit(?:\.exe)?"?\s+/export\b'
 _DISC_RE = re.compile(
-    r'^"?(?:[a-z]:\\+(?:[^"\\]+\\+)*)?(?:(?:' + _DISC_TOOLS + r')(?:\.exe)?"?(?:\s|$)|' + _DISC_NET + r")", re.I)
+    r'^"?(?:[a-z]:\\+(?:[^"\\]+\\+)*)?(?:(?:' + _DISC_TOOLS + r')(?:\.exe)?"?(?:\s|$)|' + _DISC_NET + "|" + _DISC_SECEDIT + r")", re.I)
 _DISC_WRAPPER = re.compile(r'^"?(?:[a-z]:\\+(?:[^"\\]+\\+)*)?cmd(?:\.exe)?"?\s+/c\s+', re.I)
-_DISC_CHANGES = re.compile(r"/add\b|/del(ete)?\b|/active\b|/passwordreq|/expires|/times|/logonpasswordchg|[&|<>;`^]|\$\(", re.I)
+_DISC_CHANGES = re.compile(r"/add\b|/del(ete)?\b|/active\b|/configure\b|/import\b|/generaterollback\b|/passwordreq|/expires|/times|/logonpasswordchg|[&|<>;`^]|\$\(", re.I)
 
 
 def routine_discovery(alert):

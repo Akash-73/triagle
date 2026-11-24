@@ -60,6 +60,12 @@ def _text_blob(alert):
     return signals.human_text(alert)
 
 
+def _program(command):
+    """'secedit' from '"C:\\Windows\\system32\\SecEdit.exe" /export ...'."""
+    first = command.split()[0].strip('"').replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return first[:-4] if first.endswith(".exe") else first
+
+
 def _known_benign_signal(alert):
     """Returns (is_benign, closure_code, why) or (False, None, None)."""
     if _has_hard_escalate(alert):
@@ -162,7 +168,7 @@ def _deterministic_verdict(alert):
             confidence=88,
             severity="low",
             escalate=False,
-            summary=f"Routine discovery command ({discovery.split()[0].lower()}), closed and kept as context.",
+            summary=f"Routine discovery command ({_program(discovery)}), closed and kept as context.",
             reasoning=(f"The command line is one read-only discovery command: {discovery}. Administrators, "
                        f"login scripts and inventory agents run these all day, and the source tool rated "
                        f"it {alert.raw_severity}. On its own it is not evidence of an attack. It stays on "

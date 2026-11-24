@@ -246,3 +246,42 @@ def test_the_launcher_only_runs_the_test_script_beside_it():
     lowered = raw.decode().lower()
     assert not any(w in lowered for w in ("http", "curl", "invoke-webrequest", "bitsadmin", "certutil", "del ", "reg "))
     assert os.path.exists(os.path.join(here, "recon_chain.ps1"))
+
+
+# ---- the SIEM agent's own configuration scan ------------------------------------------------
+
+def _secedit(i, cmd='"C:\\Windows\\system32\\SecEdit.exe" /export /cfg C:\\WINDOWS\\TEMP\\secpol.cfg'):
+    return _sysmon(i, "92066", 4,
+                   "C:\\\\Windows\\\\SysWOW64\\\\SecEdit.exe binary in a suspicious location launched by "
+                   "C:\\\\Windows\\\\SysWOW64\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe",
+                   {"commandLine": cmd, "image": "C:\\Windows\\SysWOW64\\SecEdit.exe",
+                    "parentImage": "C:\\Windows\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe"})
+
+
+def test_nine_exports_of_the_security_policy_are_not_an_incident():
+    """Seen on a real laptop. A scheduled configuration scan exported the local
+    security policy nine times in a minute. Wazuh rates each one level 4 but
+    words it "binary in a suspicious location", so the nine corroborated each
+    other, became one high case, and a six-hour clock to CERT-In started."""
+    r = process_batch([_secedit(i) for i in range(9)])
+    assert all(not v["escalate"] and v["closure_code"] == "BENIGN_EXPECTED" for v in r["verdicts"].values())
+    one = next(iter(r["verdicts"].values()))
+    assert one["summary"] == "Routine discovery command (secedit), closed and kept as context."
+    assert r["incidents"] == [] and not r["actions"]
+
+
+def test_changing_the_security_policy_is_not_a_read():
+    for cmd in ("secedit.exe /configure /db x.sdb /cfg evil.inf", "secedit /import /db x.sdb /cfg evil.inf",
+                "secedit /export /cfg a.cfg & net user x P@ss /add"):
+        r = process_batch([_secedit(0, cmd)])
+        assert next(iter(r["verdicts"].values()))["escalate"], cmd
+
+
+def test_alerts_raised_only_by_each_other_start_no_reporting_clock():
+    from app.engine import certin
+    beside = {"alert": {"timestamp": "2026-11-24T16:20:00Z", "title": "x"},
+              "verdict": {"escalate": True, "disposition": "suspicious", "basis": "correlation", "pattern": ""}}
+    assert certin.is_reportable_candidate([beside, dict(beside)]) is False
+    own = {"alert": {"timestamp": "2026-11-24T16:21:00Z", "title": "Credential dumping via LSASS access"},
+           "verdict": {"escalate": True, "disposition": "true_positive", "basis": "signal", "pattern": ""}}
+    assert certin.is_reportable_candidate([beside, own]) is True
