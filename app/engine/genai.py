@@ -1,76 +1,124 @@
 """
 Triagle — Gemini access layer (Vertex AI first, AI Studio fallback).
 
-One call, two transports, chosen at runtime so the demo never breaks:
+One call, two transports, chosen at runtime:
 
-  - VERTEX AI (production): when a Google Cloud project is configured
-    (GOOGLE_CLOUD_PROJECT) or TRIAGLE_VERTEX=true. Auth is IAM, not an API
-    key — the access token comes from the Cloud Run metadata server (no
-    dependency, no secret) or from `gcloud auth` locally. This is the
-    enterprise path: IAM, VPC Service Controls, data residency, CMEK, and no
-    training on your data — the right place to send security logs.
+  - VERTEX AI (the product path). Used automatically when Triagle runs on
+    Cloud Run, or when GOOGLE_CLOUD_PROJECT / TRIAGLE_VERTEX=true is set.
+    Auth is IAM, not an API key: the access token comes from the metadata
+    server (the service's own identity) or from `gcloud auth` on a laptop.
+    Nothing to paste, nothing to leak, and prompts are not used for training.
+    The service account needs the role "Vertex AI User".
 
-  - AI STUDIO (dev / laptop): the generativelanguage API with GEMINI_API_KEY.
-    Zero setup, fine for a local demo.
+  - AI STUDIO (a laptop without a project): the generativelanguage API with
+    GEMINI_API_KEY.
 
-  - Neither reachable → returns (None, None) and the caller uses its
-    deterministic fallback. Nothing here ever raises.
+  - Neither reachable: returns (None, None) and the caller uses its own
+    deterministic fallback. Nothing here raises.
 
-Which transport ran is reported back, so the UI can show "Gemini on Vertex
-AI" vs "Gemini (AI Studio)" honestly.
+Every attempt is recorded in STATUS (which transport, which model, how long,
+and the error text if it failed), so the console can say plainly whether the
+model is connected and, if not, why. A silent fallback is how a model stays
+broken for a week.
 
-The model NEVER decides or acts here — this layer only turns a prompt into
-prose. Verdicts, response targets and the conservative-closure guardrails are
-all deterministic and live elsewhere.
+The model never decides or acts here. This layer turns a prompt into prose.
+Verdicts, response targets and the guardrails are deterministic and live
+elsewhere.
+
+Settings:
+  TRIAGLE_VERTEX            true / false   force Vertex on or off
+  GOOGLE_CLOUD_PROJECT      project id     (read from the metadata server on Cloud Run)
+  TRIAGLE_VERTEX_LOCATION   default "global"
+  TRIAGLE_MODEL             default "gemini-3.5-flash"
+  GEMINI_API_KEY            AI Studio key, for the fallback transport
 """
 import os
 import subprocess
+import time
+from datetime import datetime, timezone
 
 import requests
 
-_METADATA_TOKEN_URL = (
-    "http://metadata.google.internal/computeMetadata/v1/"
-    "instance/service-accounts/default/token")
+DEFAULT_MODEL = "gemini-3.5-flash"
+_METADATA = "http://metadata.google.internal/computeMetadata/v1/"
+_META_HEADERS = {"Metadata-Flavor": "Google"}
+
+# What happened on the most recent call, for the console. No prompt text is
+# kept here, only how the call went.
+STATUS = {"provider": None, "model": None, "ok": None, "error": None, "at": None, "seconds": None,
+          "calls": 0, "failures": 0}
+
+_cache = {"project": None, "token": None, "token_exp": 0.0}
 
 
-def _vertex_configured():
-    if os.environ.get("TRIAGLE_VERTEX", "").lower() in ("1", "true", "yes"):
+def _flag(name):
+    return os.environ.get(name, "").strip().lower()
+
+
+def on_cloud_run():
+    return bool(os.environ.get("K_SERVICE"))
+
+
+def vertex_enabled():
+    flag = _flag("TRIAGLE_VERTEX")
+    if flag in ("0", "false", "no", "off"):
+        return False
+    if flag in ("1", "true", "yes", "on"):
         return True
-    return bool(os.environ.get("GOOGLE_CLOUD_PROJECT"))
+    return bool(os.environ.get("GOOGLE_CLOUD_PROJECT")) or on_cloud_run()
 
 
-def _project():
-    return os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("TRIAGLE_VERTEX_PROJECT")
-
-
-def _location():
-    return (os.environ.get("GOOGLE_CLOUD_LOCATION")
-            or os.environ.get("TRIAGLE_VERTEX_LOCATION") or "us-central1")
-
-
-def _vertex_model():
-    # Vertex publisher model ids don't use the "-latest" suffix.
-    m = os.environ.get("TRIAGLE_VERTEX_MODEL") or os.environ.get("TRIAGLE_MODEL") or "gemini-2.5-flash"
+def model_name():
+    m = os.environ.get("TRIAGLE_VERTEX_MODEL") or os.environ.get("TRIAGLE_MODEL") or DEFAULT_MODEL
     return m.replace("-latest", "")
 
 
-def _access_token():
-    """Get a Google Cloud access token without extra dependencies.
-    1) Cloud Run / GCE metadata server. 2) local `gcloud auth`. Else None."""
+def location():
+    return (os.environ.get("TRIAGLE_VERTEX_LOCATION") or os.environ.get("GOOGLE_CLOUD_LOCATION")
+            or "global")
+
+
+def project():
+    """The project to bill and authorise against: from the environment, or
+    from the metadata server when running on Google Cloud."""
+    p = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("TRIAGLE_VERTEX_PROJECT")
+    if p:
+        return p
+    if _cache["project"]:
+        return _cache["project"]
     try:
-        r = requests.get(_METADATA_TOKEN_URL, headers={"Metadata-Flavor": "Google"}, timeout=2)
-        if r.status_code == 200:
-            tok = r.json().get("access_token")
-            if tok:
-                return tok
+        r = requests.get(_METADATA + "project/project-id", headers=_META_HEADERS, timeout=2)
+        if r.status_code == 200 and r.text.strip():
+            _cache["project"] = r.text.strip()
     except requests.RequestException:
         pass
-    for cmd in (["gcloud", "auth", "print-access-token"],
-                ["gcloud.cmd", "auth", "print-access-token"]):
+    return _cache["project"]
+
+
+def _access_token():
+    """A Google Cloud access token with no extra dependency: the metadata
+    server on Cloud Run / Compute Engine, else local `gcloud`. Cached until
+    shortly before it expires."""
+    if _cache["token"] and time.time() < _cache["token_exp"]:
+        return _cache["token"]
+    try:
+        r = requests.get(_METADATA + "instance/service-accounts/default/token",
+                         headers=_META_HEADERS, timeout=2)
+        if r.status_code == 200:
+            body = r.json()
+            if body.get("access_token"):
+                _cache["token"] = body["access_token"]
+                _cache["token_exp"] = time.time() + max(60, int(body.get("expires_in", 300)) - 120)
+                return _cache["token"]
+    except (requests.RequestException, ValueError):
+        pass
+    for cmd in (["gcloud", "auth", "print-access-token"], ["gcloud.cmd", "auth", "print-access-token"]):
         try:
             out = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
             if out.returncode == 0 and out.stdout.strip():
-                return out.stdout.strip()
+                _cache["token"] = out.stdout.strip()
+                _cache["token_exp"] = time.time() + 600
+                return _cache["token"]
         except (OSError, subprocess.SubprocessError):
             continue
     return None
@@ -87,59 +135,128 @@ def _extract(resp_json):
 
 def _body(system, user, max_tokens, temperature):
     return {
-        "system_instruction": {"parts": [{"text": system}]},
+        "systemInstruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": user}]}],
         "generationConfig": {"maxOutputTokens": max_tokens, "temperature": temperature},
     }
 
 
+def _error_text(resp):
+    """The short reason a call failed, as the API gave it."""
+    try:
+        err = resp.json().get("error") or {}
+        msg = err.get("message") or ""
+        status = err.get("status") or ""
+        return f"HTTP {resp.status_code} {status}: {msg}".strip()[:400]
+    except ValueError:
+        return f"HTTP {resp.status_code}: {resp.text[:300]}"
+
+
+class ModelError(Exception):
+    pass
+
+
+def vertex_url(proj, loc, model):
+    host = "aiplatform.googleapis.com" if loc == "global" else f"{loc}-aiplatform.googleapis.com"
+    return (f"https://{host}/v1/projects/{proj}/locations/{loc}"
+            f"/publishers/google/models/{model}:generateContent")
+
+
 def _vertex(system, user, max_tokens, temperature):
-    project, location = _project(), _location()
-    if not project:
-        return None
+    proj = project()
+    if not proj:
+        raise ModelError("No Google Cloud project found. Set GOOGLE_CLOUD_PROJECT.")
     token = _access_token()
     if not token:
-        return None
-    model = _vertex_model()
-    url = (f"https://{location}-aiplatform.googleapis.com/v1/projects/{project}"
-           f"/locations/{location}/publishers/google/models/{model}:generateContent")
-    resp = requests.post(url, headers={"Authorization": f"Bearer {token}",
-                                       "Content-Type": "application/json"},
-                         json=_body(system, user, max_tokens, temperature), timeout=45)
-    resp.raise_for_status()
-    return _extract(resp.json())
+        raise ModelError("No Google Cloud credentials found for this service.")
+    resp = requests.post(vertex_url(proj, location(), model_name()),
+                         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                         json=_body(system, user, max_tokens, temperature), timeout=60)
+    if resp.status_code != 200:
+        if resp.status_code in (401, 403):
+            _cache["token"] = None
+        raise ModelError(_error_text(resp))
+    text = _extract(resp.json())
+    if not text:
+        raise ModelError("The model returned no text.")
+    return text
 
 
 def _ai_studio(system, user, max_tokens, temperature):
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not key:
         return None
-    model = os.environ.get("TRIAGLE_MODEL", "gemini-2.5-flash-lite")
     base = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
-    resp = requests.post(f"{base}/models/{model}:generateContent",
+    resp = requests.post(f"{base}/models/{model_name()}:generateContent",
                          headers={"x-goog-api-key": key, "Content-Type": "application/json"},
-                         json=_body(system, user, max_tokens, temperature), timeout=45)
-    resp.raise_for_status()
-    return _extract(resp.json())
+                         json=_body(system, user, max_tokens, temperature), timeout=60)
+    if resp.status_code != 200:
+        raise ModelError(_error_text(resp))
+    text = _extract(resp.json())
+    if not text:
+        raise ModelError("The model returned no text.")
+    return text
 
 
-def generate_prose(system, user, max_tokens=1024, temperature=0.2):
-    """Return (text, provider). provider is 'vertex', 'aistudio' or None.
-    Tries Vertex AI when configured, then the AI Studio key. Never raises."""
-    if _vertex_configured():
+def _record(provider, ok, error, started):
+    STATUS.update(provider=provider, model=model_name(), ok=ok, error=error,
+                  at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                  seconds=round(time.time() - started, 2))
+    STATUS["calls"] += 1
+    if not ok:
+        STATUS["failures"] += 1
+
+
+def generate_prose(system, user, max_tokens=4096, temperature=0.2):
+    """(text, provider). provider is 'vertex', 'aistudio' or None. Tries
+    Vertex AI when enabled, then the AI Studio key. Never raises."""
+    errors = []
+    if vertex_enabled():
+        started = time.time()
         try:
             text = _vertex(system, user, max_tokens, temperature)
-            if text:
-                return text, "vertex"
-        except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
-            pass
+            _record("vertex", True, None, started)
+            return text, "vertex"
+        except (ModelError, requests.RequestException, ValueError, KeyError, IndexError, TypeError) as e:
+            errors.append(str(e) or e.__class__.__name__)
+            _record("vertex", False, errors[-1], started)
+    started = time.time()
     try:
         text = _ai_studio(system, user, max_tokens, temperature)
         if text:
+            _record("aistudio", True, None, started)
             return text, "aistudio"
-    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
-        pass
+    except (ModelError, requests.RequestException, ValueError, KeyError, IndexError, TypeError) as e:
+        errors.append(str(e) or e.__class__.__name__)
+        _record("aistudio", False, errors[-1], started)
+    if not errors:
+        STATUS.update(provider=None, ok=False, error="No model is configured for this deployment.",
+                      model=model_name(), at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     return None, None
 
 
 PROVIDER_LABEL = {"vertex": "Gemini on Vertex AI", "aistudio": "Gemini"}
+
+
+def configured():
+    """Is there any transport to try at all?"""
+    return vertex_enabled() or bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+
+
+def status():
+    """What the console shows about the model."""
+    transport = "Vertex AI" if vertex_enabled() else (
+        "AI Studio key" if (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")) else None)
+    return {
+        "configured": configured(), "transport": transport, "model": model_name(),
+        "location": location() if vertex_enabled() else None,
+        "project": project() if vertex_enabled() else None,
+        "last": dict(STATUS),
+    }
+
+
+def test_connection():
+    """One tiny call, to prove the model answers. Returns status()."""
+    generate_prose("You are a connectivity check. Reply with one word.", "Reply with the word: connected",
+                   max_tokens=256, temperature=0)
+    return status()

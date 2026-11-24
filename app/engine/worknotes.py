@@ -5,10 +5,10 @@ Writes the plain-English case notes a human analyst would type after
 investigating an incident. Gemini does the writing; if no key is set or the
 call fails, a deterministic fallback keeps the page working.
 
-This path calls Gemini DIRECTLY via GEMINI_API_KEY, independent of
-TRIAGLE_LLM_BACKEND — so the verdict engine can stay deterministic (instant,
-all-tested) while Gemini adds the narrative. That hybrid is deliberate:
-rules guarantee safety, Gemini adds reasoning.
+This path calls Gemini through app.engine.genai (Vertex AI on Cloud Run),
+independent of TRIAGLE_LLM_BACKEND — so the verdict engine can stay
+deterministic (instant, all-tested) while Gemini adds the narrative. That
+hybrid is deliberate: rules guarantee safety, Gemini adds reasoning.
 
 Every prompt is PII-masked (app.privacy) before it leaves the process.
 """
@@ -86,7 +86,7 @@ def work_notes(incident, members):
     mapping = {}
     system_m, mapping = privacy.mask(SYSTEM, mapping)
     user_m, mapping = privacy.mask(user, mapping)
-    text, provider = genai.generate_prose(system_m, user_m, max_tokens=1024, temperature=0.2)
+    text, provider = genai.generate_prose(system_m, user_m, max_tokens=4096, temperature=0.2)
     if text:
         return privacy.unmask(text, mapping), True, genai.PROVIDER_LABEL.get(provider, "Gemini")
     return _fallback(incident, members), False, "automated summary"

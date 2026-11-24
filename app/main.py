@@ -27,7 +27,7 @@ from app.engine.response import execute_action
 from app.engine import certin, regclock
 from app.agent import backend
 from app import auth, audit
-from app.engine import sources_meta, worknotes, reputation
+from app.engine import sources_meta, worknotes, reputation, analyst, genai
 from app.engine.correlate import GENERIC_ENTITIES
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -958,6 +958,100 @@ def api_state(request: Request, user=Depends(require_user)):
     m = _load_result()["metrics"]
     return {"rev": _CACHE.get("rev", 0), "received": m["received"], "escalated": m["escalated_all"],
             "closed": m["closed_all"], "incidents": m["incident_count"]}
+
+
+# ---- the model: status, a connection test, and questions about a case --------
+
+_ASK_TIMES = {}          # client address -> recent question times
+ASK_PER_MINUTE = 6       # per address
+ASK_PER_HOUR_TOTAL = 240  # whole deployment, so an open console cannot run up a bill
+_ASK_ALL = []
+
+
+def _ask_allowed(ip, now=None):
+    now = now or time.time()
+    mine = [t for t in _ASK_TIMES.get(ip, []) if now - t < 60]
+    _ASK_ALL[:] = [t for t in _ASK_ALL if now - t < 3600]
+    if len(mine) >= ASK_PER_MINUTE or len(_ASK_ALL) >= ASK_PER_HOUR_TOTAL:
+        _ASK_TIMES[ip] = mine
+        return False
+    mine.append(now)
+    _ASK_TIMES[ip] = mine
+    _ASK_ALL.append(now)
+    return True
+
+
+def _case_for(result, ref):
+    """(case, members, steps, actions, clock) for an incident reference, an
+    entity, or a single alert id. None if nothing matches."""
+    incident = _find_incident(result, ref)
+    if incident:
+        members = _incident_members(result, incident)
+        ids = set(incident["alert_ids"])
+        steps = []
+        for m in members:
+            for st in result.get("trails", {}).get(m["alert"]["alert_id"], []):
+                line = f"{st.get('tool')}: {st.get('result_summary')}"
+                if line not in steps:
+                    steps.append(line)
+        actions = [a for aid, acts in result.get("actions", {}).items() if aid in ids for a in acts]
+        return incident, members, steps, actions, _clock(result, incident, members)
+    alert = next((a for a in result["alerts"] if a["alert_id"] == ref), None)
+    if not alert:
+        return None
+    case = {"id": alert["alert_id"], "key": alert.get("host") or alert.get("entity"), "client": alert.get("client")}
+    members = [{"alert": alert, "verdict": result["verdicts"].get(ref, {})}]
+    steps = [f"{st.get('tool')}: {st.get('result_summary')}" for st in result.get("trails", {}).get(ref, [])]
+    return case, members, steps, result.get("actions", {}).get(ref, []), None
+
+
+@app.get("/api/model")
+def api_model(request: Request, user=Depends(require_user)):
+    """Is the model connected, and if not, why."""
+    return genai.status()
+
+
+@app.post("/api/model/test")
+async def api_model_test(request: Request, user=Depends(require_analyst)):
+    body = await _json_body(request)
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    if not _ask_allowed(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many requests. Wait a minute.")
+    st = genai.test_connection()
+    audit.record("model connection tested", user["name"], ok=bool(st["last"].get("ok")),
+                 model=st.get("model"), ip=_client_ip(request))
+    return st
+
+
+@app.post("/api/ask")
+async def api_ask(request: Request, user=Depends(require_user)):
+    """One question about one case, answered by the model from that case's
+    evidence. The answer is prose; it changes nothing."""
+    body = await _json_body(request)
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    question = str(body.get("question", ""))[:analyst.MAX_QUESTION]
+    found = _case_for(_load_result(), str(body.get("case", "")))
+    if not found:
+        raise HTTPException(status_code=404, detail="No such case.")
+    if not _ask_allowed(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many questions. Wait a minute and ask again.")
+    case, members, steps, actions, clock = found
+    out = analyst.ask(question, case, members, steps, actions, clock)
+    audit.record("question asked about a case", user["name"], case=case.get("id") or case.get("key"),
+                 answered=out["by_model"], ip=_client_ip(request))
+    return out
+
+
+async def _json_body(request: Request):
+    try:
+        body = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Send a JSON object.")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Send a JSON object.")
+    return body
 
 
 @app.post("/demo/fire")
