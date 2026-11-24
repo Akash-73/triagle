@@ -28,7 +28,10 @@
       {% endif %}
     </nav>
     <div class="foot">
-      {% if auth_on %}
+      {% if auth_on and user.guest %}
+      <div class="who"><span title="You can look around, try an alert and ask about a case. Changes need a sign-in.">Viewing as a guest</span>
+        <a class="btn small quiet" href="/login">Sign in</a></div>
+      {% elif auth_on %}
       <div class="who"><span>{{ user.name }} <span style="color:var(--text-3)">({{ user.role }})</span></span>
         <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn small quiet" type="submit">Sign out</button></form></div>
       {% else %}

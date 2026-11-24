@@ -76,18 +76,31 @@
       </div>
     </section>
 
-    <section class="panel">
-      <header><h2>Response tools</h2><span class="n">{% if execute_mode == 'live' %}Live{% else %}Rehearsal mode{% endif %}</span></header>
+    <section class="panel" id="actions">
+      <header><h2>Response tools</h2><span class="n">{{ '1 connected' if firewall.enabled else 'None connected' }}</span></header>
       <div class="body">
-        <p class="note">{% if execute_mode == 'live' %}Approved actions are sent to the tool that carries them out.{% else %}When an action is approved, Triagle builds the exact call, shows it and logs it. Nothing is sent to the tool until this deployment is switched to live.{% endif %}</p>
+        <p class="note">An approved action goes to the tool that carries it out. A connected tool makes the change for real. One that is not connected is rehearsed: Triagle builds the exact call, shows it, logs it and sends nothing.</p>
         <dl class="kv" style="margin-top:12px;">
-          <dt>Isolate a host</dt><dd>CrowdStrike Falcon or Microsoft Defender for Endpoint</dd>
-          <dt>Disable an account, end sessions</dt><dd>Microsoft Entra ID</dd>
-          <dt>Block an address, hash or domain</dt><dd>Perimeter firewall or the endpoint tool's indicator list</dd>
-          <dt>Cut off at the IT/OT boundary</dt><dd>Boundary firewall. A controller or operator station is never isolated.</dd>
+          <dt>Block an address</dt>
+          <dd>{% if firewall.enabled %}<span class="status ok">Connected</span> Google Cloud firewall, network <span class="mono">{{ firewall.network }}</span>{% if firewall.project %} in <span class="mono">{{ firewall.project }}</span>{% endif %}.
+            <div class="by" style="margin-top:3px;">For {{ firewall.client }}{% if firewall.hosts %}, machines {{ firewall.hosts|join(', ') }}{% endif %}. A signed-in analyst's approval adds a deny rule for that one address. Lifting the block deletes it.</div>
+            {% else %}Perimeter firewall or the endpoint tool's indicator list <span class="tag">Rehearsed</span>{% endif %}</dd>
+          <dt>Isolate a host</dt><dd>CrowdStrike Falcon or Microsoft Defender for Endpoint <span class="tag">Rehearsed</span></dd>
+          <dt>Disable an account, end sessions</dt><dd>Microsoft Entra ID <span class="tag">Rehearsed</span></dd>
+          <dt>Cut off at the IT/OT boundary</dt><dd>Boundary firewall. A controller or operator station is never isolated. <span class="tag">Rehearsed</span></dd>
           <dt>Call the control room</dt><dd>A person makes the call; Triagle records it.</dd>
         </dl>
-        <p class="by" style="margin-top:12px;">Every action waits for a person unless it is small, reversible and against a confirmed-malicious indicator.</p>
+        {% if firewall.enabled %}
+          {% if not auth_on %}<p class="callout warn" style="margin-top:14px;">Sign-in is off on this deployment, so the firewall stays untouched: a real change needs a named person behind it.</p>
+          {% elif can_test %}
+          <div style="margin-top:14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button class="btn" type="button" id="fw-check">Check access and show blocks</button>
+            <span class="by" id="fw-state">Nothing is changed by the check.</span>
+          </div>
+          <div id="fw-rules" style="margin-top:12px;" hidden></div>
+          {% endif %}
+        {% endif %}
+        <p class="by" style="margin-top:12px;">A real change always waits for a person. A rehearsed one may run on its own only when it is small, reversible and against a confirmed-malicious indicator.</p>
       </div>
     </section>
   </div>
@@ -168,6 +181,49 @@
       .catch(function () { note.textContent = 'Could not reach Triagle. Check the connection and try again.'; })
       .then(function () { go.disabled = false; });
   });
+
+  // firewall: check access, list the blocks in force, lift one
+  var fc = document.getElementById('fw-check');
+  if (fc) {
+    var fstate = document.getElementById('fw-state'), frules = document.getElementById('fw-rules');
+    function post(url, data) {
+      data.csrf = CSRF;
+      return fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); });
+    }
+    function show(rules) {
+      frules.textContent = '';
+      frules.hidden = false;
+      if (!rules || !rules.length) { var e = document.createElement('p'); e.className = 'by'; e.textContent = 'No blocks in force.'; frules.appendChild(e); return; }
+      var t = document.createElement('table'); t.className = 'tbl';
+      rules.forEach(function (r) {
+        var tr = document.createElement('tr');
+        var a = document.createElement('td'); a.className = 'mono'; a.textContent = r.address;
+        var d = document.createElement('td'); d.textContent = (r.direction === 'out' ? 'traffic to it' : 'traffic from it') + ', network ' + r.network;
+        var w = document.createElement('td'); w.style.color = 'var(--text-2)'; w.textContent = (r.description || '').replace(' Lift it from the Triagle console.', '');
+        var b = document.createElement('td'); var btn = document.createElement('button');
+        btn.className = 'btn small'; btn.type = 'button'; btn.textContent = 'Lift';
+        btn.addEventListener('click', function () {
+          btn.disabled = true; btn.textContent = 'Lifting…';
+          post('/api/firewall/lift', { rule: r.name }).then(function (res) {
+            fstate.textContent = res.ok ? res.j.message : (res.j.detail || 'Could not lift it.');
+            if (res.ok && res.j.ok) check(); else { btn.disabled = false; btn.textContent = 'Lift'; }
+          }).catch(function () { fstate.textContent = 'Could not reach Triagle.'; btn.disabled = false; btn.textContent = 'Lift'; });
+        });
+        b.appendChild(btn); tr.appendChild(a); tr.appendChild(d); tr.appendChild(w); tr.appendChild(b); t.appendChild(tr);
+      });
+      var wrap = document.createElement('div'); wrap.className = 'scroll-x'; wrap.appendChild(t); frules.appendChild(wrap);
+    }
+    function check() {
+      fc.disabled = true; fc.textContent = 'Checking…';
+      return post('/api/firewall/check', {}).then(function (res) {
+        if (!res.ok) { fstate.textContent = res.j.detail || 'The check could not run.'; return; }
+        fstate.textContent = res.j.message; show(res.j.rules);
+      }).catch(function () { fstate.textContent = 'Could not reach Triagle.'; })
+        .then(function () { fc.disabled = false; fc.textContent = 'Check access and show blocks'; });
+    }
+    fc.addEventListener('click', check);
+  }
 
   // model test
   var mt = document.getElementById('model-test');

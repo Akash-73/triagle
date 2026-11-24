@@ -109,6 +109,12 @@ class ProposedAction:
     decided_by: Optional[str] = None
     decided_at: Optional[str] = None
     tool_call: Optional[dict] = None   # the exact vendor API call behind this action
+    client: str = ""                   # whose alert this is
+    host: str = ""                     # the machine the alert is about
+    direction: str = "in"              # block traffic from the address ("in") or to it ("out")
+    real: bool = False                 # approving this changes a real system, not a rehearsal
+    undo: Optional[dict] = None        # how to reverse a real change, once made
+    error: str = ""                    # why the last attempt at a real change did not happen
 
     def to_dict(self):
         return asdict(self)
@@ -177,7 +183,7 @@ def propose_actions(alert, verdict, decided=None):
                         f"sessions is reversible and contains the attacker immediately, so Triagle "
                         f"does it automatically and logs it for you.")
 
-    def add(action_type, target, rationale, blast):
+    def add(action_type, target, rationale, blast, direction="in"):
         if not target or (action_type, target) in proposed:
             return
         if action_type == "isolate_host" and ot.asset_class(target):
@@ -188,13 +194,27 @@ def propose_actions(alert, verdict, decided=None):
         high = (action_type == "isolate_host" and _is_high_impact(target)) or action_type == "segment_ot_boundary"
         risk_tier = "high_impact" if high else "standard"
         policy, reason = _policy_for(action_type, target, risk_tier)
+        call = action_tools.build_call(action_type, target, spec["platform"], client=alert.get("client"),
+                                       host=host, direction=direction, alert_id=aid)
+        real = bool(call and call.get("live"))
+        platform = call["vendor"] if real else spec["platform"]
+        label = spec["label"]
+        if real:
+            label = "Block this address at the firewall"
+            # A connected tool: approving this changes a real system. That is
+            # never automatic, whatever the confidence.
+            policy, reason = "approval", ("This one is real. Approving it adds a rule to a live firewall, "
+                                          "so a signed-in person decides.")
+            way = "from" if direction == "in" else "to"
+            blast = (f"Adds a deny rule to the {call['body']['network'].rsplit('/', 1)[-1]} network: all traffic "
+                     f"{way} {target} is dropped for every machine on it. Lifting the block deletes the rule.")
         act = ProposedAction(
             action_id=f"{aid}:{action_type}:{target}",
             alert_id=aid,
             action_type=action_type,
             target=target,
-            label=spec["label"],
-            platform=spec["platform"],
+            label=label,
+            platform=platform,
             rationale=rationale,
             blast_radius=(f"HIGH IMPACT — {target} looks like shared infrastructure; "
                           f"isolating it may disrupt many users/services. Confirm before approving."
@@ -203,14 +223,20 @@ def propose_actions(alert, verdict, decided=None):
             requires_ack=high,
             policy=policy,
             policy_reason=reason,
+            client=str(alert.get("client") or ""),
+            host=str(host or ""),
+            direction=direction,
+            real=real,
         )
-        act.tool_call = action_tools.build_call(action_type, target, spec["platform"])
+        act.tool_call = call
         prior = decided.get(act.action_id)
         if prior:
             act.status = prior.get("status", act.status)
             act.decided_by = prior.get("decided_by")
             act.decided_at = prior.get("decided_at")
             act.result_message = prior.get("result_message", "")
+            act.undo = prior.get("undo")
+            act.error = prior.get("error") or ""
         elif policy == "auto":
             stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
             disp = action_tools.dispatch(act.to_dict(), approver="Triagle · auto-policy")
@@ -268,7 +294,7 @@ def propose_actions(alert, verdict, decided=None):
         if external:
             add("block_indicator", external,
                 "External C2 infrastructure; blocking prevents further contact.",
-                f"Blocks {external} at the perimeter. Reversible.")
+                f"Blocks {external} at the perimeter. Reversible.", direction="out")
 
     # Account containment — skip placeholder/generic principals.
     GENERIC_PRINCIPALS = {"multiple", "unknown", "n/a", "-", "various", "several"}
@@ -301,15 +327,21 @@ def propose_actions(alert, verdict, decided=None):
     return actions
 
 
-def execute_action(proposed_action_dict, approver="analyst"):
+# What is kept about an action once something has happened to it. The queue is
+# rebuilt whenever an alert arrives, and these are restored from memory.
+DECISION_KEYS = ("status", "decided_by", "decided_at", "result_message", "undo", "error")
+
+
+def execute_action(proposed_action_dict, approver="analyst", live=False, approver_ip=None):
     """
     Execute an approved action by dispatching it through the Action Gateway,
-    which resolves the vendor connector and calls the real EDR/IdP/firewall API
-    (or, in dry-run, returns the exact call without sending it). Refuses to
-    execute anything not explicitly approved.
+    which resolves the connector and either sends the real call (a connected
+    tool, and only when a signed-in person has just approved: live=True) or
+    returns the exact call without sending it. Refuses to execute anything
+    not explicitly approved.
     """
     if proposed_action_dict.get("status") != "approved":
         return {"ok": False, "message": "Action not approved — refusing to execute."}
-    result = action_tools.dispatch(proposed_action_dict, approver=approver)
-    return {"ok": result["ok"], "message": result["message"],
-            "call": result.get("call"), "mode": result.get("mode"), "reversible": True}
+    result = action_tools.dispatch(proposed_action_dict, approver=approver, live=live, approver_ip=approver_ip)
+    return {"ok": result["ok"], "message": result["message"], "call": result.get("call"),
+            "mode": result.get("mode"), "undo": result.get("undo"), "reversible": True}

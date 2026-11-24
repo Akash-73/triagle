@@ -49,22 +49,35 @@
 
 {# One response action: what it does, its state, and the approve / decline form. #}
 {% macro action_card(act, csrf, can_approve, back) %}
-<div class="act">
-  <div class="t">{{ act.label }} <span class="target">{{ act.target }}</span></div>
+{% set rehearsed = (act.result_message or '').startswith('Rehearsal:') %}
+<div class="act{% if act.real %} real{% endif %}">
+  <div class="t">{{ act.label }} <span class="target">{{ act.target }}</span>{% if act.real %} <span class="tag" title="This tool is connected. Approving changes a real system.">Real change</span>{% endif %}</div>
   <div class="why">{{ act.rationale }}</div>
   <div class="why">Effect: {{ act.blast_radius }} Through {{ act.platform }}.</div>
   {% if act.status == 'auto_executed' %}
-    <div class="state"><span class="tag ok">Done automatically</span> {{ act.result_message }}</div>
+    <div class="state"><span class="tag ok">{{ 'Automatic' if rehearsed else 'Done automatically' }}</span> {{ act.result_message }}</div>
     <div class="by">by {{ act.decided_by }}, {{ act.decided_at|ist_short }}. A person can roll this back.</div>
   {% elif act.status in ['executed', 'approved'] %}
-    <div class="state"><span class="tag ok">{{ 'Done' if act.status == 'executed' else 'Approved' }}</span> {{ act.result_message or 'Approved' }}</div>
+    <div class="state"><span class="tag ok">{% if act.status != 'executed' %}Approved{% elif act.undo %}Done, for real{% elif rehearsed %}Approved{% else %}Done{% endif %}</span> {{ act.result_message or 'Approved' }}</div>
     {% if act.decided_by %}<div class="by">decided by {{ act.decided_by }}, {{ act.decided_at|ist_short }}</div>{% endif %}
+    {% if act.error %}<div class="state"><span class="tag warn">Not lifted</span> {{ act.error }}</div>{% endif %}
+    {% if act.undo and can_approve %}
+    <form method="post" action="/action/lift">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="alert_id" value="{{ act.alert_id }}">
+      <input type="hidden" name="action_id" value="{{ act.action_id }}">
+      <input type="hidden" name="next" value="{{ back }}">
+      <div class="row"><button class="btn" type="submit">Lift the block</button><span class="by">Deletes the rule {{ act.undo.rule }}.</span></div>
+    </form>
+    {% endif %}
   {% elif act.status == 'declined' %}
     <div class="state"><span class="tag">Declined</span> {{ act.result_message or 'Declined' }}</div>
   {% elif not can_approve %}
-    <div class="state"><span class="tag warn">Waiting for approval</span> Your account is view-only.</div>
+    <div class="state"><span class="tag warn">Waiting for approval</span> {% if act.real %}A signed-in analyst approves this one.{% else %}Your account is view-only.{% endif %}</div>
   {% else %}
     <div class="state"><span class="tag warn">Waiting for approval</span> {{ act.policy_reason }}</div>
+    {% if act.error %}<div class="state"><span class="tag warn">Last attempt</span> {{ act.error }}</div>
+    {% elif act.result_message %}<div class="by">Earlier: {{ act.result_message }}</div>{% endif %}
     <form method="post" action="/action/approve">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="alert_id" value="{{ act.alert_id }}">
@@ -73,7 +86,7 @@
       {% if act.requires_ack %}<label><input type="checkbox" name="ack"> I have read the effect above and accept it</label>{% endif %}
       <input type="text" name="reason" maxlength="200" placeholder="Reason (optional, recorded)" aria-label="Reason">
       <div class="row">
-        <button class="btn primary" type="submit" name="decision" value="approve">{% if act.action_type == 'ot_notify' %}Record the call as made{% else %}Approve and run{% endif %}</button>
+        <button class="btn primary" type="submit" name="decision" value="approve">{% if act.action_type == 'ot_notify' %}Record the call as made{% elif act.real %}Approve and block{% else %}Approve and run{% endif %}</button>
         <button class="btn" type="submit" name="decision" value="decline">Decline</button>
       </div>
     </form>

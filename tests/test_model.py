@@ -225,10 +225,22 @@ def test_ask_route_rejects_an_unknown_case_and_a_bad_token(cloud_run):
 
 
 def test_questions_are_rate_limited(cloud_run):
+    """A visitor (here the view-only account) is held to a few a minute. A
+    signed-in analyst has a separate, larger allowance, so a stranger using up
+    the visitors' budget cannot stop an analyst working."""
     c = _analyst()
-    token = _csrf(c)
     inc = main._load_result()["incidents"][0]["id"]
-    codes = [c.post("/api/ask", json={"case": inc, "question": "x", "csrf": token}).status_code
+    v = TestClient(main.app)
+    v.post("/login", data={"username": "viewerbob", "password": "look"})
+    vt = _csrf(v)
+    codes = [v.post("/api/ask", json={"case": inc, "question": "x", "csrf": vt}).status_code
              for _ in range(main.ASK_PER_MINUTE + 2)]
     assert codes[:main.ASK_PER_MINUTE] == [200] * main.ASK_PER_MINUTE
     assert codes[-1] == 429
+    token = _csrf(c)
+    assert c.post("/api/ask", json={"case": inc, "question": "x", "csrf": token}).status_code == 200
+    main._ASK_ALL.extend([__import__("time").time()] * main.ASK_PER_HOUR_TOTAL)        # visitors' hour is spent
+    assert c.post("/api/ask", json={"case": inc, "question": "x", "csrf": token}).status_code == 200
+    codes = [c.post("/api/ask", json={"case": inc, "question": "x", "csrf": token}).status_code
+             for _ in range(main.ASK_PER_MINUTE_ANALYST)]
+    assert codes[-1] == 429, "an analyst is still limited, just less tightly"

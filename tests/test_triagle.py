@@ -316,7 +316,7 @@ def test_approval_flow_and_draft_reflects_it(client):
                                              "action_id": "ldt:aaa101:isolate_host:MRD-FIN-07"},
                     follow_redirects=False)
     assert r.status_code == 303
-    assert "[DRY-RUN]" in client.get("/alert/ldt:aaa101").text
+    assert "Rehearsal:" in client.get("/alert/ldt:aaa101").text
     draft = client.get("/certin/MRD-FIN-07").text
     assert "Isolate host from network — MRD-FIN-07 (approved by admin" in draft
 

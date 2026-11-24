@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.orchestrator import process_batch
 from app.connectors.sources import normalize
-from app.engine.response import execute_action
+from app.engine.response import execute_action, DECISION_KEYS
 from app.engine import certin, regclock
 from app.agent import backend
 from app import auth, audit
@@ -107,10 +107,23 @@ def _session_token(request: Request):
     return request.cookies.get(auth.COOKIE, "")
 
 
+GUEST_USER = {"name": "guest", "role": "viewer", "guest": True}
+
+
+def guest_view():
+    """TRIAGLE_GUEST=view lets anyone with the address look around without
+    signing in. A guest is view-only: reading pages, trying an alert and
+    asking about a case. Every change still needs a signed-in analyst."""
+    return auth.enabled() and os.environ.get("TRIAGLE_GUEST", "").strip().lower() in ("view", "viewer", "on", "true")
+
+
 def current_user(request: Request):
     if not auth.enabled():
         return LOCAL_USER
-    return auth.read_session(_session_token(request))
+    user = auth.read_session(_session_token(request))
+    if user:
+        return user
+    return dict(GUEST_USER) if guest_view() else None
 
 
 def require_user(request: Request):
@@ -191,7 +204,8 @@ async def _security_headers(request: Request, call_next):
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, next: str = "/"):
-    if current_user(request):
+    user = current_user(request)
+    if user and not user.get("guest"):
         return RedirectResponse(url=auth.safe_next(next), status_code=303)
     return templates.TemplateResponse(request, "login.html", {"next": auth.safe_next(next), "error": None})
 
@@ -220,7 +234,7 @@ def logout(request: Request, csrf: str = Form(default="")):
     user = current_user(request)
     if user and auth.enabled() and auth.csrf_ok(_session_token(request), csrf):
         audit.record("signed out", user["name"], ip=_client_ip(request))
-    resp = RedirectResponse(url="/login", status_code=303)
+    resp = RedirectResponse(url="/" if guest_view() else "/login", status_code=303)
     resp.delete_cookie(auth.COOKIE, path="/")
     return resp
 
@@ -305,17 +319,11 @@ def _remember_decisions(result):
         for a in acts:
             if a.get("status") == "pending" or a["action_id"] in decisions:
                 continue
-            decisions[a["action_id"]] = {k: a.get(k) for k in
-                                         ("status", "decided_by", "decided_at", "result_message")}
+            decisions[a["action_id"]] = {k: a.get(k) for k in DECISION_KEYS}
             if a.get("status") == "auto_executed" and aid in live_ids:
                 audit.record("action auto-executed", "Triagle · auto-policy", alert_id=aid,
                              action=a["action_type"], target=a["target"], risk_tier=a["risk_tier"],
-                             executed=True, simulated=_simulated(), policy_reason=a.get("policy_reason"))
-
-
-def _simulated():
-    from app.engine import action_tools
-    return action_tools.execute_mode() != "live"
+                             executed=True, simulated=True, policy_reason=a.get("policy_reason"))
 
 
 def _reprocess():
@@ -864,7 +872,7 @@ def api_notes(request: Request, case: str = "", user=Depends(require_user)):
     cached = _WORKNOTES.get(key)
     stale = cached and not cached[1] and time.time() - _NOTES_AT.get(key, 0) > NOTES_RETRY_SECONDS
     if not cached or stale:
-        if not _ask_allowed(_client_ip(request)) and cached:
+        if not _ask_allowed(_client_ip(request), trusted=_trusted(user)) and cached:
             pass                                    # keep the fallback rather than hammer a failing model
         else:
             _WORKNOTES[key] = worknotes.work_notes(incident, members)
@@ -880,6 +888,11 @@ _NOTES_AT = {}
 NOTICES = {
     "ack": "Not approved: tick the box to confirm you have read the blast radius, then approve again.",
     "done": "That action has already been decided.",
+    "signin": ("Not run. This action changes a real firewall, and sign-in is turned off on this deployment, "
+               "so the approval would have no name on it. Turn sign-in on, then approve again."),
+    "failed": "Not done. Nothing was changed. The reason is shown on the action below.",
+    "lifted": "The block was lifted. The action is open again and can be approved a second time.",
+    "notlifted": "The block was not lifted. The reason is shown on the action below.",
 }
 
 
@@ -888,9 +901,10 @@ def decide_action(request: Request, alert_id: str = Form(...), action_id: str = 
                   ack: str = Form(default=""), decision: str = Form(default="approve"),
                   reason: str = Form(default=""), csrf: str = Form(default=""),
                   next: str = Form(default=""), user=Depends(require_analyst)):
-    """A signed-in analyst approves or declines a staged action. Approved
-    actions then 'execute' (simulated). Every decision is written to the
-    audit log with the analyst's name."""
+    """A signed-in analyst approves or declines a staged action. An approved
+    action then runs: for a connected tool that is a real change, for any
+    other it is a rehearsal that shows the exact call. Every decision is
+    written to the audit log with the analyst's name."""
     if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
         raise HTTPException(status_code=403, detail="Form expired. Reload the page and try again.")
     if decision not in ("approve", "decline"):
@@ -907,26 +921,31 @@ def _back_to(next_path, default):
     return default
 
 
-def _decide(request, alert_id, action_id, ack, decision, reason, user, next_path=""):
+def _find_action(alert_id, action_id):
     result = _load_result()
     act = next((x for x in result.get("actions", {}).get(alert_id, []) if x["action_id"] == action_id), None)
     if act is None:
         raise HTTPException(status_code=404, detail="No such action on that alert.")
+    return act
+
+
+def _remember(act):
+    _CACHE["decisions"][act["action_id"]] = {k: act.get(k) for k in DECISION_KEYS}
+
+
+def _decide(request, alert_id, action_id, ack, decision, reason, user, next_path=""):
+    act = _find_action(alert_id, action_id)
     back = _back_to(next_path, f"/alert/{quote(alert_id, safe=':')}")
     if act["status"] != "pending":
         return RedirectResponse(url=back + "?notice=done", status_code=303)
-
-    def remember():
-        _CACHE["decisions"][act["action_id"]] = {k: act.get(k) for k in
-                                                 ("status", "decided_by", "decided_at", "result_message")}
 
     stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     common = dict(alert_id=alert_id, action=act["action_type"], target=act["target"],
                   risk_tier=act["risk_tier"], ip=_client_ip(request))
     if decision == "decline":
-        act.update(status="declined", decided_by=user["name"], decided_at=stamp,
+        act.update(status="declined", decided_by=user["name"], decided_at=stamp, error="",
                    result_message=f"Declined by {user['name']}" + (f": {reason[:200]}" if reason.strip() else "."))
-        remember()
+        _remember(act)
         audit.record("action declined", user["name"], reason=reason[:200] or None, **common)
         return RedirectResponse(url=back, status_code=303)
 
@@ -934,14 +953,60 @@ def _decide(request, alert_id, action_id, ack, decision, reason, user, next_path
         # stays pending: a missed checkbox must not throw the action away
         return RedirectResponse(url=back + "?notice=ack", status_code=303)
 
+    real = bool(act.get("real"))
+    if real and not auth.enabled():
+        # a change to a real system needs a named, signed-in person behind it
+        audit.record("real action refused: sign-in is off", user["name"], **common)
+        return RedirectResponse(url=back + "?notice=signin", status_code=303)
+
     act["status"] = "approved"
-    res = execute_action(act, approver=user["name"])
+    res = execute_action(act, approver=user["name"], live=real, approver_ip=_client_ip(request))
+    if real and not res["ok"]:
+        # Nothing changed. Leave it open with the reason, so it can be put
+        # right and approved again.
+        act.update(status="pending", decided_by=None, decided_at=None, error=res["message"])
+        _remember(act)
+        audit.record("real action failed", user["name"], executed=False, simulated=False, mode="live",
+                     error=res["message"][:300], **common)
+        return RedirectResponse(url=back + "?notice=failed", status_code=303)
     act.update(status="executed" if res["ok"] else "approved", decided_by=user["name"],
-               decided_at=stamp, result_message=res["message"])
-    remember()
+               decided_at=stamp, result_message=res["message"], undo=res.get("undo"), error="")
+    _remember(act)
     audit.record("action approved", user["name"], acknowledged_blast_radius=bool(act.get("requires_ack")),
-                 executed=res["ok"], simulated=res.get("mode") == "dry_run", mode=res.get("mode"), **common)
+                 executed=res["ok"], simulated=res.get("mode") in ("dry_run", "not_connected"), mode=res.get("mode"),
+                 rule=(res.get("undo") or {}).get("rule"), **common)
     return RedirectResponse(url=back, status_code=303)
+
+
+@app.post("/action/lift")
+def lift_action(request: Request, alert_id: str = Form(...), action_id: str = Form(...),
+                csrf: str = Form(default=""), next: str = Form(default=""), user=Depends(require_analyst)):
+    """Reverse a real change: delete the firewall rule a block added. The
+    action goes back to waiting, so it can be approved again."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload the page and try again.")
+    from app.engine import gcp_firewall
+    with _LOCK:
+        act = _find_action(alert_id, action_id)
+        back = _back_to(next, f"/alert/{quote(alert_id, safe=':')}")
+        undo = act.get("undo") or {}
+        if act["status"] != "executed" or undo.get("connector") != "gcp_firewall":
+            return RedirectResponse(url=back + "?notice=done", status_code=303)
+        if not auth.enabled():
+            return RedirectResponse(url=back + "?notice=signin", status_code=303)
+        res = gcp_firewall.lift(undo.get("rule"), approver=user["name"])
+        common = dict(alert_id=alert_id, action=act["action_type"], target=act["target"],
+                      rule=undo.get("rule"), ip=_client_ip(request))
+        if not res["ok"]:
+            act["error"] = res["message"]
+            _remember(act)
+            audit.record("block lift failed", user["name"], error=res["message"][:300], **common)
+            return RedirectResponse(url=back + "?notice=notlifted", status_code=303)
+        act.update(status="pending", decided_by=None, decided_at=None, undo=None, error="",
+                   result_message=res["message"])
+        _remember(act)
+        audit.record("block lifted", user["name"], **common)
+        return RedirectResponse(url=back + "?notice=lifted", status_code=303)
 
 
 @app.get("/tuning", response_class=HTMLResponse)
@@ -1296,7 +1361,7 @@ def connectors_page(request: Request, user=Depends(require_user)):
     """Everything Triagle is connected to: alert sources, the model, and the
     tools that carry out an approved action."""
     from app.connectors import examples
-    from app.engine import action_tools
+    from app.engine import gcp_firewall
     result = _load_result()
     counts = {}
     for a in result["alerts"]:
@@ -1322,7 +1387,7 @@ def connectors_page(request: Request, user=Depends(require_user)):
     return templates.TemplateResponse(request, "connectors.html", _ctx(
         request, user, active="connectors", sources=sources, base_url=base,
         ingest_key=INGEST_KEY if show_key else "", key_set=bool(INGEST_KEY),
-        model_status=genai.status(), execute_mode=action_tools.execute_mode(),
+        model_status=genai.status(), firewall=gcp_firewall.summary(), auth_on=auth.enabled(),
         examples=examples.EXAMPLES, can_test=user["role"] == "analyst", poll=False))
 
 
@@ -1334,7 +1399,7 @@ async def api_try(request: Request, user=Depends(require_user)):
     body = await _json_body(request)
     if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
         raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
-    if not _ask_allowed(_client_ip(request)):
+    if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
         raise HTTPException(status_code=429, detail="Too many tries. Wait a minute.")
     source = str(body.get("source", ""))
     raw = body.get("raw")
@@ -1387,21 +1452,31 @@ async def api_try(request: Request, user=Depends(require_user)):
 # ---- the model: status, a connection test, and questions about a case --------
 
 _ASK_TIMES = {}          # client address -> recent question times
-ASK_PER_MINUTE = 6       # per address
-ASK_PER_HOUR_TOTAL = 240  # whole deployment, so an open console cannot run up a bill
+ASK_PER_MINUTE = 6       # per address, for a visitor
+ASK_PER_MINUTE_ANALYST = 40
+ASK_PER_HOUR_TOTAL = 240  # all visitors together, so an open console cannot run up a bill
 _ASK_ALL = []
 
 
-def _ask_allowed(ip, now=None):
+def _trusted(user):
+    """A signed-in analyst. Their calls are not held to the visitors' budget,
+    so a stranger using up that budget cannot stop an analyst working."""
+    return bool(auth.enabled() and user and user.get("role") == "analyst" and not user.get("guest"))
+
+
+def _ask_allowed(ip, now=None, trusted=False):
     now = now or time.time()
-    mine = [t for t in _ASK_TIMES.get(ip, []) if now - t < 60]
+    key = ("analyst:" + ip) if trusted else ip
+    mine = [t for t in _ASK_TIMES.get(key, []) if now - t < 60]
     _ASK_ALL[:] = [t for t in _ASK_ALL if now - t < 3600]
-    if len(mine) >= ASK_PER_MINUTE or len(_ASK_ALL) >= ASK_PER_HOUR_TOTAL:
-        _ASK_TIMES[ip] = mine
+    over = len(mine) >= (ASK_PER_MINUTE_ANALYST if trusted else ASK_PER_MINUTE)
+    if over or (not trusted and len(_ASK_ALL) >= ASK_PER_HOUR_TOTAL):
+        _ASK_TIMES[key] = mine
         return False
     mine.append(now)
-    _ASK_TIMES[ip] = mine
-    _ASK_ALL.append(now)
+    _ASK_TIMES[key] = mine
+    if not trusted:
+        _ASK_ALL.append(now)
     return True
 
 
@@ -1440,12 +1515,59 @@ async def api_model_test(request: Request, user=Depends(require_analyst)):
     body = await _json_body(request)
     if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
         raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
-    if not _ask_allowed(_client_ip(request)):
+    if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
         raise HTTPException(status_code=429, detail="Too many requests. Wait a minute.")
     st = genai.test_connection()
     audit.record("model connection tested", user["name"], ok=bool(st["last"].get("ok")),
                  model=st.get("model"), ip=_client_ip(request))
     return st
+
+
+async def _analyst_call(request, user):
+    """Shared checks for the small JSON calls an analyst makes from a page."""
+    body = await _json_body(request)
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
+        raise HTTPException(status_code=429, detail="Too many requests. Wait a minute.")
+    return body
+
+
+@app.post("/api/firewall/check")
+async def api_firewall_check(request: Request, user=Depends(require_analyst)):
+    """Can Triagle change the connected firewall, and which blocks are in
+    force? Reads only; changes nothing."""
+    from app.engine import gcp_firewall
+    await _analyst_call(request, user)
+    if not auth.enabled():
+        raise HTTPException(status_code=403, detail="Sign-in is off on this deployment, so the firewall is not shown.")
+    res = gcp_firewall.check()
+    audit.record("firewall connection checked", user["name"], ok=res["ok"], ip=_client_ip(request))
+    return res
+
+
+@app.post("/api/firewall/lift")
+async def api_firewall_lift(request: Request, user=Depends(require_analyst)):
+    """Lift one block from the Connectors page: delete a rule Triagle added.
+    Works after a restart too, when the action that added it is no longer in
+    memory."""
+    from app.engine import gcp_firewall
+    body = await _analyst_call(request, user)
+    if not auth.enabled():
+        raise HTTPException(status_code=403, detail="Sign-in is off on this deployment, so nothing was changed.")
+    rule = str(body.get("rule", ""))[:80]
+    res = gcp_firewall.lift(rule, approver=user["name"])
+    audit.record("block lifted" if res["ok"] else "block lift failed", user["name"], rule=rule,
+                 ip=_client_ip(request), error=None if res["ok"] else res["message"][:300])
+    if res["ok"]:
+        with _LOCK:
+            # any action that added this rule is open again
+            for rec in _CACHE.get("decisions", {}).values():
+                if (rec.get("undo") or {}).get("rule") == rule:
+                    rec.update(status="pending", decided_by=None, decided_at=None, undo=None, error="",
+                               result_message=res["message"])
+            _CACHE.pop("result", None)
+    return res
 
 
 @app.post("/api/ask")
@@ -1459,7 +1581,7 @@ async def api_ask(request: Request, user=Depends(require_user)):
     found = _case_for(_load_result(), str(body.get("case", "")))
     if not found:
         raise HTTPException(status_code=404, detail="No such case.")
-    if not _ask_allowed(_client_ip(request)):
+    if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
         raise HTTPException(status_code=429, detail="Too many questions. Wait a minute and ask again.")
     case, members, steps, actions, clock = found
     out = analyst.ask(question, case, members, steps, actions, clock)

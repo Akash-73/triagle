@@ -21,13 +21,20 @@ Two pieces:
   the exact call it WOULD make without sending it — and (5) writes a signed
   audit entry. Nothing reaches a vendor API except through here.
 
-Execution mode (TRIAGLE_EXECUTE):
-  dry_run  (default) — build and show the real API call; do NOT send it. Safe
-                       for demos and for any environment without live creds.
-  live               — actually call the vendor API (requires configured creds;
-                       intentionally off by default).
+What is real and what is a rehearsal:
+  A connector is real once it is connected. Today that is the Google Cloud
+  firewall (see gcp_firewall.py): a signed-in analyst's approval adds a deny
+  rule to a real network. Every other connector builds and shows the exact
+  call and does NOT send it, and says so. Nothing here ever reports a call as
+  sent when it was not.
+
+  TRIAGLE_EXECUTE is kept for the audit log's wording. Setting it to "live"
+  does not make an unconnected tool pretend: the action is then reported as
+  not sent, because there are no credentials to send it with.
 """
 import os
+
+from app.engine import gcp_firewall
 
 
 # ---- Action tools: the real vendor API behind each action -----------------
@@ -162,9 +169,14 @@ def _fill(obj, mapping):
     return obj
 
 
-def build_call(action_type, target, platform_label, approver="pending"):
+def build_call(action_type, target, platform_label, approver="pending", client=None, host=None,
+               direction="in", alert_id=""):
     """Resolve the real vendor API call for an action. Returns a call-plan dict
-    (the exact request Triagle would send), or None if unknown."""
+    (the exact request Triagle would send), or None if unknown. A plan with
+    live=True is one that will really be sent when a person approves it."""
+    if action_type == "block_indicator" and gcp_firewall.covers(client, host) \
+            and gcp_firewall.refusal(target) is None:
+        return gcp_firewall.plan(target, direction, approver, alert_id)
     conn_name, conn = _pick_connector(action_type, platform_label)
     if not conn:
         return None
@@ -188,14 +200,20 @@ def execute_mode():
     return os.environ.get("TRIAGLE_EXECUTE", "dry_run").lower()
 
 
-def dispatch(action_dict, approver="analyst"):
+def dispatch(action_dict, approver="analyst", live=False, approver_ip=None):
     """The Action Gateway. Build the vendor call for an approved/auto action,
-    screen it, and either send it (live) or return the exact call (dry_run).
-    Returns {ok, mode, message, call}. Never calls a vendor API in dry_run."""
+    screen it, and either send it or return the exact call without sending.
+    Returns {ok, mode, message, call} and, for a real change, how to undo it.
+
+    live is True only when a signed-in person has just approved this action.
+    Automatic actions and anything run while the queue is rebuilt come through
+    with live=False and can never change a real system."""
     action_type = action_dict.get("action_type")
     target = action_dict.get("target")
     platform = action_dict.get("platform")
-    call = build_call(action_type, target, platform, approver=approver)
+    call = build_call(action_type, target, platform, approver=approver, client=action_dict.get("client"),
+                      host=action_dict.get("host"), direction=action_dict.get("direction") or "in",
+                      alert_id=action_dict.get("alert_id") or "")
     if not call:
         return {"ok": False, "mode": execute_mode(),
                 "message": f"No connector registered for {action_type}.", "call": None}
@@ -206,15 +224,25 @@ def dispatch(action_dict, approver="analyst"):
                 "message": (f"Recorded: {approver} confirmed the control room was told about "
                             f"{target}. No system call is made for this step.")}
 
-    mode = execute_mode()
     # Gateway checkpoint: this is where request screening (Vertex AI Model Armor
     # / Apigee), scope checks and rate limits run before anything leaves.
-    if mode == "live":
-        # In a real deployment this calls call['endpoint'] with the connector's
-        # credentials. Deliberately not wired here (no creds in a demo build).
-        return {"ok": True, "mode": "live", "call": call,
-                "message": (f"{call['vendor']}: {call['method']} {call['endpoint']} — "
-                            f"sent, approved by {approver}.")}
+    if call["connector"] == "gcp_firewall":
+        if not live:
+            return {"ok": False, "mode": "dry_run", "call": call,
+                    "message": "This block is a real change, so it waits for a signed-in person to approve it."}
+        res = gcp_firewall.block(target, action_dict.get("direction") or "in", approver=approver,
+                                 alert_id=action_dict.get("alert_id") or "", approver_ip=approver_ip)
+        out = {"ok": res["ok"], "mode": "live", "call": call, "message": res["message"]}
+        if res["ok"] and res.get("rule"):
+            out["undo"] = {"connector": "gcp_firewall", "rule": res["rule"]}
+        return out
+
+    if execute_mode() == "live":
+        # No credentials for this tool on this deployment, so there is nothing
+        # to send the call with. Say so; never report it as sent.
+        return {"ok": False, "mode": "not_connected", "call": call,
+                "message": (f"Not sent: {call['vendor']} is not connected on this deployment. "
+                            f"The call that would be made is shown below.")}
     return {"ok": True, "mode": "dry_run", "call": call,
-            "message": (f"[DRY-RUN] Would call {call['vendor']}: {call['method']} "
-                        f"{call['endpoint']} (approved by {approver}). Reversible.")}
+            "message": (f"Rehearsal: {call['vendor']} is not connected here, so the call was not sent. "
+                        f"It would be {call['method']} {call['endpoint']} (approved by {approver}).")}
