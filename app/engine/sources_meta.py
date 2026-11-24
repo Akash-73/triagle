@@ -7,6 +7,7 @@ in app/main.py so any page can call them.
 """
 
 SOURCES = {
+    "generic": ("Webhook (any tool)", "any tool that can send JSON"),
     "crowdstrike_edr": ("CrowdStrike EDR", "endpoints"),
     "fortinet_fw": ("Fortinet Firewall", "network"),
     "entra_id": ("Microsoft Entra ID", "identity / logins"),

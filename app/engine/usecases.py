@@ -96,8 +96,8 @@ CATALOGUE = {
                 "No attack. Goes to the hardening backlog."),
     "operational": ("UC-802", "System health event", None, "Operations",
                     "No attack. Goes to the operations team."),
-    "known_tool": ("UC-803", "Known administration tool", None, "Routine",
-                   "No attack. A trusted tool doing its documented job."),
+    "known_tool": ("UC-803", "Known tool or system file", None, "Routine",
+                   "No attack. A trusted tool or the operating system doing its documented job."),
     "routine": ("UC-804", "Routine activity", None, "Routine", "No attack."),
     "discovery": ("UC-805", "Discovery command", "T1087", "Discovery",
                   "Not evidence on its own. Shown as context if a case opens on the same asset."),
@@ -173,6 +173,11 @@ def _key_for(alert, verdict):
         if ot.controllers(alert) or any(w in joined for w in ("command", "stop", "restart", "force", "setpoint")):
             return "ot_command"
         return "ot_activity"
+    ind = _get(alert, "indicators") or {}
+    if signals.benign_artifact(alert):
+        return "known_tool"                  # a system file the tool over-rated, whatever its title says
+    if ind.get("target_file") and any(w in title for w in ("dropped", "created under", "file created")):
+        return "script_in_temp"
     spaced = _words(_get(alert, "title"))
     for words, key in _TITLE_TO:             # the tool's own name for it
         if any(w in spaced for w in words):
@@ -184,7 +189,6 @@ def _key_for(alert, verdict):
     for words, key in _SOFT_TO:
         if any(t in words for t in soft):
             return key
-    ind = _get(alert, "indicators") or {}
     if ind.get("drift"):
         return "config_drift"
     kind = signals.kind(alert)
@@ -198,8 +202,6 @@ def _key_for(alert, verdict):
         if any(w in title for w in ("stopped", "disabled", "tamper", "uninstall")):
             return "security_tool_stopped"
         return "account_change"
-    if ind.get("target_file") and any(w in title for w in ("dropped", "created under")):
-        return "script_in_temp"
     code = verdict.get("closure_code")
     if code == "BENIGN_KNOWN_TOOL":
         return "known_tool"

@@ -228,7 +228,7 @@ def logout(request: Request, csrf: str = Form(default="")):
 @app.get("/audit", response_class=HTMLResponse)
 def audit_page(request: Request, user=Depends(require_analyst)):
     return templates.TemplateResponse(request, "audit.html", _ctx(
-        request, user, entries=audit.read(300), chain=audit.verify(), log_path=audit.path()))
+        request, user, active="audit", entries=audit.read(300), chain=audit.verify(), log_path=audit.path()))
 
 
 # ---- the queue ---------------------------------------------------------------
@@ -700,10 +700,181 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
     report_key = next((inc["id"] for inc in result["incidents"] if alert_id in inc["alert_ids"]), None)
     just_decided = any(a.get("status") in ("executed", "approved", "auto_executed", "declined") for a in actions)
     return templates.TemplateResponse(request, "detail.html", _ctx(
-        request, user, alert=alert, verdict=verdict, trail=trail, actions=actions, intel=intel,
+        request, user, active="alerts", alert=alert, verdict=verdict, trail=trail, actions=actions, intel=intel,
+        uc=usecases.for_alert(alert, verdict), steps=_step_words(trail), ask_suggested=analyst.SUGGESTED,
         report_key=report_key, just_decided=just_decided,
         notice=NOTICES.get(notice, ""), can_approve=user["role"] == "analyst",
         now=datetime.datetime.now().strftime("%d %b %Y, %H:%M")))
+
+
+STEP_WORDS = {
+    "related_alerts": "Looked for other alerts on the same asset, account and addresses",
+    "entity_history": "Compared this with what is normal for the asset",
+    "threat_intel": "Checked every address, hash and domain against threat intelligence",
+    "timeline": "Put the events in order",
+}
+
+
+def _step_words(trail):
+    return [{"did": STEP_WORDS.get(st.get("tool"), str(st.get("tool", "")).replace("_", " ").capitalize()),
+             "found": st.get("result_summary", "")} for st in trail or []]
+
+
+CONTEXT_MINUTES = 45      # closed alerts this close to a case are shown as context
+CONTEXT_SHOWN = 15
+
+
+def _case_context(result, incident, members):
+    """Closed alerts on the same asset around the time of the case: the
+    discovery commands and routine events that were not evidence on their
+    own. Shown in the timeline so the analyst sees the whole sequence."""
+    from app.engine.relate import parse_ts
+    times = [t for t in (parse_ts(m["alert"].get("timestamp")) for m in members) if t]
+    if not times:
+        return []
+    lo = min(times) - CONTEXT_MINUTES * 60        # parse_ts gives seconds
+    hi = max(times) + CONTEXT_MINUTES * 60
+    ids = set(incident["alert_ids"])
+    assets = {str(incident.get("key") or "").lower()} | {str(m["alert"].get("host") or "").lower() for m in members}
+    assets.discard("")
+    out = []
+    for a in result["alerts"]:
+        if a["alert_id"] in ids or a.get("client") != incident.get("client"):
+            continue
+        if str(a.get("host") or a.get("entity") or "").lower() not in assets:
+            continue
+        v = result["verdicts"].get(a["alert_id"], {})
+        if v.get("escalate") or signals_kind(a) != "activity":
+            continue
+        t = parse_ts(a.get("timestamp"))
+        if t and lo <= t <= hi:
+            out.append({"alert": a, "verdict": v, "uc": usecases.for_alert(a, v), "context": True})
+    out.sort(key=lambda r: r["alert"].get("timestamp") or "")
+    return out[-CONTEXT_SHOWN:]
+
+
+def signals_kind(alert):
+    from app.engine import signals
+    return signals.kind(alert)
+
+
+def _case_actions(result, incident):
+    """One action per (type, target): several alerts on one host each propose
+    isolating it; show the one that has progressed furthest."""
+    rank = {"auto_executed": 3, "executed": 3, "approved": 3, "declined": 1, "pending": 0}
+    best = {}
+    for aid in incident["alert_ids"]:
+        for a in result.get("actions", {}).get(aid, []):
+            k = (a.get("action_type"), a.get("target"))
+            if k not in best or rank.get(a.get("status"), 0) > rank.get(best[k].get("status"), 0):
+                best[k] = a
+    return sorted(best.values(), key=lambda a: (a.get("status") != "pending", a.get("label", "")))
+
+
+def _case_stages(incident, members, actions, clock, probing):
+    """Detected, investigated, contained, reported: where the case stands."""
+    pending = sum(1 for a in actions if a["status"] == "pending")
+    done = sum(1 for a in actions if a["status"] in ("executed", "approved", "auto_executed"))
+    declined = sum(1 for a in actions if a["status"] == "declined")
+    escalated = sum(1 for m in members if m["verdict"].get("escalate"))
+    stages = [
+        {"name": "Detected", "state": "done",
+         "note": f"{incident['size']} alerts from {len(incident.get('sources', []))} tool(s)",
+         "when": _ist_short(incident.get("first_seen"))},
+        {"name": "Investigated", "state": "done",
+         "note": f"{escalated} judged to need a person", "when": "by Triagle, in seconds"},
+    ]
+    if not actions:
+        stages.append({"name": "Contained", "state": "none", "note": "No response action proposed", "when": ""})
+    elif pending:
+        stages.append({"name": "Contained", "state": "current",
+                       "note": f"{pending} action{'s' if pending != 1 else ''} waiting for approval",
+                       "when": f"{done} done" if done else ""})
+    else:
+        stages.append({"name": "Contained", "state": "done",
+                       "note": f"{done} done" + (f", {declined} declined" if declined else ""), "when": ""})
+    if clock is None:
+        stages.append({"name": "Reported", "state": "none",
+                       "note": "Probing only, no report due" if probing else "No report due", "when": ""})
+    elif clock["open"]:
+        nxt = clock["next"]
+        stages.append({"name": "Reported", "state": "current",
+                       "note": f"{clock['open']} report{'s' if clock['open'] != 1 else ''} due, {nxt['name']} first",
+                       "when": "", "due_iso": nxt["due_iso"], "hours": nxt["hours"]})
+    else:
+        stages.append({"name": "Reported", "state": "done" if clock["filed"] else "none",
+                       "note": f"{clock['filed']} marked filed" if clock["filed"] else "Nothing binding today", "when": ""})
+    return stages
+
+
+@app.get("/case/{ref}", response_class=HTMLResponse)
+def case_page(request: Request, ref: str, notice: str = "", user=Depends(require_user)):
+    """One case, worked the way an analyst works it: what it is, what
+    happened in order, what Triagle checked, what to do, what to report."""
+    result = _load_result()
+    incident = _find_incident(result, ref)
+    if not incident:
+        raise HTTPException(status_code=404, detail=f"No case found for {ref}")
+    members = _incident_members(result, incident)
+    for m in members:
+        m["uc"] = usecases.for_alert(m["alert"], m["verdict"])
+    clock = _clock(result, incident, members)
+    actions = _case_actions(result, incident)
+    probing = certin.probing_only(members)
+    steps, seen = [], set()
+    for m in members:
+        for st in _step_words(result.get("trails", {}).get(m["alert"]["alert_id"], [])):
+            if st["found"] not in seen:
+                seen.add(st["found"])
+                steps.append(st)
+    indicators, seen_ind = [], set()
+    for m in members:
+        for r in reputation.enrich(m["alert"]):
+            if r["indicator"].lower() not in seen_ind:
+                seen_ind.add(r["indicator"].lower())
+                indicators.append(r)
+    timeline = sorted(members + _case_context(result, incident, members),
+                      key=lambda r: r["alert"].get("timestamp") or "")
+    worst = min((_SEV_ORDER.get(m["verdict"].get("severity"), 9) for m in members if m["verdict"].get("escalate")),
+                default=3)
+    return templates.TemplateResponse(request, "case.html", _ctx(
+        request, user, active="cases", incident=incident, members=members, timeline=timeline,
+        uc=usecases.for_case(members), severity={v: k for k, v in _SEV_ORDER.items()}.get(worst, "low"),
+        clock=clock, actions=actions, steps=steps[:10], indicators=indicators, probing=probing,
+        stages=_case_stages(incident, members, actions, clock, probing),
+        sector=regclock.SECTORS[_sector(incident.get("client"))]["label"],
+        ask_suggested=analyst.SUGGESTED, notice=NOTICES.get(notice, ""),
+        can_approve=user["role"] == "analyst", poll=False))
+
+
+NOTES_RETRY_SECONDS = 60
+
+
+@app.get("/api/notes")
+def api_notes(request: Request, case: str = "", user=Depends(require_user)):
+    """The written account of a case. Gemini writes it from the evidence; if
+    the model does not answer, a summary built from the same evidence is
+    returned and labelled as that. Cached per case."""
+    result = _load_result()
+    incident = _find_incident(result, case)
+    if not incident:
+        raise HTTPException(status_code=404, detail="No such case.")
+    members = _incident_members(result, incident)
+    key = tuple(incident["alert_ids"])
+    cached = _WORKNOTES.get(key)
+    stale = cached and not cached[1] and time.time() - _NOTES_AT.get(key, 0) > NOTES_RETRY_SECONDS
+    if not cached or stale:
+        if not _ask_allowed(_client_ip(request)) and cached:
+            pass                                    # keep the fallback rather than hammer a failing model
+        else:
+            _WORKNOTES[key] = worknotes.work_notes(incident, members)
+            _NOTES_AT[key] = time.time()
+    text, by_model, provider = _WORKNOTES[key]
+    return {"text": text, "by_model": by_model, "provider": provider,
+            "error": None if by_model else genai.STATUS.get("error")}
+
+
+_NOTES_AT = {}
 
 
 NOTICES = {
@@ -716,7 +887,7 @@ NOTICES = {
 def decide_action(request: Request, alert_id: str = Form(...), action_id: str = Form(...),
                   ack: str = Form(default=""), decision: str = Form(default="approve"),
                   reason: str = Form(default=""), csrf: str = Form(default=""),
-                  user=Depends(require_analyst)):
+                  next: str = Form(default=""), user=Depends(require_analyst)):
     """A signed-in analyst approves or declines a staged action. Approved
     actions then 'execute' (simulated). Every decision is written to the
     audit log with the analyst's name."""
@@ -725,15 +896,23 @@ def decide_action(request: Request, alert_id: str = Form(...), action_id: str = 
     if decision not in ("approve", "decline"):
         raise HTTPException(status_code=400, detail="Unknown decision.")
     with _LOCK:
-        return _decide(request, alert_id, action_id, ack, decision, reason, user)
+        return _decide(request, alert_id, action_id, ack, decision, reason, user, next)
 
 
-def _decide(request, alert_id, action_id, ack, decision, reason, user):
+def _back_to(next_path, default):
+    """Only ever back to a case or an alert page on this site."""
+    n = str(next_path or "")
+    if (n.startswith("/case/") or n.startswith("/alert/")) and "//" not in n and "\\" not in n and len(n) < 200:
+        return n.split("?")[0]
+    return default
+
+
+def _decide(request, alert_id, action_id, ack, decision, reason, user, next_path=""):
     result = _load_result()
     act = next((x for x in result.get("actions", {}).get(alert_id, []) if x["action_id"] == action_id), None)
     if act is None:
         raise HTTPException(status_code=404, detail="No such action on that alert.")
-    back = f"/alert/{quote(alert_id, safe=':')}"
+    back = _back_to(next_path, f"/alert/{quote(alert_id, safe=':')}")
     if act["status"] != "pending":
         return RedirectResponse(url=back + "?notice=done", status_code=303)
 
@@ -769,7 +948,7 @@ def _decide(request, alert_id, action_id, ack, decision, reason, user):
 def tuning_page(request: Request, user=Depends(require_user)):
     result = _load_result()
     return templates.TemplateResponse(request, "tuning.html", _ctx(
-        request, user, rule_health=result.get("rule_health", []), metrics=result["metrics"],
+        request, user, active="tuning", rule_health=result.get("rule_health", []), metrics=result["metrics"],
         now=datetime.datetime.now().strftime("%d %b %Y, %H:%M")))
 
 
@@ -941,7 +1120,7 @@ def clock_page(request: Request, notice: str = "", user=Depends(require_user)):
     }
     clients = sorted({a["client"] for a in result["alerts"]})
     return templates.TemplateResponse(request, "clock.html", _ctx(
-        request, user, cards=cards, watching=watching, summary=summary, regulators=regclock.REGULATORS,
+        request, user, active="clock", cards=cards, watching=watching, summary=summary, regulators=regclock.REGULATORS,
         sectors=regclock.SECTORS, tenants=[{"client": c, "sector": _sector(c)} for c in clients],
         can_file=user["role"] == "analyst", metrics=result["metrics"], rev=_CACHE.get("rev", 0),
         notice=CLOCK_NOTICES.get(notice, ""),
@@ -1014,10 +1193,9 @@ def benchmark_page(request: Request, user=Depends(require_user)):
     """Runs the labelled simulated set in eval/ through the same engine."""
     from eval.run_benchmark import run
     rows, summary, elapsed, _ = run()
-    return templates.TemplateResponse(request, "benchmark.html", {
-        "rows": rows, "summary": summary, "ms": round(elapsed * 1000),
-        "backend": backend.BACKEND,
-    })
+    return templates.TemplateResponse(request, "benchmark.html", _ctx(
+        request, user, active="benchmark", rows=rows, summary=summary, ms=round(elapsed * 1000),
+        backend=backend.BACKEND, poll=False))
 
 
 INGEST_KEY = os.environ.get("TRIAGLE_INGEST_KEY", "")
@@ -1062,6 +1240,109 @@ def api_state(request: Request, user=Depends(require_user)):
     m = _load_result()["metrics"]
     return {"rev": _CACHE.get("rev", 0), "received": m["received"], "escalated": m["escalated_all"],
             "closed": m["closed_all"], "incidents": m["incident_count"]}
+
+
+# ---- connectors: set up a source, test the model, try an alert -----------------
+
+TRY_MAX_BYTES = 32_000
+
+
+def _base_url(request: Request):
+    scheme = "https" if _is_https(request) else request.url.scheme
+    return f"{scheme}://{request.headers.get('host', request.url.netloc)}"
+
+
+@app.get("/connectors", response_class=HTMLResponse)
+def connectors_page(request: Request, user=Depends(require_user)):
+    """Everything Triagle is connected to: alert sources, the model, and the
+    tools that carry out an approved action."""
+    from app.connectors import examples
+    from app.engine import action_tools
+    result = _load_result()
+    counts = {}
+    for a in result["alerts"]:
+        counts[a["source"]] = counts.get(a["source"], 0) + 1
+    live = {}
+    for f in _CACHE.get("feeds", {}).values():
+        cur = live.setdefault(f["source"], {"count": 0, "last": "", "clients": set()})
+        cur["count"] += f["count"]
+        cur["last"] = max(cur["last"], f.get("last", ""))
+        cur["clients"].add(f["client"])
+    base = _base_url(request)
+    sources = []
+    for c in examples.CATALOGUE:
+        feed = live.get(c["key"])
+        sources.append({**c, "live": bool(feed), "received": feed["count"] if feed else 0,
+                        "last": _ago(feed["last"]) if feed else "", "in_queue": counts.get(c["key"], 0),
+                        "clients": sorted(feed["clients"]) if feed else [],
+                        "steps": examples.setup_steps(c["key"], base),
+                        "examples": examples.EXAMPLES.get(c["key"], [])})
+    # the key is shown only to a signed-in analyst: with sign-in off, anyone
+    # holding the address could read it and inject alerts
+    show_key = auth.enabled() and user["role"] == "analyst" and bool(INGEST_KEY)
+    return templates.TemplateResponse(request, "connectors.html", _ctx(
+        request, user, active="connectors", sources=sources, base_url=base,
+        ingest_key=INGEST_KEY if show_key else "", key_set=bool(INGEST_KEY),
+        model_status=genai.status(), execute_mode=action_tools.execute_mode(),
+        examples=examples.EXAMPLES, can_test=user["role"] == "analyst", poll=False))
+
+
+@app.post("/api/try")
+async def api_try(request: Request, user=Depends(require_user)):
+    """Triage one pasted alert and return what Triagle would do with it.
+    Nothing is stored and nothing joins the queue: the alert is judged on its
+    own, the way the first alert from a new customer would be."""
+    body = await _json_body(request)
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    if not _ask_allowed(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many tries. Wait a minute.")
+    source = str(body.get("source", ""))
+    raw = body.get("raw")
+    if isinstance(raw, str):
+        if len(raw) > TRY_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="That alert is too large. Paste one alert, under 32 KB.")
+        try:
+            raw = json.loads(raw)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"That is not valid JSON: {str(e)[:120]}")
+    if not isinstance(raw, dict) or not raw:
+        raise HTTPException(status_code=400, detail="Paste one alert as a JSON object.")
+    if len(json.dumps(raw)) > TRY_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="That alert is too large. Paste one alert, under 32 KB.")
+    # an envelope {source, client, raw} pasted whole is accepted too
+    if isinstance(raw.get("raw"), dict) and raw.get("source"):
+        source, raw = str(raw["source"]), raw["raw"]
+    client = " ".join(str(body.get("client") or "Trial").split())[:60] or "Trial"
+    try:
+        normalize(source, raw, client)
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        raise HTTPException(status_code=400, detail=f"Triagle could not read that as a {sources_meta.source_name(source)} alert: {str(e)[:160]}")
+    started = time.perf_counter()
+    result = process_batch([{"source": source, "client": client, "raw": raw}])
+    took_ms = round((time.perf_counter() - started) * 1000, 1)
+    alert = result["alerts"][0]
+    verdict = result["verdicts"][alert["alert_id"]]
+    uc = usecases.for_alert(alert, verdict)
+    acts = result.get("actions", {}).get(alert["alert_id"], [])
+    audit.record("alert tried on the connectors page", user["name"], source=source,
+                 escalated=bool(verdict.get("escalate")), ip=_client_ip(request))
+    return {
+        "alert": {"title": alert["title"], "asset": alert.get("host") or alert.get("entity"), "user": alert.get("user"),
+                  "tool_severity": alert.get("raw_severity"), "source": sources_meta.source_name(source)},
+        "verdict": {"escalate": bool(verdict.get("escalate")), "words": sources_meta.verdict_words(verdict.get("disposition"))
+                    if verdict.get("escalate") else sources_meta.closure_words(verdict.get("closure_code")),
+                    "severity": verdict.get("severity"), "confidence": verdict.get("confidence"),
+                    "summary": verdict.get("summary"), "reasoning": verdict.get("reasoning"),
+                    "closure_code": verdict.get("closure_code"), "next": verdict.get("recommended_actions") or [],
+                    "tuning": verdict.get("tuning_recommendation")},
+        "usecase": {"id": uc["id"], "name": uc["name"], "technique": uc["technique"], "tactic": uc["tactic"],
+                    "question": uc["question"], "catalogued": uc["catalogued"]},
+        "actions": [{"label": a["label"], "target": a["target"],
+                     "needs": "a person's approval" if a.get("policy") != "auto" else "nothing, it runs automatically"}
+                    for a in acts],
+        "ms": took_ms,
+    }
 
 
 # ---- the model: status, a connection test, and questions about a case --------

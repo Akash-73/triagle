@@ -138,7 +138,50 @@ def from_ot_monitor(raw, client):
     )
 
 
+GENERIC_SEVERITIES = ("informational", "low", "medium", "high", "critical")
+
+
+def from_generic(raw, client):
+    """Any tool that can send a webhook. A small, documented shape, so a SIEM,
+    a SOAR playbook or a script can feed Triagle without a dedicated connector:
+
+        {"id": "...", "time": "2026-11-24T08:00:00Z", "title": "...",
+         "severity": "low | medium | high | critical",
+         "host": "...", "user": "...", "src_ip": "...", "dst_ip": "...",
+         "description": "...", "command_line": "...", "file": "...",
+         "sha256": "...", "domain": "...", "technique": "T1059.001"}
+
+    Only title is required. An alert without an id gets one from its content,
+    so the same alert sent twice is still counted once."""
+    import hashlib
+    import json as _json
+    title = str(raw.get("title") or raw.get("name") or raw.get("rule") or "").strip()
+    if not title:
+        raise ValueError("a generic alert needs a title")
+    sev = str(raw.get("severity") or "medium").strip().lower()
+    sev = sev if sev in GENERIC_SEVERITIES else "medium"
+    alert_id = str(raw.get("id") or "").strip() or "gen-" + hashlib.sha256(
+        _json.dumps(raw, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    host = raw.get("host") or raw.get("hostname") or raw.get("asset")
+    user = raw.get("user") or raw.get("account")
+    src, dst = raw.get("src_ip") or raw.get("source_ip"), raw.get("dst_ip") or raw.get("destination_ip")
+    return NormalizedAlert(
+        alert_id=alert_id, source="generic", client=client,
+        timestamp=str(raw.get("time") or raw.get("timestamp") or ""),
+        title=title[:200], raw_severity=sev,
+        entity=str(host or user or src or "unknown"), host=host, user=user, src_ip=src, dst_ip=dst,
+        description=str(raw.get("description") or "")[:2000],
+        indicators={
+            "cmdline": str(raw.get("command_line") or raw.get("cmdline") or "")[:2000] or None,
+            "target_file": raw.get("file"), "sha256": raw.get("sha256"), "domain": raw.get("domain"),
+            "technique": raw.get("technique"), "tactic": raw.get("tactic"),
+        },
+        raw=raw,
+    )
+
+
 CONNECTORS = {
+    "generic": from_generic,
     "crowdstrike_edr": from_crowdstrike,
     "fortinet_fw": from_fortinet,
     "entra_id": from_entra,

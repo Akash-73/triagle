@@ -49,9 +49,9 @@
         <thead><tr><th style="width:96px">Severity</th><th>Case</th><th style="width:24%">Alerts</th><th style="width:15%">Waiting on you</th><th style="width:24%">Next report</th></tr></thead>
         <tbody>
         {% for c in cases %}
-        <tr class="link sev-{{ c.severity }}" data-href="/report/{{ c.inc.id }}">
+        <tr class="link sev-{{ c.severity }}" data-href="/case/{{ c.inc.id }}">
           <td class="stripe"><span class="sev {{ c.severity }}">{{ c.severity|capitalize }}</span></td>
-          <td><a class="primary" href="/report/{{ c.inc.id }}">{{ c.uc.name if c.uc else c.inc.key }}</a>
+          <td><a class="primary" href="/case/{{ c.inc.id }}">{{ c.uc.name if c.uc else c.inc.key }}</a>
             <span class="sub">{{ c.inc.key }}, {{ c.inc.client }}</span></td>
           <td>{{ c.inc.size }}<span class="sub" title="{{ source_list(c.inc.sources) }}">{{ source_list(c.inc.sources) }}</span></td>
           <td>{% if c.pending %}{{ c.pending }} action{{ '' if c.pending == 1 else 's' }}{% else %}<span style="color:var(--text-3)">Nothing</span>{% endif %}</td>

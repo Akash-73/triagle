@@ -92,7 +92,7 @@
   {% if poll|default(true) %}
   setInterval(function () {
     fetch('/api/state', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
-      if (!j || j.rev === rev) return;
+      if (!j || j.rev === rev || window.__busy) return;
       if (window.scrollY < 200 && !document.querySelector(':focus-within textarea, input:focus')) location.reload();
       else document.getElementById('fresh').hidden = false;
     }).catch(function () {});

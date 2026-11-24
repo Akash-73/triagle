@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Connectors · Triagle{% endblock %}
+{% block heading %}Connectors{% endblock %}
+{% block content %}
+<div class="stack">
+  <section class="panel">
+    <header><h2>Alert sources</h2><span class="n">{{ sources|selectattr('live')|list|length }} sending now</span></header>
+    <div class="scroll-x"><table class="tbl">
+      <thead><tr><th style="width:24%">Tool</th><th>What it sends</th><th style="width:16%">Status</th><th class="num" style="width:110px">Received</th><th style="width:130px">Last alert</th><th style="width:140px"></th></tr></thead>
+      <tbody>
+      {% for s in sources %}
+      <tr>
+        <td><span class="primary">{{ s.name }}</span><span class="sub">{{ s.kind }}</span></td>
+        <td style="color:var(--text-2)">{{ s.what }}{% if s.clients %}<span class="sub">for {{ s.clients|join(', ') }}</span>{% endif %}</td>
+        <td>{% if s.live %}<span class="status ok">Sending</span>{% elif s.in_queue %}<span class="tag" title="Sample alerts loaded with the product">Sample data only</span>{% else %}<span style="color:var(--text-3)">Not connected</span>{% endif %}</td>
+        <td class="num">{{ s.received if s.live else '' }}</td>
+        <td class="nowrap" style="color:var(--text-2)">{{ s.last }}</td>
+        <td><button class="btn small" type="button" data-setup="setup-{{ s.key }}" aria-expanded="false">{{ 'Add another' if s.live else 'Connect' }}</button></td>
+      </tr>
+      <tr id="setup-{{ s.key }}" hidden>
+        <td colspan="6" style="background:var(--bg);">
+          <div style="max-width:920px; padding:6px 0 10px;">
+            <p style="font-weight:600; margin-bottom:10px;">Connect {{ s.name }}</p>
+            <ol class="steps">
+              {% for st in s.steps %}<li>{{ st.say }}<pre class="code" data-copy>{{ st.code|replace('YOUR_INGEST_KEY', ingest_key) if ingest_key else st.code }}</pre></li>{% endfor %}
+            </ol>
+            <p class="note" style="margin-top:12px;">
+              {% if ingest_key %}These steps already contain this deployment's ingest key, <code id="key-{{ s.key }}">{{ ingest_key }}</code>. Treat it like a password.
+              {% elif key_set %}The ingest key is set for this deployment. {% if not auth_on %}It is shown here only when sign-in is on.{% else %}Ask an analyst for it.{% endif %}
+              {% else %}No ingest key is set. Set TRIAGLE_INGEST_KEY on the deployment before connecting a tool.{% endif %}
+              Alerts appear on the <a href="/alerts?show=all">Alerts</a> page within seconds of arriving.
+            </p>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="panel" id="try">
+    <header><h2>Try an alert</h2><span class="n">Paste one alert and see what Triagle does with it. Nothing is stored.</span></header>
+    <div class="body" style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px;" id="try-grid">
+      <div style="min-width:0;">
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px;">
+          <label for="try-source">Format</label>
+          <select id="try-source">{% for s in sources %}<option value="{{ s.key }}">{{ s.name }}</option>{% endfor %}</select>
+          <span id="try-examples" class="inline-forms" style="gap:6px;"></span>
+        </div>
+        <textarea id="try-raw" rows="16" spellcheck="false" aria-label="The alert, as JSON"></textarea>
+        <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
+          <button class="btn primary" type="button" id="try-go">Triage it</button>
+          <span class="by" id="try-note"></span>
+        </div>
+      </div>
+      <div id="try-out" style="min-width:0;">
+        <div class="empty" style="padding:8px 0;"><b>The verdict appears here.</b>Pick a format, load an example or paste your own alert, then choose Triage it.</div>
+      </div>
+    </div>
+  </section>
+
+  <div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px;" id="two">
+    <section class="panel" id="model">
+      <header><h2>Model</h2><span class="n" id="model-state">{{ model.label }}</span></header>
+      <div class="body">
+        <dl class="kv">
+          <dt>Model</dt><dd class="mono">{{ model_status.model }}</dd>
+          <dt>Reached through</dt><dd>{{ model_status.transport or 'Nothing configured' }}{% if model_status.location %}, location {{ model_status.location }}{% endif %}</dd>
+          {% if model_status.project %}<dt>Project</dt><dd class="mono">{{ model_status.project }}</dd>{% endif %}
+          <dt>Last call</dt><dd id="model-last">{% if model_status.last.ok %}Answered in {{ model_status.last.seconds }} s{% elif model_status.last.ok is false %}Failed: {{ model_status.last.error }}{% else %}None yet{% endif %}</dd>
+          <dt>Used for</dt><dd>Writing the account of a case and answering an analyst's questions about it.</dd>
+          <dt>Never used for</dt><dd>Deciding a verdict, choosing a target or running an action. Those come from rules and a person.</dd>
+          <dt>Before a prompt leaves</dt><dd>Aadhaar numbers, PANs, UPI IDs, mobile numbers and email addresses are masked, and restored in the answer.</dd>
+        </dl>
+        {% if can_test %}<button class="btn" type="button" id="model-test" style="margin-top:14px;">Test the connection</button>{% endif %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <header><h2>Response tools</h2><span class="n">{% if execute_mode == 'live' %}Live{% else %}Rehearsal mode{% endif %}</span></header>
+      <div class="body">
+        <p class="note">{% if execute_mode == 'live' %}Approved actions are sent to the tool that carries them out.{% else %}When an action is approved, Triagle builds the exact call, shows it and logs it. Nothing is sent to the tool until this deployment is switched to live.{% endif %}</p>
+        <dl class="kv" style="margin-top:12px;">
+          <dt>Isolate a host</dt><dd>CrowdStrike Falcon or Microsoft Defender for Endpoint</dd>
+          <dt>Disable an account, end sessions</dt><dd>Microsoft Entra ID</dd>
+          <dt>Block an address, hash or domain</dt><dd>Perimeter firewall or the endpoint tool's indicator list</dd>
+          <dt>Cut off at the IT/OT boundary</dt><dd>Boundary firewall. A controller or operator station is never isolated.</dd>
+          <dt>Call the control room</dt><dd>A person makes the call; Triagle records it.</dd>
+        </dl>
+        <p class="by" style="margin-top:12px;">Every action waits for a person unless it is small, reversible and against a confirmed-malicious indicator.</p>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var CSRF = {{ csrf|tojson }}, EX = {{ examples|tojson }};
+  // connect buttons
+  document.querySelectorAll('[data-setup]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var row = document.getElementById(b.getAttribute('data-setup'));
+      row.hidden = !row.hidden; b.setAttribute('aria-expanded', String(!row.hidden));
+    });
+  });
+  // copy buttons on code blocks
+  document.querySelectorAll('pre[data-copy]').forEach(function (pre) {
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'btn small quiet'; b.textContent = 'Copy';
+    b.style.cssText = 'float:right; margin:-4px -6px 0 8px;';
+    b.addEventListener('click', function () {
+      var text = pre.textContent.replace(/^Copy(ied)?/, '');
+      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () {
+        b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1500);
+      }).catch(function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); });
+    });
+    pre.insertBefore(b, pre.firstChild);
+  });
+
+  // try an alert
+  var sel = document.getElementById('try-source'), ta = document.getElementById('try-raw'), out = document.getElementById('try-out'),
+      go = document.getElementById('try-go'), note = document.getElementById('try-note'), exBox = document.getElementById('try-examples');
+  function loadExamples() {
+    exBox.textContent = '';
+    (EX[sel.value] || []).forEach(function (e, i) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.textContent = e.label;
+      b.addEventListener('click', function () { ta.value = JSON.stringify(e.raw, null, 2); });
+      exBox.appendChild(b);
+      if (i === 0 && !ta.dataset.touched) ta.value = JSON.stringify(e.raw, null, 2);
+    });
+  }
+  sel.addEventListener('change', function () { delete ta.dataset.touched; loadExamples(); });
+  ta.addEventListener('input', function () { ta.dataset.touched = '1'; });
+  loadExamples();
+
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function show(j) {
+    out.textContent = '';
+    var v = j.verdict, head = el('div'); head.style.cssText = 'display:flex; flex-wrap:wrap; align-items:center; gap:10px;';
+    head.appendChild(el('span', 'sev ' + (v.escalate ? v.severity : 'none'), v.escalate ? v.severity.charAt(0).toUpperCase() + v.severity.slice(1) : 'Closed'));
+    var h = el('b', null, j.usecase.name); h.style.fontSize = '1.2rem'; head.appendChild(h);
+    if (j.usecase.technique) head.appendChild(el('span', 'technique', j.usecase.technique));
+    out.appendChild(head);
+    var sum = el('p', null, v.summary); sum.style.cssText = 'margin-top:10px; font-weight:600;'; out.appendChild(sum);
+    var why = el('p', null, v.reasoning); why.style.cssText = 'margin-top:6px; color:var(--text-2);'; out.appendChild(why);
+    var dl = el('dl', 'notes'); dl.style.marginTop = '14px';
+    function row(k, val) { if (!val) return; dl.appendChild(el('dt', null, k)); dl.appendChild(el('dd', null, val)); }
+    row('Outcome', v.escalate ? v.words + ', ' + v.confidence + '% confident. Sent to a person.' : 'Closed: ' + v.words + ' (' + v.closure_code + '), ' + v.confidence + '% confident.');
+    row('Asset', [j.alert.asset, j.alert.user].filter(Boolean).join(', '));
+    row('The tool rated it', j.alert.tool_severity);
+    row('Do next', v.next.join(' '));
+    row('Proposed action', j.actions.map(function (a) { return a.label + ' on ' + a.target + ' (needs ' + a.needs + ')'; }).join('; '));
+    row('Fix the noise', v.tuning);
+    row('Question to answer', j.usecase.question);
+    out.appendChild(dl);
+    out.appendChild(el('p', 'by', 'Decided by rules in ' + j.ms + ' ms, on this alert alone. Nothing was stored.')).style.marginTop = '12px';
+  }
+  go.addEventListener('click', function () {
+    go.disabled = true; note.textContent = 'Working…';
+    fetch('/api/try', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: sel.value, raw: ta.value, csrf: CSRF }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        note.textContent = '';
+        if (!res.ok) { out.textContent = ''; var c = el('div', 'callout warn', res.j.detail || 'That did not work.'); out.appendChild(c); return; }
+        show(res.j);
+      })
+      .catch(function () { note.textContent = 'Could not reach Triagle. Check the connection and try again.'; })
+      .then(function () { go.disabled = false; });
+  });
+
+  // model test
+  var mt = document.getElementById('model-test');
+  if (mt) mt.addEventListener('click', function () {
+    mt.disabled = true; mt.textContent = 'Testing…';
+    fetch('/api/model/test', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csrf: CSRF }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        var last = document.getElementById('model-last');
+        if (!res.ok) { last.textContent = res.j.detail || 'The test could not run.'; return; }
+        var l = res.j.last; last.textContent = l.ok ? 'Answered in ' + l.seconds + ' s' : 'Failed: ' + l.error;
+        document.getElementById('model-state').textContent = l.ok ? 'Connected' : 'Not answering';
+      })
+      .catch(function () { document.getElementById('model-last').textContent = 'Could not reach Triagle.'; })
+      .then(function () { mt.disabled = false; mt.textContent = 'Test the connection'; });
+  });
+})();
+</script>
+<style>@media (max-width: 1000px) { #try-grid, #two { grid-template-columns: minmax(0, 1fr) !important; } }</style>
+{% endblock %}

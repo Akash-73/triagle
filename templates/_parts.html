@@ -46,3 +46,92 @@
   <span class="meter"><i style="width:0"></i></span>
 </a>
 {% endmacro %}
+
+{# One response action: what it does, its state, and the approve / decline form. #}
+{% macro action_card(act, csrf, can_approve, back) %}
+<div class="act">
+  <div class="t">{{ act.label }} <span class="target">{{ act.target }}</span></div>
+  <div class="why">{{ act.rationale }}</div>
+  <div class="why">Effect: {{ act.blast_radius }} Through {{ act.platform }}.</div>
+  {% if act.status == 'auto_executed' %}
+    <div class="state"><span class="tag ok">Done automatically</span> {{ act.result_message }}</div>
+    <div class="by">by {{ act.decided_by }}, {{ act.decided_at|ist_short }}. A person can roll this back.</div>
+  {% elif act.status in ['executed', 'approved'] %}
+    <div class="state"><span class="tag ok">{{ 'Done' if act.status == 'executed' else 'Approved' }}</span> {{ act.result_message or 'Approved' }}</div>
+    {% if act.decided_by %}<div class="by">decided by {{ act.decided_by }}, {{ act.decided_at|ist_short }}</div>{% endif %}
+  {% elif act.status == 'declined' %}
+    <div class="state"><span class="tag">Declined</span> {{ act.result_message or 'Declined' }}</div>
+  {% elif not can_approve %}
+    <div class="state"><span class="tag warn">Waiting for approval</span> Your account is view-only.</div>
+  {% else %}
+    <div class="state"><span class="tag warn">Waiting for approval</span> {{ act.policy_reason }}</div>
+    <form method="post" action="/action/approve">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="alert_id" value="{{ act.alert_id }}">
+      <input type="hidden" name="action_id" value="{{ act.action_id }}">
+      <input type="hidden" name="next" value="{{ back }}">
+      {% if act.requires_ack %}<label><input type="checkbox" name="ack"> I have read the effect above and accept it</label>{% endif %}
+      <input type="text" name="reason" maxlength="200" placeholder="Reason (optional, recorded)" aria-label="Reason">
+      <div class="row">
+        <button class="btn primary" type="submit" name="decision" value="approve">{% if act.action_type == 'ot_notify' %}Record the call as made{% else %}Approve and run{% endif %}</button>
+        <button class="btn" type="submit" name="decision" value="decline">Decline</button>
+      </div>
+    </form>
+  {% endif %}
+  {% if act.tool_call %}
+  <details><summary>The exact call, through {{ act.tool_call.vendor }}</summary>
+    <pre>{{ act.tool_call.method }} {{ act.tool_call.endpoint }}{% if act.tool_call.body %}
+{{ act.tool_call.body | tojson(indent=2) }}{% endif %}</pre>
+    <div class="by" style="margin-top:5px;">Auth: {{ act.tool_call.auth }}. Resolves {{ act.tool_call.resolves }}.</div>
+  </details>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{# The question box. Answers come from the model, from this case's evidence. #}
+{% macro ask_box(case_ref, suggested, model) %}
+<section class="panel ask" id="ask" data-case="{{ case_ref }}">
+  <header><h2>Ask about this case</h2></header>
+  <div class="body">
+    <div class="suggest">{% for q in suggested %}<button class="btn small" type="button" data-q="{{ q }}">{{ q }}</button>{% endfor %}</div>
+    <form><input type="text" maxlength="500" placeholder="Ask a question" aria-label="Your question"><button class="btn primary" type="submit">Ask</button></form>
+    <p class="by" style="margin-top:9px;">{% if model.label == 'No model connected' %}No model is connected, so questions cannot be answered yet.{% else %}{{ model.label }} answers from the evidence on this page. It cannot change a verdict or run an action.{% endif %}</p>
+  </div>
+  <div class="answers"></div>
+</section>
+{% endmacro %}
+
+{% macro ask_script(csrf) %}
+<script>
+(function () {
+  var box = document.getElementById('ask'); if (!box) return;
+  var form = box.querySelector('form'), input = form.querySelector('input'), out = box.querySelector('.answers');
+  function add(q) {
+    var d = document.createElement('div'); d.className = 'qa';
+    var qe = document.createElement('div'); qe.className = 'q'; qe.textContent = q;
+    var ae = document.createElement('div'); ae.className = 'a waiting'; ae.textContent = 'Reading the case…';
+    var by = document.createElement('div'); by.className = 'by';
+    d.appendChild(qe); d.appendChild(ae); d.appendChild(by); out.insertBefore(d, out.firstChild);
+    return { a: ae, by: by };
+  }
+  function ask(q) {
+    q = (q || '').trim(); if (!q) return;
+    var slot = add(q); input.value = '';
+    box.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+    fetch('/api/ask', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ case: box.getAttribute('data-case'), question: q, csrf: {{ csrf|tojson }} }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        slot.a.classList.remove('waiting');
+        if (!res.ok) { slot.a.textContent = res.j.detail || 'That did not work. Try again.'; return; }
+        if (res.j.by_model) { slot.a.textContent = res.j.answer; slot.by.textContent = 'Answered by ' + res.j.provider + ', from this case only.'; }
+        else { slot.a.textContent = res.j.error; }
+      })
+      .catch(function () { slot.a.classList.remove('waiting'); slot.a.textContent = 'Could not reach Triagle. Check the connection and ask again.'; })
+      .then(function () { box.querySelectorAll('button').forEach(function (b) { b.disabled = false; }); });
+  }
+  form.addEventListener('submit', function (e) { e.preventDefault(); ask(input.value); });
+  box.querySelectorAll('[data-q]').forEach(function (b) { b.addEventListener('click', function () { ask(b.getAttribute('data-q')); }); });
+})();
+</script>
+{% endmacro %}

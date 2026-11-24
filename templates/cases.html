@@ -8,9 +8,9 @@
     <thead><tr><th style="width:92px">Severity</th><th>Case</th><th>Asset</th><th>Customer</th><th>Alerts</th><th>Tools</th><th>Waiting on you</th><th>Next report</th><th>First seen</th></tr></thead>
     <tbody>
     {% for c in cases %}
-    <tr class="link sev-{{ c.severity }}" data-href="/report/{{ c.inc.id }}">
+    <tr class="link sev-{{ c.severity }}" data-href="/case/{{ c.inc.id }}">
       <td class="stripe"><span class="sev {{ c.severity }}">{{ c.severity|capitalize }}</span></td>
-      <td><a class="primary" href="/report/{{ c.inc.id }}">{{ c.uc.name if c.uc else c.inc.key }}</a>{% if c.uc and c.uc.technique %} <span class="technique">{{ c.uc.technique }}</span>{% endif %}
+      <td><a class="primary" href="/case/{{ c.inc.id }}">{{ c.uc.name if c.uc else c.inc.key }}</a>{% if c.uc and c.uc.technique %} <span class="technique">{{ c.uc.technique }}</span>{% endif %}
         <span class="sub">{{ c.inc.id }}</span></td>
       <td class="nowrap">{{ c.inc.key }}</td>
       <td>{{ c.inc.client }}</td>

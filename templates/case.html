@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% import "_parts.html" as parts %}
+{% block title %}{{ incident.id }} · Triagle{% endblock %}
+{% block heading %}<a href="/cases" style="text-decoration:none"><span class="crumb">Cases /</span></a> {{ incident.id }}{% endblock %}
+{% block top_actions %}<a class="btn small" href="/report/{{ incident.id }}">Client report</a>{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <div class="what">
+    <h2><span class="sev {{ severity }}">{{ severity|capitalize }}</span> {{ uc.name if uc else incident.key }}</h2>
+    <div class="meta">
+      <span>Asset <b>{{ incident.key }}</b></span>
+      <span>Customer <b>{{ incident.client }}</b></span>
+      <span>Sector <b>{{ sector }}</b></span>
+      {% if uc and uc.technique %}<span>Technique <b class="mono">{{ uc.technique }}</b>, {{ uc.tactic }}</span>{% endif %}
+      {% if uc and uc.catalogued %}<span>Use case <b>{{ uc.id }}</b></span>{% endif %}
+    </div>
+    {% if uc %}<p class="question">{{ uc.question }}</p>{% endif %}
+  </div>
+</div>
+
+<ol class="stages">
+  {% for st in stages %}
+  <li class="stage {{ st.state }}">
+    <div class="name">{{ st.name }}</div>
+    <div class="note">{{ st.note }}</div>
+    <div class="when">{% if st.due_iso %}<span data-due="{{ st.due_iso }}" data-hours="{{ st.hours }}"></span> left{% else %}{{ st.when }}{% endif %}</div>
+  </li>
+  {% endfor %}
+</ol>
+
+{% if notice %}<div class="callout warn" style="margin-bottom:16px;">{{ notice }}</div>{% endif %}
+
+<div class="cols">
+  <div class="stack">
+    <section class="panel">
+      <header><h2>What happened</h2><span class="by" id="notes-by" style="margin-left:auto;"></span></header>
+      <div class="body"><dl class="notes" id="notes"><dt></dt><dd class="waiting">Writing the account from the evidence…</dd></dl></div>
+    </section>
+
+    <section class="panel">
+      <header><h2>Timeline</h2><span class="n">{{ members|length }} in the case{% if timeline|length > members|length %}, {{ timeline|length - members|length }} shown as context{% endif %}</span></header>
+      <div class="scroll-x"><table class="tbl tl">
+        <thead><tr><th>Time (IST)</th><th>What</th><th>Source</th><th>Triagle's verdict</th></tr></thead>
+        <tbody>
+        {% for r in timeline %}{% set a = r.alert %}{% set v = r.verdict %}
+        {% if r.context %}
+        <tr class="link context" data-href="/alert/{{ a.alert_id }}">
+          <td class="t stripe">{{ a.timestamp|ist_short }}</td>
+          <td><a class="primary" href="/alert/{{ a.alert_id }}">{{ r.uc.name }}</a>
+            <span class="sub mono" style="max-width:60ch" title="{{ a.indicators.cmdline or a.indicators.target_file or a.title }}">{{ a.indicators.cmdline or a.indicators.target_file or a.title }}</span></td>
+          <td class="nowrap">{{ source_name(a.source) }}</td>
+          <td><span class="tag">context</span> {{ closure_words(v.closure_code) }}</td>
+        </tr>
+        {% else %}
+        <tr class="link sev-{{ v.severity if v.escalate else 'low' }}" data-href="/alert/{{ a.alert_id }}">
+          <td class="t stripe">{{ a.timestamp|ist_short }}</td>
+          <td><a class="primary" href="/alert/{{ a.alert_id }}">{{ r.uc.name }}</a>
+            {% if r.uc.catalogued and a.title != r.uc.name %}<span class="sub" title="{{ a.title }}">{{ a.title }}</span>{% endif %}
+            {% if a.indicators.cmdline %}<span class="cmd">{{ a.indicators.cmdline[:260] }}</span>
+            {% elif a.indicators.target_file %}<span class="cmd">{{ a.indicators.target_file }}</span>{% endif %}</td>
+          <td class="nowrap">{{ source_name(a.source) }}{% if a.user %}<span class="sub">{{ a.user }}</span>{% endif %}</td>
+          <td>{% if v.escalate %}{{ verdict_words(v.disposition) }} <span style="color:var(--text-3)">{{ v.confidence }}%</span>
+              {% else %}{{ closure_words(v.closure_code) }}{% endif %}
+            <span class="sub" style="white-space:normal; max-width:44ch;">{{ v.summary }}</span></td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+        </tbody>
+      </table></div>
+    </section>
+
+    <section class="panel">
+      <header><h2>What Triagle checked</h2><span class="n">{{ steps|length }} steps</span></header>
+      <div class="body">
+        {% if steps %}<ol class="steps">{% for st in steps %}<li>{{ st.did }}<span class="found">{{ st.found }}</span></li>{% endfor %}</ol>
+        {% else %}<p class="note">These alerts were settled by their own evidence, without a wider investigation.</p>{% endif %}
+        <p class="by" style="margin-top:12px;">The verdicts on this page come from rules, the same way every time. The model writes the account and answers questions; it does not decide.</p>
+      </div>
+    </section>
+
+    {% if indicators %}
+    <section class="panel">
+      <header><h2>Indicators</h2><span class="n">{{ indicators|length }} checked</span></header>
+      <div class="scroll-x"><table class="tbl">
+        <thead><tr><th>Indicator</th><th>Type</th><th>Reputation</th><th>Why</th></tr></thead>
+        <tbody>{% for r in indicators %}
+          <tr><td class="mono" style="overflow-wrap:anywhere">{{ r.indicator }}</td><td>{{ r.type }}</td>
+            <td><span class="tag {% if r.verdict == 'malicious' %}bad{% elif r.verdict == 'suspicious' %}warn{% endif %}">{{ r.verdict }}</span></td>
+            <td style="color:var(--text-2)">{{ r.note }}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    </section>
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    <section class="panel">
+      <header><h2>Response</h2><span class="n">{{ actions|length }}</span></header>
+      {% if actions %}{% for act in actions %}{{ parts.action_card(act, csrf, can_approve, '/case/' ~ incident.id) }}{% endfor %}
+      {% else %}<div class="empty"><b>No action proposed.</b>Nothing in this case has a safe, specific containment step.</div>{% endif %}
+    </section>
+
+    <section class="panel">
+      <header><h2>Reports due</h2><a class="more" href="/clock#{{ incident.id }}">Reporting</a></header>
+      {% if clock %}
+      <div class="dues">
+        {% for row in clock.rows %}{% if row.status in ['running', 'overdue'] %}{{ parts.due_item(row, incident) }}
+        {% elif row.status == 'filed' %}<div class="due done"><span class="who">{{ row.name }}</span><span class="left">Filed</span><span class="what">{{ row.note }}</span></div>
+        {% else %}<div class="due"><span class="who" style="color:var(--text-2)">{{ row.name }}</span><span class="what" style="grid-column:1/-1">{{ row.note }}</span></div>{% endif %}{% endfor %}
+      </div>
+      <div class="body" style="border-top:1px solid var(--line);"><p class="by">The clock started {{ clock.noticed_at }}, at the first alert judged an attack on its own evidence. Triagle drafts each report; a person sends it.</p>
+        <div class="inline-forms" style="margin-top:9px;">{% for row in clock.rows %}{% if loop.first or row.regulator != clock.rows[loop.index0 - 1].regulator %}<a class="btn small" href="/notice/{{ incident.id }}/{{ row.regulator }}">{{ row.name }} draft</a>{% endif %}{% endfor %}</div></div>
+      {% elif probing %}
+      <div class="empty"><b>No report due.</b>Probing from outside, with no sign it worked. If that changes, the clock starts.</div>
+      {% else %}
+      <div class="empty"><b>No report due.</b>Nothing in this case has been judged an attack on its own evidence.</div>
+      {% endif %}
+    </section>
+
+    {{ parts.ask_box(incident.id, ask_suggested, model) }}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{{ parts.ask_script(csrf) }}
+<script>
+(function () {
+  var dl = document.getElementById('notes'), by = document.getElementById('notes-by');
+  fetch('/api/notes?case={{ incident.id|urlencode }}', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+    .then(function (j) {
+      dl.textContent = '';
+      j.text.split('\n').forEach(function (line) {
+        line = line.trim(); if (!line) return;
+        var i = line.indexOf(':'), dt = document.createElement('dt'), dd = document.createElement('dd');
+        if (i > 0 && i < 28) { dt.textContent = line.slice(0, i); dd.textContent = line.slice(i + 1).trim(); }
+        else { dd.textContent = line; }
+        dl.appendChild(dt); dl.appendChild(dd);
+      });
+      by.textContent = j.by_model ? 'Written by ' + j.provider + ' from the evidence below' : 'Summary built by rules. The model did not answer.';
+      if (!j.by_model && j.error) by.title = j.error;
+    })
+    .catch(function () { dl.innerHTML = ''; var dd = document.createElement('dd'); dd.textContent = 'The account could not be loaded. The timeline below is the evidence.'; dl.appendChild(document.createElement('dt')); dl.appendChild(dd); });
+})();
+</script>
+{% endblock %}

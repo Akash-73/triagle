@@ -160,8 +160,8 @@ def test_each_scenario_fires_into_its_own_tenant_with_its_own_regulators(app):
     r = app.post("/demo/fire", data={"csrf": _csrf(app), "scenario": "power"}, follow_redirects=False)
     assert r.status_code == 303 and "TPG-SCADA-HMI-04" in r.headers["location"]
     page = app.get("/clock").text
-    card = page[page.index('class="client">Tirupati Power Grid'):]
-    card = card[:card.index('class="section-label"')]
+    card = page[page.index('<h2>Tirupati Power Grid'):]
+    card = card[:card.index('</section>')]
     assert "CSIRT-Power" in card and "Power utility" in card and "not binding yet" in card
     r = app.post("/demo/fire", data={"csrf": _csrf(app), "scenario": "bank"}, follow_redirects=False)
     assert "NUB-CBS-APP-02" in r.headers["location"]
@@ -176,7 +176,7 @@ def test_recording_the_call_to_the_control_room_makes_no_system_call(app):
     res = main._load_result()
     aid, act = next((aid, a) for aid, acts in res["actions"].items() for a in acts if a["action_type"] == "ot_notify")
     page = app.get(f"/alert/{aid}").text
-    assert "Call made — record it" in page and "Manual step — no system call" in page
+    assert "Record the call as made" in page and "Manual step — no system call" in page
     r = app.post("/action/approve", data={"alert_id": aid, "action_id": act["action_id"],
                                           "csrf": _csrf(app, f"/alert/{aid}")}, follow_redirects=False)
     assert r.status_code == 303

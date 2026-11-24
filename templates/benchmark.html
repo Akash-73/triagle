@@ -1,69 +1,23 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Benchmark — Triagle</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root { --bg:#0a0e14; --panel:#111722; --panel2:#161d2b; --line:#222c3d; --text:#dbe4f0;
-    --muted:#7d8ba3; --eye:#38bdf8; --escalate:#ff5d5d; --flag:#ffb443; --benign:#46d68a; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { background:var(--bg); color:var(--text); font-family:'Sora',sans-serif; -webkit-font-smoothing:antialiased; }
-  .mono { font-family:'IBM Plex Mono',monospace; }
-  header { display:flex; align-items:center; justify-content:space-between; padding:18px 28px; border-bottom:1px solid var(--line); }
-  header a { color:var(--eye); text-decoration:none; font-size:14px; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
-  .brand { display:flex; align-items:center; gap:11px; font-weight:700; font-size:20px; }
-  .brand .eye { width:28px; height:28px; border-radius:50%; background:radial-gradient(circle at 50% 50%, var(--eye) 0 22%, #0a0e14 23% 42%, var(--eye) 43% 50%, transparent 51%); box-shadow:0 0 16px rgba(56,189,248,0.5); }
-  main { padding:28px; max-width:1000px; margin:0 auto; }
-  h1 { font-size:24px; margin-bottom:6px; }
-  .sub { color:var(--muted); font-size:14px; margin-bottom:24px; max-width:640px; }
-  .rule { background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--muted); border-radius:10px; padding:16px 18px; margin-bottom:12px; }
-  .rule.flagged { border-left-color:var(--flag); background:linear-gradient(135deg, rgba(255,180,67,0.06), var(--panel)); }
-  .rname { font-weight:600; font-size:14.5px; margin-bottom:8px; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
-  .bars { display:flex; gap:20px; font-size:13px; color:var(--muted); margin-bottom:8px; }
-  .bars b { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
-  .signal { color:var(--benign); } .noise { color:var(--flag); }
-  .flagpill { display:inline-block; font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:11px; padding:2px 9px; border-radius:20px; background:rgba(255,180,67,0.15); color:var(--flag); margin-left:8px; }
-  .rec { font-size:13px; color:#c3cede; background:var(--panel2); border-radius:8px; padding:11px 14px; margin-top:8px; }
-
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin:18px 0 22px; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
-  .card .n { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:26px; font-weight:700; }
-  .card .l { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-top:2px; }
-  .card.bad .n { color:var(--escalate); } .card.ok .n { color:var(--benign); } .card.warn .n { color:var(--flag); }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
-  th { color:var(--muted); font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
-  td.m { font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-size:12px; }
-  .o-MISSED { color:var(--escalate); font-weight:700; } .o-false-escalation { color:var(--flag); }
-  .o-caught, .o-closed { color:var(--benign); } .o-ambiguous { color:var(--muted); }
-  .note { background:var(--panel2); border:1px solid var(--line); border-left:3px solid var(--flag); border-radius:8px; padding:12px 15px; font-size:13px; line-height:1.55; color:#c3cede; margin-bottom:22px; }
-</style>
-</head>
-<body>
-<header>
-  <div class="brand"><span class="eye"></span> Triagle</div>
-  <div><a href="/">← Queue</a> &nbsp;&nbsp; <a href="/tuning">Tuning</a></div>
-</header>
-<main>
-  <h1>Benchmark</h1>
-  <p class="sub">{{ summary.all.alerts }} labelled, simulated alerts run through the same engine as the live queue ({{ backend }} backend) in {{ ms }} ms.</p>
-  <div class="grid">
-    <div class="card {% if summary.all.missed %}bad{% else %}ok{% endif %}"><div class="n">{{ summary.all.missed }} / {{ summary.all.threats }}</div><div class="l">Real threats missed</div></div>
-    <div class="card ok"><div class="n">{{ summary.all.catch_rate_pct }}%</div><div class="l">Threats escalated</div></div>
-    <div class="card {% if summary.all.false_escalations %}warn{% else %}ok{% endif %}"><div class="n">{{ summary.all.false_escalations }} / {{ summary.all.benign }}</div><div class="l">Benign sent to a human</div></div>
-    <div class="card"><div class="n">{{ summary.all.benign_closed_pct }}%</div><div class="l">Benign closed with a code</div></div>
-    <div class="card"><div class="n">{{ summary.holdout.missed }} / {{ summary.holdout.threats }}</div><div class="l">Missed, holdout only</div></div>
-  </div>
-  <div class="note"><b>Read this number carefully.</b> The alerts are simulated and were written by the same person who wrote the engine. "Holdout" cases were not used to tune it, but they are not independent. This shows the engine does what it claims on known attack shapes; it is not evidence of accuracy on a real environment.</div>
-  <table>
-    <tr><th>Outcome</th><th>Scenario</th><th>Split</th><th>Alert</th><th>Verdict</th></tr>
-    {% for r in rows %}
-    <tr><td class="m o-{{ r.outcome }}">{{ r.outcome }}</td><td class="m">{{ r.scenario }}</td><td class="m">{{ r.split }}</td><td>{{ r.title }}</td><td class="m">{{ r.disposition }} · {{ r.confidence }}%</td></tr>
-    {% endfor %}
-  </table>
-</main>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Evaluation · Triagle{% endblock %}
+{% block heading %}Evaluation{% endblock %}
+{% block content %}
+<section style="margin-bottom:18px;">
+  <p class="handover"><b>{{ summary.all.alerts }}</b> labelled alerts run through the same engine as the live queue.
+    <b class="{{ 'n-crit' if summary.all.missed else '' }}">{{ summary.all.missed }}</b> of <b>{{ summary.all.threats }}</b> real threats missed.
+    <b>{{ summary.all.false_escalations }}</b> of <b>{{ summary.all.benign }}</b> benign alerts sent to a person.</p>
+  <p class="note" style="margin-top:10px;">{{ summary.all.benign_closed_pct }}% of benign alerts closed with a code. Holdout cases only: {{ summary.holdout.missed }} of {{ summary.holdout.threats }} missed. Run in {{ ms }} ms.</p>
+</section>
+<div class="callout" style="margin-bottom:16px; max-width:100ch;"><b>Read these numbers carefully.</b> The alerts are simulated and were written by the same person who wrote the engine. Holdout cases were not used to tune it, but they are not independent. This shows the engine does what it claims on known attack shapes. It is not evidence of accuracy in a real environment.</div>
+<section class="panel">
+  <header><h2>Every case</h2><span class="n">{{ rows|length }}</span></header>
+  <div class="scroll-x"><table class="tbl">
+    <thead><tr><th style="width:150px">Outcome</th><th style="width:20%">Scenario</th><th style="width:90px">Split</th><th>Alert</th><th style="width:20%">Verdict</th></tr></thead>
+    <tbody>{% for r in rows %}
+    <tr><td><span class="tag {% if 'missed' in r.outcome %}bad{% elif 'false' in r.outcome %}warn{% endif %}">{{ r.outcome.replace('_', ' ') }}</span></td>
+      <td>{{ r.scenario }}</td><td>{{ r.split }}</td><td>{{ r.title }}</td>
+      <td>{{ verdict_words(r.disposition) }} <span style="color:var(--text-3)">{{ r.confidence }}%</span></td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}
