@@ -338,7 +338,8 @@ def test_demo_clock_keeps_order_and_puts_window_in_the_future(monkeypatch):
     try:
         c = _signed_in()
         page = c.get("/certin/MRD-FIN-07").text
-        assert "Demo clock is on" in page and ">window passed<" not in page and 'class="c good"><div class="l">Time left' in page
+        assert "samples that ship with Triagle" in page, "a draft built from sample alerts says their times were moved"
+        assert 'data-due="' in page and 'class="due late"' not in page, "the window is running, not passed"
         times = [a["timestamp"] for a in main._CACHE["result"]["alerts"] if a["client"] == "Meridian Textiles"]
         assert times == sorted(times)
     finally:

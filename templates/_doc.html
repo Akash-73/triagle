@@ -1,0 +1,42 @@
+{# Shared pieces of the printable documents: the head, the mark, the countdown. #}
+
+{% macro head(title, asset_v) %}
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }}</title>
+<link rel="preload" href="/static/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/triagle.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/document.css?v={{ asset_v }}">
+{% endmacro %}
+
+{% macro brand() %}
+<span class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><b>Triagle</b></span>
+{% endmacro %}
+
+{# Any element with data-due shows the time left and turns its row amber, then red. #}
+{% macro due_script() %}
+<script>
+(function () {
+  function fmt(ms) {
+    var s = Math.floor(Math.abs(ms) / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    var t = (h ? h + 'h ' : '') + String(m).padStart(2, '0') + 'm ' + String(x).padStart(2, '0') + 's';
+    return ms < 0 ? t + ' over' : t;
+  }
+  function tick() {
+    document.querySelectorAll('[data-due]').forEach(function (el) {
+      var iso = el.getAttribute('data-due'); if (!iso) return;
+      var ms = new Date(iso) - new Date();
+      el.textContent = fmt(ms);
+      var row = el.closest('.due');
+      if (row) {
+        row.classList.toggle('late', ms < 0);
+        row.classList.toggle('soon', ms >= 0 && ms < 3600000);
+        var bar = row.querySelector('.meter i'), total = Number(el.getAttribute('data-hours') || 0) * 3600000;
+        if (bar && total) bar.style.width = Math.max(0, Math.min(100, 100 - (ms / total) * 100)) + '%';
+      }
+    });
+  }
+  tick(); setInterval(tick, 1000);
+})();
+</script>
+{% endmacro %}

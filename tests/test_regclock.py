@@ -191,7 +191,7 @@ def test_clock_page_lists_each_regulator_for_the_clients_sector(app):
 def test_a_draft_is_addressed_to_the_regulator_asked_for(app):
     inc = _inc("Sterling Securities")
     page = app.get(f"/notice/{inc['id']}/sebi").text
-    assert "SEBI INCIDENT REPORT — DRAFT" in page and "Cybersecurity and Cyber Resilience Framework" in page
+    assert "Draft report to SEBI" in page and "Cybersecurity and Cyber Resilience Framework" in page
     assert "Other deadlines on this incident" in page and f"/notice/{inc['id']}/certin" in page
     assert app.get(f"/notice/{inc['id']}/nobody").status_code == 404
     wrong = app.get(f"/notice/{inc['id']}/rbi").text                       # a broker does not report to the RBI

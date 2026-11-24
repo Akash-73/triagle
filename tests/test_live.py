@@ -266,3 +266,30 @@ def test_a_cases_account_is_written_once_however_many_ask_at_the_same_time(site,
         t.join()
     assert len(calls) == 1, "the page that opens the case does not ask the model again"
     assert [x["text"] for x in answers] == ["Written account."] * 3 and all(x["by_model"] for x in answers)
+
+
+# ---- the documents a case produces ------------------------------------------------
+
+def test_the_report_does_not_call_a_rehearsed_action_done(site):
+    a = analyst()
+    out, _ = send(a, kind="intrusion")
+    page = a.get(f"/report/{out['case']}").text
+    assert "Incident report " + out["case"] in page and "Northgate Urban Co-operative Bank" in page
+    assert "rehearsed" in page and "not connected to this deployment" in page
+    assert "auto-contained" not in page.lower() and "contained" not in page.lower()
+    assert "waiting for approval" in page.lower()
+    for old_wording in ("for this demo", "in production", "AI SOC analyst", "dry-run"):
+        assert old_wording not in page, old_wording
+    assert " IST" in page.split('class="about"')[1].split("</div>")[0], "the report's own time is in IST, like the alerts'"
+
+
+def test_a_draft_from_alerts_that_arrived_does_not_talk_about_moved_times(site, monkeypatch):
+    monkeypatch.setenv("TRIAGLE_DEMO_CLOCK", "true")
+    main._CACHE.clear()
+    a = analyst()
+    out, _ = send(a, kind="intrusion")
+    draft = a.get(f"/notice/{out['case']}/certin").text
+    assert "Draft report to CERT-In" in draft and "nothing has been filed" in draft
+    assert "samples that ship with Triagle" not in draft, "these alerts arrived; their times are their own"
+    assert "CrowdStrike" in draft and "crowdstrike_edr" not in draft, "tools are named as people know them"
+    assert 'data-due="' in draft

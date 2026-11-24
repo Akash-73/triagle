@@ -41,7 +41,13 @@ SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 app = FastAPI(title="Triagle", version="0.8.0", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
-ASSET_V = str(int(os.path.getmtime(os.path.join(BASE_DIR, "static", "triagle.css"))))
+def _asset_version():
+    """Changes whenever a stylesheet does, so a browser never keeps an old one."""
+    static = os.path.join(BASE_DIR, "static")
+    return str(int(max(os.path.getmtime(os.path.join(static, f)) for f in os.listdir(static) if f.endswith(".css"))))
+
+
+ASSET_V = _asset_version()
 templates.env.globals.update(
     source_name=sources_meta.source_name,
     source_full=sources_meta.source_full,
@@ -1334,51 +1340,74 @@ def incident_report(request: Request, entity: str, user=Depends(require_user)):
         if k not in _best or _rank.get(a.get("status"), 0) > _rank.get(_best[k].get("status"), 0):
             _best[k] = a
     inc_actions = list(_best.values())
-    auto_actions = [a for a in inc_actions if a.get("policy") == "auto"]
+    # What became of each action, said plainly: an action whose tool is not
+    # connected here was prepared and recorded, not carried out, and a report
+    # that goes to a customer must not call that "contained".
+    finished = ("auto_executed", "executed", "approved")
+    rehearsed = [a for a in inc_actions if a.get("status") in finished
+                 and str(a.get("result_message") or "").startswith("Rehearsal:")]
+    carried_out = [a for a in inc_actions if a.get("status") in finished and a not in rehearsed]
     pending_actions = [a for a in inc_actions if a.get("status") == "pending"]
-    approved_actions = [a for a in inc_actions
-                        if a.get("status") in ("executed", "approved")
-                        and "auto-policy" not in (a.get("decided_by") or "")]
     declined_actions = [a for a in inc_actions if a.get("status") == "declined"]
-    done = len(auto_actions) + len(approved_actions)
-    pending = len(pending_actions)
-    declined = len(declined_actions)
     bits = []
-    if done:
-        bits.append(f"{done} contained")
-    if declined:
-        bits.append(f"{declined} declined by analyst")
-    if pending:
-        bits.append(f"{pending} awaiting your approval")
-    if not inc_actions:
-        outcome = "No containment actions required for this incident."
-    elif pending:
-        outcome = "Partly contained — " + ", ".join(bits) + "."
-    else:
-        outcome = "Resolved — " + ", ".join(bits) + "."
+    if carried_out:
+        bits.append(f"{len(carried_out)} carried out")
+    if rehearsed:
+        bits.append(f"{len(rehearsed)} rehearsed")
+    if pending_actions:
+        bits.append(f"{len(pending_actions)} waiting for approval")
+    if declined_actions:
+        bits.append(f"{len(declined_actions)} declined")
     intel_summary = {
         "indicators": indicators,
+        "flagged": [r for r in indicators if r["verdict"] in ("malicious", "suspicious")],
         "malicious_count": sum(1 for r in indicators if r["verdict"] == "malicious"),
-        "sources_consulted": sorted({s[0] for r in indicators for s in r.get("sources", [])}),
-        "auto_actions": auto_actions,
-        "pending_count": len(pending_actions),
         "actions": inc_actions,
-        "outcome": outcome,
+        "rehearsed_count": len(rehearsed),
+        "outcome": ", ".join(bits) if bits else "",
     }
+
+    escalated = [m for m in members if m["verdict"].get("escalate")]
+    kinds = {m["verdict"].get("disposition") for m in escalated}
+    judgement = ("attack" if "true_positive" in kinds else "suspicious" if "suspicious" in kinds
+                 else "undecided" if escalated else "routine")
+    worst = min((_SEV_ORDER.get(m["verdict"].get("severity"), 9) for m in escalated), default=9)
+    next_steps = []
+    for m in escalated:
+        for step in m["verdict"].get("recommended_actions") or []:
+            if step not in next_steps:
+                next_steps.append(step)
 
     return templates.TemplateResponse(request, "report.html", {
         "incident": incident,
         "members": members,
         "client_name": client_name,
         "any_escalated": any_escalated,
-        "reportable": certin.is_reportable_candidate(members),
+        "judgement": judgement,
+        "severity": {v: k for k, v in _SEV_ORDER.items()}.get(worst, "low"),
+        "uc": usecases.for_case(members),
         "clock": _clock(result, incident, members),
-        "work_notes": notes_text,
+        "notes": _note_pairs(notes_text),
         "work_notes_by_gemini": notes_by_gemini,
         "work_notes_provider": notes_provider,
         "intel": intel_summary,
-        "now": datetime.datetime.now().strftime("%d %b %Y, %H:%M"),
+        "next_steps": next_steps[:8],
+        "now": datetime.datetime.now(_IST).strftime("%d %b %Y, %H:%M") + " IST",
+        "asset_v": ASSET_V,
     })
+
+
+def _note_pairs(text):
+    """The written account as (label, text) pairs: 'What happened: ...' is a
+    label and its text; a line without a short label is text alone."""
+    out = []
+    for line in str(text or "").split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        i = line.find(":")
+        out.append((line[:i], line[i + 1:].strip()) if 0 < i < 28 else ("", line))
+    return out
 
 
 def _notice(request, entity, reg_key):
@@ -1400,9 +1429,14 @@ def _notice(request, entity, reg_key):
                                threat_intel=_load_env().get("threat_intel"))
     mine = [r for r in clock["rows"] if r["regulator"] == reg_key]
     others = [r for r in clock["rows"] if r["regulator"] != reg_key]
+    # Sample alerts have their times moved when the demo clock is on. Say so
+    # on a draft built from them, and only there: an alert that arrived from
+    # a tool keeps its own time.
+    arrived = {m[0] for m in _CACHE.get("live_meta", [])}
+    shifted = bool(result["metrics"].get("demo_clock")) and any(i not in arrived for i in incident["alert_ids"])
     return templates.TemplateResponse(request, "certin.html", {
-        "d": draft, "metrics": result["metrics"], "reg": dict(reg, key=reg_key),
-        "rows": mine, "others": others, "clock": clock, "incident": incident,
+        "d": draft, "reg": dict(reg, key=reg_key), "rows": mine, "others": others, "clock": clock,
+        "incident": incident, "sample_times_moved": shifted, "asset_v": ASSET_V,
     })
 
 
