@@ -1,6 +1,8 @@
 # =====================================================================
 #  Triagle demo - endpoint reconnaissance + obfuscation chain
-#  Run on the LAPTOP enrolled in Wazuh, in an elevated PowerShell.
+#  Run on the LAPTOP enrolled in Wazuh: double-click
+#  triagle_detection_test.cmd beside this file, or run this script in
+#  PowerShell. It does not need to be run as administrator.
 #
 #  This is a DETECTION TEST (adversary simulation). Every command below
 #  is non-destructive:

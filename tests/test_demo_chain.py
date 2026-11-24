@@ -226,3 +226,23 @@ def test_the_folder_name_alone_is_not_enough():
         r = process_batch([item])
         v = r["verdicts"][r["alerts"][0]["alert_id"]]
         assert v["escalate"], item["raw"]["data"]["win"]["eventdata"]
+
+
+# ---- the double-click launcher for the detection test ------------------------
+
+def test_the_launcher_only_runs_the_test_script_beside_it():
+    """The demo is run by double-clicking a file, not by typing commands. The
+    launcher must do one thing: run recon_chain.ps1 from its own folder. It
+    downloads nothing and is plain ASCII with Windows line endings, so cmd.exe
+    reads it the same on any machine."""
+    import os
+    here = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "demo")
+    raw = open(os.path.join(here, "triagle_detection_test.cmd"), "rb").read()
+    raw.decode("ascii")
+    assert b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b"")
+    lines = [x for x in raw.decode().split("\r\n") if x and not x.lower().startswith(("rem ", "@echo", "title "))]
+    runs = [x for x in lines if "powershell" in x.lower()]
+    assert runs == ['powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0recon_chain.ps1"']
+    lowered = raw.decode().lower()
+    assert not any(w in lowered for w in ("http", "curl", "invoke-webrequest", "bitsadmin", "certutil", "del ", "reg "))
+    assert os.path.exists(os.path.join(here, "recon_chain.ps1"))
