@@ -1,0 +1,101 @@
+{% import "_doc.html" as doc %}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+{{ doc.head('Morning report · Triagle', asset_v) }}
+</head>
+<body class="doc">
+<div class="docbar">
+  <a href="/">Back to the overview</a>
+  <div class="right">
+    {% if f %}
+    {% for c in customers %}{% if c != f.client %}<a class="btn small" href="/morning?client={{ c|urlencode }}&amp;hours={{ f.hours }}" title="The morning report for this customer">{{ c }}</a>{% endif %}{% endfor %}
+    {% for h in hours_options %}<a class="btn small" href="/morning?client={{ f.client|urlencode }}&amp;hours={{ h }}"{% if h == f.hours %} aria-current="true" style="font-weight:650; border-color:var(--text-2);"{% endif %}>{{ h }} hours</a>{% endfor %}
+    {% endif %}
+    <button class="btn small primary" type="button" onclick="window.print()">Save as PDF</button>
+  </div>
+</div>
+
+<article class="sheet">
+  <header>
+    {{ doc.brand() }}
+    <div class="about"><b>Morning report</b>{% if f %}Prepared for {{ f.client }}<br>{{ f.from }} to {{ f.to }}{% else %}{{ now }}{% endif %}</div>
+  </header>
+
+  <div class="page">
+    {% if f %}
+    <h1>The last {{ f.hours }} hours</h1>
+    <p class="lead" id="summary">{{ fallback }}</p>
+    <p class="small" id="summary-by" style="margin-top:6px;">Summary built from the figures below, without the model.</p>
+
+    <h2>In figures</h2>
+    <table class="tbl">
+      <tbody>
+        <tr><td>Alerts that arrived</td><td class="num">{{ f.arrived }}</td><td class="small"></td></tr>
+        <tr><td>Closed by Triagle with a reason</td><td class="num">{{ f.closed }}</td><td class="small">{% if f.repeats or f.taught %}{{ f.repeats }} were repeats of an alert already raised{% if f.taught %}, {{ f.taught }} were closed on a rule your analysts taught{% endif %}{% endif %}</td></tr>
+        <tr><td>Sent to a person</td><td class="num">{{ f.raised }}</td><td class="small">{{ f.decided }} decided so far</td></tr>
+        <tr><td>Waiting for a decision now</td><td class="num">{{ f.open_items|length }}</td><td class="small">Everything still open, not only this period</td></tr>
+        <tr><td>Response actions approved</td><td class="num">{{ f.approved }}</td><td class="small">{{ f.waiting }} waiting for approval</td></tr>
+        <tr><td>Reports to a regulator due</td><td class="num">{{ f.due }}</td><td class="small"></td></tr>
+      </tbody>
+    </table>
+    {% if f.reasons %}<p class="small" style="margin-top:8px;">Why alerts were closed: {% for words, n in f.reasons %}{{ n }} {{ words }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
+
+    <h2>Needs an answer <span class="n">{{ f.open_items|length }}</span></h2>
+    {% if f.open_items %}
+    <table class="tbl">
+      <thead><tr><th style="width:30%">What</th><th style="width:20%">Where</th><th>The question to answer</th></tr></thead>
+      <tbody>{% for i in f.open_items %}
+      <tr><td><a href="/alert/{{ i.id }}">{{ i.name }}</a>{% if i.count > 1 %} <span class="tag">{{ i.count }} alerts</span>{% endif %}{% if i.new %} <span class="tag warn">New</span>{% endif %}<span class="sub">{{ i.severity|capitalize }}, detected {{ i.when }}</span></td>
+        <td>{{ i.host }}{% if i.user %}<span class="sub">account {{ i.user }}</span>{% endif %}</td>
+        <td>{{ i.question }}<span class="sub">{{ i.summary }}</span></td></tr>
+      {% endfor %}</tbody>
+    </table>
+    {% else %}<p class="small">Nothing is waiting for a decision.</p>{% endif %}
+
+    {% if f.cases %}
+    <h2>Open cases <span class="n">{{ f.cases|length }}</span></h2>
+    <table class="tbl">
+      <thead><tr><th>Case</th><th>Centred on</th><th style="width:110px">Severity</th><th class="num" style="width:80px">Alerts</th></tr></thead>
+      <tbody>{% for c in f.cases %}<tr><td><a href="/case/{{ c.id }}">{{ c.name }}</a><span class="sub">{{ c.id }}</span></td><td>{{ c.key }}</td><td>{{ c.severity|capitalize }}</td><td class="num">{{ c.alerts }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% endif %}
+
+    <h2>For the day shift</h2>
+    {% if f.open_items %}
+    <ol class="plain">{% for i in f.open_items %}<li><b>{{ i.name }}</b> on {{ i.host }}{% if i.user %}, account {{ i.user }}{% endif %}. {{ i.next or 'Decide what it was and close it with the outcome.' }}</li>{% endfor %}</ol>
+    {% else %}<p class="small">Nothing to hand over. The queue is clear.</p>{% endif %}
+
+    {% if f.tune %}
+    <h2>Rules to fix at the source</h2>
+    <table class="tbl">
+      <thead><tr><th style="width:36%">Rule</th><th class="num" style="width:70px">Fired</th><th>What to do</th></tr></thead>
+      <tbody>{% for r in f.tune %}<tr><td>{{ r.title }}<span class="sub">{{ source_name(r.source) }}{% if r.rule_id %}, rule {{ r.rule_id }}{% endif %}</span></td><td class="num">{{ r.volume }}</td><td>{{ r.recommendation }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% endif %}
+    {% else %}
+    <h1>No alerts yet</h1>
+    <p class="lead">The morning report appears once a connected tool has sent alerts.</p>
+    {% endif %}
+  </div>
+
+  <footer>The figures and rows are Triagle's own record. The summary at the top is written from them: by Gemini when a signed-in analyst opens this page, otherwise by rule. Nothing here was sent to anyone; an analyst sends it.</footer>
+</article>
+{% if f %}
+<script>
+(function () {
+  var by = document.getElementById('summary-by'), box = document.getElementById('summary');
+  fetch('/api/morning?client={{ f.client|urlencode }}&hours={{ f.hours }}', { headers: { 'Accept': 'application/json' } })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (!d || !d.text) return;
+      box.textContent = d.text;
+      by.textContent = d.by_model ? 'Written by ' + d.provider + ' from the figures below' + (d.written ? ', ' + d.written : '') + '.'
+                                  : 'Summary built from the figures below, without the model.';
+    })
+    .catch(function () {});
+})();
+</script>
+{% endif %}
+</body>
+</html>

@@ -19,6 +19,7 @@
       <a href="/alerts" {% if active == 'alerts' %}aria-current="page"{% endif %}>Alerts{% if nav.escalated %}<span class="count is-urgent" title="Alerts that need a decision">{{ nav.escalated }}</span>{% endif %}</a>
       <a href="/cases" {% if active == 'cases' %}aria-current="page"{% endif %}>Cases{% if nav.cases %}<span class="count">{{ nav.cases }}</span>{% endif %}</a>
       <a href="/clock" {% if active == 'clock' %}aria-current="page"{% endif %}>Reporting{% if nav.due %}<span class="count {% if nav.overdue %}is-urgent{% else %}is-due{% endif %}" title="Reports due to a regulator">{{ nav.due }}</span>{% endif %}</a>
+      <a href="/morning" {% if active == 'morning' %}aria-current="page"{% endif %}>Morning report</a>
       <div class="group">Set up</div>
       <a href="/connectors" {% if active == 'connectors' %}aria-current="page"{% endif %}>Connectors</a>
       <a href="/tuning" {% if active == 'tuning' %}aria-current="page"{% endif %}>Detection tuning{% if nav.rules %}<span class="count">{{ nav.rules }}</span>{% endif %}</a>

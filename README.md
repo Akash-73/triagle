@@ -210,6 +210,34 @@ The model's cost is counted from the token figures the API returns with each ans
 the published price of the default model. Set `TRIAGLE_PRICE_IN` and
 `TRIAGLE_PRICE_OUT` if the price list or the model changes.
 
+## The night analyst's paperwork
+
+One analyst on a night shift does four jobs: watches the queue, writes the report for
+the morning call with the customer, mails users to ask "was this you?", and writes the
+handover. The engine does the first. Gemini does the writing for the other three.
+
+- **Morning report** (`/morning`): one customer, the last 8, 12 or 24 hours. Figures,
+  what needs the customer's answer and the question to ask, open cases, the handover
+  for the day shift and the rules to fix. The summary at the top is written by Gemini
+  from those figures when a signed-in analyst opens the page; a visitor sees the last
+  one written, or a plain summary built by rule.
+- **Ask the user**: on an alert that names an account, "Draft the message" writes the
+  mail that asks the owner whether it was them. The analyst sends it, changes it or
+  throws it away. Nothing is sent from Triagle.
+- **Second reading**: on Spot checks, "Ask Gemini to read these" has the model read
+  back over the engine's closures and say which it would look at again, with a
+  reason. Those are listed first. It changes no verdict.
+
+**What the model learns from.** Before it writes or reads, Gemini is given what the
+engine decided and why, and what this customer's own analysts decided before: the
+rules they taught, the alerts they closed themselves and the closures they disagreed
+with. That is in context, on every call. Nothing is sent anywhere for training.
+
+**Why the engine comes first.** The engine settles every alert in milliseconds and the
+same way every time, so the model is only called where language or a second opinion
+adds something: a case, a report, a message, a review. The cost of that is counted
+and shown under Connectors, Model.
+
 ## Telling the SIEM what to fix
 
 The Detection tuning page looks at the rule behind each alert: what the tool

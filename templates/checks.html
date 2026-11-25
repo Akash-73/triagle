@@ -5,6 +5,7 @@
 {% block content %}
 <p class="note" style="max-width:86ch; margin-bottom:16px;">Triagle closes most alerts on its own. This page is how you find out whether it should have. It offers a sample of its closures, taken across every reason for closing and every detection rule, and you say whether you agree. If you disagree, the alert goes back to the queue and the disagreement is counted against Triagle.</p>
 
+{% if notice %}<div class="callout" style="margin-bottom:16px;">{{ notice }}</div>{% endif %}
 <section style="margin-bottom:20px;">
   <p class="handover">
     {% if tally.checked %}<b>{{ tally.checked }}</b> closure{{ '' if tally.checked == 1 else 's' }} checked by a person.
@@ -12,19 +13,22 @@
     Agreement <b>{{ tally.pct }}%</b>.
     {% else %}No closure has been checked yet.{% endif %}
     <b>{{ waiting }}</b> more could be checked.
+    {% if second.read %}Gemini has read <b>{{ second.read }}</b> as a second reader and would look again at <b>{{ second.look }}</b>.{% endif %}
   </p>
 </section>
 
 <section class="panel" id="next">
-  <header><h2>Check these next</h2><span class="n">{{ rows|length }} of {{ waiting }}</span></header>
+  <header><h2>Check these next</h2><span class="n">{{ rows|length }} of {{ waiting }}</span>
+    {% if can_check and model_on and unread %}<form method="post" action="/checks/read" class="more" style="margin-left:auto;"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn small" type="submit" title="Gemini reads these closures and says which it would look at again. It changes no verdict.">Ask Gemini to read these</button></form>{% endif %}</header>
   {% if rows %}
   <div class="scroll-x"><table class="tbl">
-    <thead><tr><th style="width:30%">Alert</th><th style="width:15%">Asset</th><th>Why Triagle closed it</th>{% if can_check %}<th style="width:210px"></th>{% endif %}</tr></thead>
+    <thead><tr><th style="width:26%">Alert</th><th style="width:13%">Asset</th><th>Why Triagle closed it</th><th style="width:24%">Second reading</th>{% if can_check %}<th style="width:190px"></th>{% endif %}</tr></thead>
     <tbody>{% for r in rows %}
     <tr>
       <td><a class="primary" href="/alert/{{ r.alert.alert_id }}">{{ r.alert.title }}</a><span class="sub">{{ source_name(r.alert.source) }}{% if r.alert.indicators.rule_level %}, rated level {{ r.alert.indicators.rule_level }}{% endif %} · {{ r.alert.timestamp|ist_short }}</span></td>
       <td>{{ r.alert.host or r.alert.entity }}{% if r.alert.user %}<span class="sub">{{ r.alert.user }}</span>{% endif %}</td>
       <td style="color:var(--text-2);">{{ r.verdict.summary }}<span class="sub">{{ closure_words(r.verdict.closure_code) }}</span></td>
+      <td>{% if r.second %}{% if r.second.view == 'look' %}<span class="tag warn">Look again</span>{% else %}<span class="tag ok">Agrees</span>{% endif %}<span class="sub" style="white-space:normal;">{{ r.second.why }}</span>{% else %}<span class="sub">Not read yet</span>{% endif %}</td>
       {% if can_check %}<td>
         <form method="post" action="/checks/mark" style="display:flex; gap:6px; justify-content:flex-end;">
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alert_id" value="{{ r.alert.alert_id }}">

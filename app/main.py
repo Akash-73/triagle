@@ -33,7 +33,7 @@ from app.engine import certin, regclock
 from app.agent import backend
 from app import auth, audit
 from app.engine import sources_meta, worknotes, reputation, analyst, genai, usecases, siem_link, tuning
-from app.engine import instructions, spotcheck
+from app.engine import instructions, spotcheck, nightshift
 from app.engine.correlate import GENERIC_ENTITIES
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -333,6 +333,7 @@ def _ensure_state():
     _CACHE["resolutions"] = {}                       # alert id -> how an analyst closed it
     _CACHE["taught"] = []                            # rules analysts have taught Triagle
     _CACHE["checks"] = {}                            # alert id -> a person's check of that closure
+    _CACHE["second"] = {}                            # alert id -> the model's second reading of that closure
     _CACHE.pop("result", None)
     _restore()
 
@@ -347,6 +348,7 @@ def _snapshot():
             "resolutions": _CACHE["resolutions"], "outbox": _CACHE.get("outbox"),
             "arrived_at": _CACHE.get("arrived_at", {}),
             "taught": _CACHE.get("taught", []), "checks": _CACHE.get("checks", {}),
+            "second": _CACHE.get("second", {}),
             "model_use": {k: genai.USAGE[k] for k in ("calls", "input", "output", "thinking", "since")}}
 
 
@@ -392,6 +394,8 @@ def _restore():
                         if isinstance(r, dict) and r.get("id") and r.get("outcome") in instructions.OUTCOMES]
     _CACHE["checks"] = {str(k): v for k, v in (state.get("checks") or {}).items()
                         if isinstance(v, dict) and isinstance(v.get("ok"), bool)}
+    _CACHE["second"] = {str(k): v for k, v in (state.get("second") or {}).items()
+                        if isinstance(v, dict) and v.get("view") in ("agree", "look")}
     genai.load_usage(state.get("model_use"))
     _CACHE["model_calls_saved"] = genai.USAGE["calls"]
     _CACHE["restored"] = {"alerts": len(live), "saved_at": state.get("saved_at")}
@@ -964,7 +968,8 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
         uc=usecases.for_alert(alert, verdict), steps=_step_words(trail), ask_suggested=analyst.SUGGESTED,
         report_key=report_key, just_decided=just_decided, resolutions=RESOLUTIONS,
         teachable=instructions.teachable(alert, verdict), teach_days=instructions.DAYS,
-        check=_CACHE.get("checks", {}).get(alert_id),
+        check=_CACHE.get("checks", {}).get(alert_id), second=_CACHE.get("second", {}).get(alert_id),
+        model_on=genai.configured(),
         checkable=spotcheck.eligible(alert, verdict, _test_clients()),
         notice=NOTICES.get(notice, ""), can_approve=user["role"] == "analyst",
         now=datetime.datetime.now().strftime("%d %b %Y, %H:%M")))
@@ -1144,7 +1149,8 @@ def api_notes(request: Request, case: str = "", user=Depends(require_user)):
             if not _ask_allowed(_client_ip(request), trusted=_trusted(user)) and cached:
                 pass                                # keep the fallback rather than hammer a failing model
             else:
-                _WORKNOTES[key] = worknotes.work_notes(incident, members)
+                _WORKNOTES[key] = worknotes.work_notes(incident, members,
+                                                       house=_house(result, incident.get("client")))
                 _NOTES_AT[key] = time.time()
         text, by_model, provider = _WORKNOTES[key]
     return {"text": text, "by_model": by_model, "provider": provider,
@@ -1360,6 +1366,35 @@ def tuning_page(request: Request, user=Depends(require_user)):
         now=datetime.datetime.now().strftime("%d %b %Y, %H:%M")))
 
 
+def _ist_long(ts):
+    """'25 Nov 2026, 21:24 IST' for a stored time, or the text itself."""
+    from app.engine.relate import parse_ts
+    t = parse_ts(ts)
+    if t is None:
+        return str(ts or "an unknown time")
+    return datetime.datetime.fromtimestamp(t, _IST).strftime("%d %b %Y, %H:%M IST").lstrip("0")
+
+
+def _house(result, client):
+    """What this customer's own analysts have decided before, as text for the
+    model: the rules they taught, the alerts they closed themselves, and the
+    closures they disagreed with. This is how the model learns from the
+    engine and from the customer's people: in context, on every call."""
+    by_id = {a["alert_id"]: a for a in result["alerts"]}
+    decided = []
+    done = sorted(_CACHE.get("resolutions", {}).items(), key=lambda kv: kv[1].get("at") or "", reverse=True)
+    for aid, r in done:
+        a = by_id.get(aid)
+        if a and a.get("client") == client:
+            decided.append({"title": a.get("title"), "host": a.get("host") or a.get("entity"),
+                            "label": r.get("label"), "note": r.get("note"), "by": r.get("by")})
+    for c in _CACHE.get("checks", {}).values():
+        if c.get("client") == client and c.get("ok") is False:
+            decided.append({"title": c.get("title"), "host": c.get("host"), "by": c.get("by"), "note": "",
+                            "label": "should not have been closed without a person"})
+    return nightshift.house_knowledge(client, _CACHE.get("taught", []), decided[:8])
+
+
 # ---- rules a person taught Triagle -------------------------------------------
 
 def _taught_rows(result):
@@ -1418,24 +1453,70 @@ MINUTES_PER_ALERT = 2      # what reading one alert costs a person; used only fo
 def _checks_view(result):
     skip = _test_clients()
     checks = _CACHE.get("checks", {})
+    second = _CACHE.get("second", {})
     rows = []
     for a in spotcheck.sample(result["alerts"], result["verdicts"], checks, CHECKS_SHOWN, skip):
         v = result["verdicts"][a["alert_id"]]
-        rows.append({"alert": a, "verdict": v, "uc": usecases.for_alert(a, v)})
+        rows.append({"alert": a, "verdict": v, "uc": usecases.for_alert(a, v), "second": second.get(a["alert_id"])})
+    # what the model would look at again comes first; the rest keep their order
+    rows.sort(key=lambda r: 0 if (r["second"] or {}).get("view") == "look" else 1)
     done = sorted(({"id": k, **v} for k, v in checks.items() if v.get("client") not in skip),
                   key=lambda c: c.get("at") or "", reverse=True)
     return {"rows": rows, "tally": spotcheck.tally(checks, skip),
             "waiting": len(spotcheck.waiting(result["alerts"], result["verdicts"], checks, skip)),
-            "recent": done[:12], "disagreed": [c for c in done if c.get("ok") is False]}
+            "recent": done[:12], "disagreed": [c for c in done if c.get("ok") is False],
+            "unread": sum(1 for r in rows if not r["second"]),
+            "second": {"read": len(second), "look": sum(1 for v in second.values() if v.get("view") == "look")}}
+
+
+READ_NOTICES = {
+    "ok": "Gemini has read the closures below. The ones it would look at again are listed first.",
+    "failed": "Gemini did not answer, so there is no second reading. Nothing was changed.",
+    "none": "Gemini has already read every closure in this sample.",
+    "busy": "Too many requests to the model. Wait a minute and ask again.",
+}
 
 
 @app.get("/checks", response_class=HTMLResponse)
-def checks_page(request: Request, user=Depends(require_user)):
+def checks_page(request: Request, read: str = "", user=Depends(require_user)):
     """A sample of the alerts Triagle closed, for a person to agree or
     disagree with, and the figure that comes out of it."""
     result = _load_result()
     return templates.TemplateResponse(request, "checks.html", _ctx(
-        request, user, active="checks", can_check=user["role"] == "analyst", **_checks_view(result)))
+        request, user, active="checks", can_check=user["role"] == "analyst", notice=READ_NOTICES.get(read, ""),
+        model_on=genai.configured(), **_checks_view(result)))
+
+
+@app.post("/checks/read")
+def checks_read(request: Request, csrf: str = Form(default=""), user=Depends(require_analyst)):
+    """Ask the model to read back over the closures in the sample and say
+    which it would look at again. It changes no verdict: it only decides the
+    order a person checks them in."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload the page and try again.")
+    if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
+        return RedirectResponse(url="/checks?read=busy", status_code=303)
+    with _LOCK:
+        result = _load_result()
+        sample = spotcheck.sample(result["alerts"], result["verdicts"], _CACHE["checks"], CHECKS_SHOWN,
+                                  _test_clients())
+        todo = [a for a in sample if a["alert_id"] not in _CACHE["second"]]
+        rows = [(a, result["verdicts"][a["alert_id"]]) for a in todo]
+        house = "\n".join(h for h in (_house(result, c) for c in sorted({a.get("client") or "" for a in todo})) if h)
+    if not rows:
+        return RedirectResponse(url="/checks?read=none", status_code=303)
+    found, provider, error = nightshift.second_read(rows, house)       # outside the lock: this is the slow part
+    with _LOCK:
+        at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+        for aid, view in found.items():
+            _CACHE["second"][aid] = {**view, "at": at, "by": provider or "Gemini"}
+        if found:
+            _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+            _changed(now=True)
+    audit.record("closures read by the model", user["name"], asked=len(rows), answered=len(found),
+                 would_look_again=sum(1 for v in found.values() if v["view"] == "look"), error=error,
+                 ip=_client_ip(request))
+    return RedirectResponse(url=f"/checks?read={'ok' if found else 'failed'}", status_code=303)
 
 
 @app.post("/checks/mark")
@@ -1552,6 +1633,149 @@ def pilot_report(request: Request, user=Depends(require_user)):
         minutes_per_alert=MINUTES_PER_ALERT, hours=round(minutes / 60, 1),
         rolled_off=result["metrics"].get("rolled_off", 0), usage=genai.usage(), model=genai.model_name(),
         now=datetime.datetime.now(_IST).strftime("%d %b %Y, %H:%M IST")))
+
+
+# ---- the night analyst's paperwork: the morning report and "was this you?" -----
+
+MORNING_HOURS = (8, 12, 24)
+MORNING_KEEP_SECONDS = 600       # an analyst gets a fresh summary after this long
+_MORNING = {}                    # (customer, hours) -> (written at, text, by the model?, provider)
+
+
+def _customers(result):
+    """Customers with alerts in the queue: real feeds first, then test streams."""
+    names = sorted({a.get("client") or "" for a in result["alerts"]} - {""})
+    return sorted(names, key=lambda c: c in _test_clients())
+
+
+def _overnight(result, client, hours):
+    """The figures and rows of one customer's morning report."""
+    from app.engine.relate import parse_ts
+    now = datetime.datetime.now(datetime.timezone.utc)
+    since = (now - datetime.timedelta(hours=hours)).timestamp()
+    verdicts = result["verdicts"]
+    mine = [a for a in result["alerts"] if a.get("client") == client]
+    ids = {a["alert_id"] for a in mine}
+    recent = [a for a in mine if (parse_ts(a.get("timestamp")) or 0) >= since]
+    closed = [verdicts[a["alert_id"]] for a in recent if not verdicts[a["alert_id"]].get("escalate")]
+    raised = [verdicts[a["alert_id"]] for a in recent if verdicts[a["alert_id"]].get("escalate")]
+    reasons = {}
+    for v in closed:
+        words = "closed on a rule your analysts taught" if v.get("instruction") else \
+            CLOSURE_WORDS.get(v.get("closure_code"), "closed")
+        reasons[words] = reasons.get(words, 0) + 1
+    open_items = []
+    for a in mine:
+        v = verdicts[a["alert_id"]]
+        if not _is_open(v):
+            continue
+        uc = usecases.for_alert(a, v)
+        acts = v.get("recommended_actions") or []
+        open_items.append({
+            "id": a["alert_id"], "name": uc["name"], "host": a.get("host") or a.get("entity") or "",
+            "user": a.get("user") or "", "severity": v.get("severity") or "medium",
+            "when": _ist_long(a.get("timestamp")), "summary": v.get("summary") or "",
+            "question": uc["question"], "next": acts[0] if acts else "",
+            "count": (v.get("burst") or {}).get("count", 1),
+            "new": (parse_ts(a.get("timestamp")) or 0) >= since, "ts": a.get("timestamp") or ""})
+    open_items.sort(key=lambda i: i["ts"], reverse=True)
+    open_items.sort(key=lambda i: _SEV_ORDER.get(i["severity"], 9))
+    cases, due = [], 0
+    for c in _cases(result):
+        inc = c["inc"]
+        if inc.get("client") != client:
+            continue
+        if any(_is_open(verdicts.get(aid) or {}) for aid in inc["alert_ids"]):
+            cases.append({"id": inc["id"], "name": c["uc"]["name"] if c["uc"] else "Related activity",
+                          "key": inc["key"], "severity": c["severity"], "alerts": inc["size"]})
+        due += sum(1 for r in (c["clock"] or {}).get("rows", []) if r["status"] in ("running", "overdue"))
+    acts = [x for aid in ids for x in result.get("actions", {}).get(aid, [])]
+    tune = [r for r in tuning.analyze_rules(mine, verdicts) if r["flagged"]][:3]
+    return {
+        "client": client, "hours": hours, "from": _ist_long((now - datetime.timedelta(hours=hours)).isoformat()),
+        "to": _ist_long(now.isoformat()), "arrived": len(recent), "closed": len(closed),
+        "repeats": sum(1 for v in closed if v.get("closure_code") in spotcheck.SKIP_CODES),
+        "taught": sum(1 for v in closed if v.get("instruction")), "raised": len(raised),
+        "decided": sum(1 for v in raised if v.get("resolved")),
+        "reasons": sorted(reasons.items(), key=lambda kv: -kv[1]), "open_items": open_items, "cases": cases,
+        "approved": sum(1 for x in acts if x.get("status") in ("executed", "approved")),
+        "waiting": sum(1 for x in acts if x.get("status") == "pending"), "due": due, "tune": tune,
+    }
+
+
+def _morning_pick(result, client, hours):
+    names = _customers(result)
+    client = client if client in names else (names[0] if names else "")
+    return client, hours if hours in MORNING_HOURS else 12, names
+
+
+@app.get("/morning", response_class=HTMLResponse)
+def morning_report(request: Request, client: str = "", hours: int = 12, user=Depends(require_user)):
+    """The report for the morning call with one customer, and the handover
+    to the day shift. The figures are Triagle's; the summary is written by
+    the model from them."""
+    result = _load_result()
+    client, hours, names = _morning_pick(result, client, hours)
+    facts = _overnight(result, client, hours) if client else None
+    return templates.TemplateResponse(request, "morning.html", _ctx(
+        request, user, f=facts, customers=names, hours_options=MORNING_HOURS,
+        fallback=nightshift.morning_fallback(facts) if facts else "",
+        now=datetime.datetime.now(_IST).strftime("%d %b %Y, %H:%M IST")))
+
+
+@app.get("/api/morning")
+def api_morning(request: Request, client: str = "", hours: int = 12, user=Depends(require_user)):
+    """The written summary at the top of the morning report. A signed-in
+    analyst gets it written fresh by the model; anyone else gets the last one
+    written, or the plain summary built from the figures."""
+    result = _load_result()
+    client, hours, _ = _morning_pick(result, client, hours)
+    if not client:
+        raise HTTPException(status_code=404, detail="No customer has alerts yet.")
+    key = (client, hours)
+    kept = _MORNING.get(key)
+    stale = not kept or time.time() - kept[0] > MORNING_KEEP_SECONDS
+    if stale and _trusted(user) and _ask_allowed(_client_ip(request), trusted=True):
+        text, by_model, provider = nightshift.morning_summary(_overnight(result, client, hours),
+                                                              _house(result, client))
+        if by_model or not kept:
+            kept = _MORNING[key] = (time.time(), text, by_model, provider)
+        audit.record("morning report written", user["name"], client=client, hours=hours, by_model=by_model,
+                     ip=_client_ip(request))
+    if kept:
+        age = time.time() - kept[0]
+        written = _ago(datetime.datetime.fromtimestamp(kept[0], datetime.timezone.utc)
+                       .strftime("%Y-%m-%dT%H:%M:%SZ")) if age >= 60 else ""       # "just now" needs no saying
+        return {"text": kept[1], "by_model": kept[2], "provider": kept[3], "written": written}
+    return {"text": nightshift.morning_fallback(_overnight(result, client, hours)), "by_model": False,
+            "provider": "automated summary", "written": ""}
+
+
+@app.post("/api/followup")
+def api_followup(request: Request, alert_id: str = Form(...), csrf: str = Form(default=""),
+                 user=Depends(require_analyst)):
+    """Draft the message that asks an account's owner "was this you?". The
+    analyst sends it, changes it or throws it away: nothing is sent from here."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    result = _load_result()
+    alert = next((a for a in result["alerts"] if a["alert_id"] == alert_id), None)
+    if alert is None:
+        raise HTTPException(status_code=404, detail="No such alert.")
+    if not alert.get("user"):
+        raise HTTPException(status_code=400, detail="This alert names no account to write to.")
+    if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
+        raise HTTPException(status_code=429, detail="Too many requests. Wait a minute and try again.")
+    uc = usecases.for_alert(alert, result["verdicts"].get(alert_id) or {})
+    what = uc["name"]
+    if alert.get("title") and alert["title"] != uc["name"]:
+        what += f" (the security tool called it: {alert['title']})"
+    out = nightshift.followup({"user": alert["user"], "host": alert.get("host") or alert.get("entity") or "",
+                               "when": _ist_long(alert.get("timestamp")), "what": what,
+                               "src_ip": alert.get("src_ip") or "", "customer": alert.get("client") or ""})
+    audit.record("follow-up message drafted", user["name"], alert_id=alert_id, to_account=alert["user"],
+                 by_model=out["by_model"], ip=_client_ip(request))
+    return out
 
 
 @app.get("/report/{entity}", response_class=HTMLResponse)
@@ -1957,6 +2181,9 @@ def connectors_page(request: Request, user=Depends(require_user)):
         request, user, active="connectors", sources=sources, base_url=base,
         ingest_key=INGEST_KEY if show_key else "", key_set=bool(INGEST_KEY),
         model_status=genai.status(), firewall=gcp_firewall.summary(), auth_on=auth.enabled(),
+        learns={"taught": sum(1 for r in _CACHE.get("taught", []) if instructions.state(r) == "on"),
+                "decided": len(_CACHE.get("resolutions", {})), "checked": len(_CACHE.get("checks", {})),
+                "verdicts": len(result["verdicts"])},
         saved=store.status(), restored=_CACHE.get("restored"),
         examples=examples.EXAMPLES, can_test=user["role"] == "analyst", poll=False))
 
@@ -2165,7 +2392,8 @@ async def api_ask(request: Request, user=Depends(require_user)):
     if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
         raise HTTPException(status_code=429, detail="Too many questions. Wait a minute and ask again.")
     case, members, steps, actions, clock = found
-    out = analyst.ask(question, case, members, steps, actions, clock)
+    out = analyst.ask(question, case, members, steps, actions, clock,
+                      house=_house(_load_result(), case.get("client")))
     audit.record("question asked about a case", user["name"], case=case.get("id") or case.get("key"),
                  answered=out["by_model"], ip=_client_ip(request))
     return out

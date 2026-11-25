@@ -38,6 +38,7 @@
           {% if verdict.tuning_recommendation %}<dt>Fix the noise</dt><dd>{{ verdict.tuning_recommendation }}</dd>{% endif %}
           {% if verdict.instruction %}<dt>Taught rule</dt><dd><a href="/taught#{{ verdict.instruction }}">{{ verdict.instruction }}</a>, under Your rules</dd>{% endif %}
           {% if check and check.ok %}<dt>Checked</dt><dd>{{ check.by }} checked this closure and agreed, {{ check.at|ist_short }}</dd>{% endif %}
+          {% if second and not verdict.escalate %}<dt>Second reading</dt><dd>{{ second.by }} {{ 'would look at this closure again' if second.view == 'look' else 'agrees with the closure' }}. {{ second.why }}</dd>{% endif %}
           <dt>Question to answer</dt><dd>{{ uc.question }}</dd>
         </dl>
         <p class="by" style="margin-top:12px;">Decided by rules, the same way every time. The model can explain this alert; it cannot change the verdict.</p>
@@ -137,11 +138,55 @@
       </div>
     </section>
     {% endif %}
+    {% if alert.user and verdict.escalate and can_approve and not verdict.resolved %}
+    <section class="panel" id="followup">
+      <header><h2>Ask the user</h2></header>
+      <div class="act">
+        <div class="why">Draft the message that asks the owner of <b>{{ alert.user }}</b> whether this was them. You send it, change it or throw it away. Nothing is sent from here.</div>
+        <form id="followup-form"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alert_id" value="{{ alert.alert_id }}">
+          <div class="row"><button class="btn" type="submit" id="followup-go">Draft the message</button></div>
+        </form>
+        <div id="followup-out" hidden>
+          <input type="text" id="followup-subject" aria-label="Subject" readonly style="margin-top:10px; width:100%;">
+          <textarea id="followup-body" aria-label="Message" rows="11" style="margin-top:6px; width:100%;"></textarea>
+          <div class="row" style="margin-top:6px;"><button class="btn small" type="button" id="followup-copy">Copy</button><span class="sub" id="followup-by"></span></div>
+        </div>
+      </div>
+    </section>
+    <script>
+    (function () {
+      var form = document.getElementById('followup-form'), go = document.getElementById('followup-go');
+      if (!form) return;
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        go.disabled = true; go.textContent = 'Writing';
+        fetch('/api/followup', { method: 'POST', body: new URLSearchParams(new FormData(form)) })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (x) {
+            go.disabled = false; go.textContent = 'Draft it again';
+            var by = document.getElementById('followup-by');
+            document.getElementById('followup-out').hidden = false;
+            if (!x.ok) { by.textContent = x.d.detail || 'The message could not be drafted.'; return; }
+            document.getElementById('followup-subject').value = x.d.subject;
+            document.getElementById('followup-body').value = x.d.body;
+            by.textContent = x.d.by_model ? 'Written by ' + x.d.provider : 'Built from a template, without the model';
+          })
+          .catch(function () { go.disabled = false; go.textContent = 'Draft the message'; });
+      });
+      document.getElementById('followup-copy').addEventListener('click', function () {
+        var text = 'Subject: ' + document.getElementById('followup-subject').value + '\n\n' + document.getElementById('followup-body').value;
+        var btn = this;
+        (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { btn.textContent = 'Copied'; })
+          .catch(function () { document.getElementById('followup-body').select(); });
+      });
+    })();
+    </script>
+    {% endif %}
     {% if checkable and can_approve and not check %}
     <section class="panel" id="check">
       <header><h2>Was this right?</h2></header>
       <div class="act">
-        <div class="why">Triagle closed this alert on its own. Your answer is counted in the spot checks. If you disagree, the alert goes back to the queue.</div>
+        <div class="why">Triagle closed this alert on its own. Your answer is counted in the spot checks. If you disagree, the alert goes back to the queue.{% if second %} {{ second.by }}, as a second reader, {{ 'would look at it again' if second.view == 'look' else 'agrees' }}: {{ second.why }}{% endif %}</div>
         <form method="post" action="/checks/mark">
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alert_id" value="{{ alert.alert_id }}"><input type="hidden" name="next" value="/alert/{{ alert.alert_id }}">
           <div class="row"><button class="btn" type="submit" name="agree" value="yes">Agree</button><button class="btn" type="submit" name="agree" value="no">Disagree, send it back</button></div>
