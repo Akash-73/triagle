@@ -1,0 +1,106 @@
+{% import "_doc.html" as doc %}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+{{ doc.head('Pilot report · Triagle', asset_v) }}
+</head>
+<body class="doc">
+<div class="docbar">
+  <a href="/checks">Back to spot checks</a>
+  <div class="right">
+    <button class="btn small primary" type="button" onclick="window.print()">Save as PDF</button>
+  </div>
+</div>
+
+<article class="sheet">
+  <header>
+    {{ doc.brand() }}
+    <div class="about"><b>Pilot report</b>{% if customers %}Prepared for {{ customers|join(', ') }}<br>{% endif %}{{ now }}</div>
+  </header>
+
+  <div class="page">
+    <h1>What Triagle did with {{ received }} alert{{ '' if received == 1 else 's' }}{% if span_days %} over {{ span_days }} day{{ '' if span_days == 1 else 's' }}{% endif %}</h1>
+    <p class="lead">{% if received %}Triagle read every alert from the connected tools{% if first %} between {{ first|ist_short }} and {{ last|ist_short }} IST{% endif %}. It closed {{ own }} on its own with a written reason{% if under %}, counted {{ under }} repeat{{ '' if under == 1 else 's' }} under an alert it had already raised,{% endif %} and sent {{ raised }} to a person.
+      {% if checks.tally.checked %}A person has checked {{ checks.tally.checked }} of its closures and agreed with {{ checks.tally.agreed }} ({{ checks.tally.pct }}%).{% else %}No closure has been checked by a person yet, so there is no agreement figure.{% endif %}
+      {% else %}No alerts from a connected tool have arrived yet.{% endif %}</p>
+
+    <h2>What arrived and where it went</h2>
+    <table class="tbl">
+      <tbody>
+        <tr><td>Alerts received</td><td class="num">{{ received }}</td><td class="small">{% if rolled_off %}{{ rolled_off }} older alerts are counted in the console's totals but are no longer held, and are not in this report.{% endif %}</td></tr>
+        <tr><td>Closed by Triagle on its own, with a reason</td><td class="num">{{ own }}</td><td class="small">{{ own_pct }}% of what arrived</td></tr>
+        <tr><td>Repeats counted under an alert already raised</td><td class="num">{{ under }}</td><td class="small">One event the tool reported many times is raised once</td></tr>
+        <tr><td>Sent to a person</td><td class="num">{{ raised }}</td><td class="small">{{ still_open }} still waiting for a decision</td></tr>
+        <tr><td><b>Alerts a person did not have to read</b></td><td class="num"><b>{{ closed }}</b></td><td class="small">{{ not_read_pct }}% of what arrived</td></tr>
+        <tr><td>Cases built from related alerts</td><td class="num">{{ cases }}</td><td class="small"></td></tr>
+      </tbody>
+    </table>
+
+    <h2>Why alerts were closed</h2>
+    {% if reasons %}
+    <table class="tbl">
+      <thead><tr><th>Reason</th><th class="num" style="width:110px">Alerts</th></tr></thead>
+      <tbody>{% for r in reasons %}<tr><td>{{ r.words|capitalize }}</td><td class="num">{{ r.count }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% else %}<p class="small">Nothing was closed.</p>{% endif %}
+
+    <h2>How often a person agreed with a closure <span class="n">spot checks</span></h2>
+    {% if checks.tally.checked %}
+    <table class="tbl">
+      <tbody>
+        <tr><td>Closures checked by a person</td><td class="num">{{ checks.tally.checked }}</td></tr>
+        <tr><td>Agreed</td><td class="num">{{ checks.tally.agreed }}</td></tr>
+        <tr><td>Disagreed, and sent back to the queue</td><td class="num">{{ checks.tally.disagreed }}</td></tr>
+        <tr><td><b>Agreement</b></td><td class="num"><b>{{ checks.tally.pct }}%</b></td></tr>
+      </tbody>
+    </table>
+    <p class="small" style="margin-top:8px;">The sample is taken across every reason for closing and every detection rule, not at random, so that a feed made mostly of one routine rule does not hide the others. Repeats counted under an alert that was raised, and alerts closed on a rule a person taught, are not in the sample.</p>
+    {% if checks.disagreed %}
+    <table class="tbl" style="margin-top:12px;">
+      <thead><tr><th>A person disagreed with</th><th>What Triagle had said</th></tr></thead>
+      <tbody>{% for c in checks.disagreed %}<tr><td>{{ c.title }}<span class="sub">{{ c.host }}, checked by {{ c.by }}</span></td><td>{{ c.summary }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% endif %}
+    {% else %}<p>No closure has been checked yet. Open <a href="/checks">Spot checks</a>, look at the sample and say whether you agree. The figure appears here.</p>{% endif %}
+
+    <h2>What people decided</h2>
+    <table class="tbl">
+      <tbody>
+        {% for label, n in outcomes.items() %}<tr><td>Closed by a person as: {{ label|lower }}</td><td class="num">{{ n }}</td></tr>{% endfor %}
+        {% if not outcomes %}<tr><td>Alerts closed by a person</td><td class="num">0</td></tr>{% endif %}
+        <tr><td>Response actions approved</td><td class="num">{{ approved }}</td></tr>
+        <tr><td>Response actions declined</td><td class="num">{{ declined }}</td></tr>
+        <tr><td>Response actions waiting for approval</td><td class="num">{{ waiting_acts }}</td></tr>
+      </tbody>
+    </table>
+
+    <h2>What people taught it <span class="n">{{ taught|length }} rule{{ '' if taught|length == 1 else 's' }}</span></h2>
+    {% if taught %}
+    <table class="tbl">
+      <thead><tr><th>Rule</th><th>Where</th><th>Taught by</th><th class="num" style="width:90px">Closed since</th></tr></thead>
+      <tbody>{% for x in taught %}<tr><td>{{ x.rule.title }}<span class="sub">{{ x.rule.id }}, {{ 'in force' if x.state == 'on' else ('ran out' if x.state == 'ended' else 'switched off') }}</span></td><td>{{ x.where }}</td><td>{{ x.rule.by }}{% if x.rule.note %}<span class="sub">{{ x.rule.note }}</span>{% endif %}</td><td class="num">{{ x.count }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% else %}<p class="small">Nothing yet. An analyst who closes an alert as expected activity can ask Triagle to close the same alert on that machine from then on.</p>{% endif %}
+
+    <h2>Detection rules to fix at the source <span class="n">{{ rules_total }} flagged</span></h2>
+    {% if rules %}
+    <table class="tbl">
+      <thead><tr><th style="width:38%">Rule</th><th class="num" style="width:70px">Fired</th><th>What to do</th></tr></thead>
+      <tbody>{% for r in rules %}<tr><td>{{ r.title }}<span class="sub">{{ source_name(r.source) }}{% if r.rule_id %}, rule {{ r.rule_id }}{% endif %}, rated {{ r.rating }}</span></td><td class="num">{{ r.volume }}</td><td>{{ r.recommendation }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% else %}<p class="small">No rule is flagged for tuning.</p>{% endif %}
+
+    <h2>What it saved and what it cost</h2>
+    <table class="tbl">
+      <tbody>
+        <tr><td>Reading those alerts by hand</td><td class="num nowrap">{{ hours }} hours</td><td class="small">An estimate: {{ closed }} alerts a person did not have to read, at {{ minutes_per_alert }} minutes each.</td></tr>
+        <tr><td>Calls to the model ({{ model }})</td><td class="num">{{ usage.calls }}</td><td class="small">{% if usage.calls %}{{ usage.input }} tokens in, {{ usage.output + usage.thinking }} out{% if usage.since %}, since {{ usage.since|ist_short }}{% endif %}{% else %}Counted from when this version was deployed.{% endif %}</td></tr>
+        <tr><td>Cost of those calls</td><td class="num">${{ '%.4f'|format(usage.cost_usd) }}</td><td class="small">At ${{ '%.2f'|format(usage.price_in) }} in and ${{ '%.2f'|format(usage.price_out) }} out per million tokens. Rules decide every alert; the model only writes the account of a case and answers questions.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>Produced by Triagle from the alerts, verdicts and decisions it holds. Every figure can be traced to an alert in the console. Triagle's own verdicts are rules, not a model, and no action was taken without a named person approving it.</footer>
+</article>
+</body>
+</html>

@@ -22,6 +22,8 @@
       <div class="group">Set up</div>
       <a href="/connectors" {% if active == 'connectors' %}aria-current="page"{% endif %}>Connectors</a>
       <a href="/tuning" {% if active == 'tuning' %}aria-current="page"{% endif %}>Detection tuning{% if nav.rules %}<span class="count">{{ nav.rules }}</span>{% endif %}</a>
+      <a href="/taught" {% if active == 'taught' %}aria-current="page"{% endif %}>Your rules{% if nav.taught %}<span class="count" title="Taught rules in force">{{ nav.taught }}</span>{% endif %}</a>
+      <a href="/checks" {% if active == 'checks' %}aria-current="page"{% endif %}>Spot checks</a>
       <a href="/benchmark" {% if active == 'benchmark' %}aria-current="page"{% endif %}>Evaluation</a>
       {% if user.role == 'analyst' %}
       <div class="group">Record</div>

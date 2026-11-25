@@ -378,3 +378,9 @@ details > summary.btn::-webkit-details-marker { display: none; }
   .choice:last-child { border-bottom: 0; }
   .choice .n { margin-left: auto; }
 }
+
+/* "Do the same next time": teaching Triagle from the decision panel */
+.act form .teach { display: flex; gap: 8px; align-items: flex-start; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--raised); font-size: .93rem; color: var(--text-2); cursor: pointer; }
+.act form .teach input { margin-top: 3px; flex: none; }
+.act form .teach b { color: var(--text); font-weight: 600; }
+.act form .teach-how select { flex: 1 1 150px; min-width: 0; }

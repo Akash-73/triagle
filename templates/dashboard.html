@@ -11,6 +11,7 @@
     <b>{{ metrics.received }}</b> alert{{ '' if metrics.received == 1 else 's' }} received.
     <b>{{ metrics.closed_all }}</b> closed, each with a reason.
     {% if metrics.resolved %}<b>{{ metrics.resolved }}</b> decided by a person.{% endif %}
+    {% if spot.checked %}A person <a href="/checks">checked {{ spot.checked }}</a> of the closures and agreed with <b>{{ spot.agreed }}</b>.{% endif %}
     {% if metrics.open %}<b class="n-crit">{{ metrics.open }}</b> need{{ 's' if metrics.open == 1 else '' }} a decision.{% else %}None need a decision.{% endif %}
     {% if dues %}<b class="n-due">{{ dues|length }}</b> report{{ '' if dues|length == 1 else 's' }} due{% if overdue %}, <b class="n-crit">{{ overdue }}</b> overdue{% endif %}; the next goes to {{ dues[0].row.name }} in <b data-due="{{ dues[0].row.due_iso }}">{{ dues[0].row.note }}</b>.{% endif %}
   </p>

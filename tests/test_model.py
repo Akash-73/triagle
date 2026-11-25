@@ -284,3 +284,28 @@ def test_questions_are_rate_limited(cloud_run):
     codes = [c.post("/api/ask", json={"case": inc, "question": "x", "csrf": token}).status_code
              for _ in range(main.ASK_PER_MINUTE_ANALYST)]
     assert codes[-1] == 429, "an analyst is still limited, just less tightly"
+
+
+def test_the_model_meter_counts_tokens_and_prices_them(cloud_run, monkeypatch):
+    genai.load_usage({})
+    cloud_run["reply"] = FakeResp(200, {"candidates": [{"content": {"parts": [{"text": "An account."}]}}],
+                                        "usageMetadata": {"promptTokenCount": 3000, "candidatesTokenCount": 500,
+                                                          "thoughtsTokenCount": 100, "totalTokenCount": 3600}})
+    assert genai.generate_prose("s", "u") == ("An account.", "vertex")
+    assert genai.generate_prose("s", "u")[0] == "An account."
+    use = genai.usage()
+    assert (use["calls"], use["input"], use["output"], use["thinking"]) == (2, 6000, 1000, 200)
+    # 6,000 in at $1.50 a million and 1,200 out (thinking is billed as output) at $9.00 a million
+    assert use["cost_usd"] == round((6000 * 1.50 + 1200 * 9.00) / 1_000_000, 4) == 0.0198
+    assert use["per_call_usd"] == 0.0099 and use["since"]
+    monkeypatch.setenv("TRIAGLE_PRICE_IN", "0.5")
+    monkeypatch.setenv("TRIAGLE_PRICE_OUT", "3")
+    assert genai.usage()["cost_usd"] == 0.0066
+
+    # the totals come back after a restart, and a damaged record does no harm
+    saved = {k: genai.USAGE[k] for k in ("calls", "input", "output", "thinking", "since")}
+    genai.load_usage({"calls": "x"})
+    assert genai.usage()["calls"] == 0
+    genai.load_usage(saved)
+    assert genai.usage()["calls"] == 2 and genai.status()["usage"]["input"] == 6000
+    genai.load_usage({})

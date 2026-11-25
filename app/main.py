@@ -33,6 +33,7 @@ from app.engine import certin, regclock
 from app.agent import backend
 from app import auth, audit
 from app.engine import sources_meta, worknotes, reputation, analyst, genai, usecases, siem_link, tuning
+from app.engine import instructions, spotcheck
 from app.engine.correlate import GENERIC_ENTITIES
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -183,7 +184,8 @@ def _nav(result):
             overdue += c["overdue"]
     m = result["metrics"]
     return {"escalated": m.get("open", m.get("escalated", 0)), "cases": len(result["incidents"]), "due": due,
-            "overdue": overdue, "rules": m.get("flagged_rules", 0)}
+            "overdue": overdue, "rules": m.get("flagged_rules", 0),
+            "taught": sum(1 for r in _CACHE.get("taught", []) if instructions.state(r) == "on")}
 
 
 def _ctx(request: Request, user, **extra):
@@ -329,6 +331,8 @@ def _ensure_state():
     _CACHE["sector_overrides"] = {}                  # client -> sector, set by an analyst
     _CACHE["filings"] = []                           # regulatory reports a person marked as sent
     _CACHE["resolutions"] = {}                       # alert id -> how an analyst closed it
+    _CACHE["taught"] = []                            # rules analysts have taught Triagle
+    _CACHE["checks"] = {}                            # alert id -> a person's check of that closure
     _CACHE.pop("result", None)
     _restore()
 
@@ -341,7 +345,9 @@ def _snapshot():
             "feeds": list(_CACHE["feeds"].values()), "decisions": _CACHE["decisions"],
             "filings": _CACHE["filings"], "sector_overrides": _CACHE["sector_overrides"],
             "resolutions": _CACHE["resolutions"], "outbox": _CACHE.get("outbox"),
-            "arrived_at": _CACHE.get("arrived_at", {})}
+            "arrived_at": _CACHE.get("arrived_at", {}),
+            "taught": _CACHE.get("taught", []), "checks": _CACHE.get("checks", {}),
+            "model_use": {k: genai.USAGE[k] for k in ("calls", "input", "output", "thinking", "since")}}
 
 
 def _restore():
@@ -382,6 +388,12 @@ def _restore():
                             "events": [e for e in box["events"] if isinstance(e, dict) and e.get("seq")]}
     kept = {m[0] for m in meta}
     _CACHE["arrived_at"] = {str(k): str(v) for k, v in (state.get("arrived_at") or {}).items() if str(k) in kept}
+    _CACHE["taught"] = [r for r in state.get("taught") or []
+                        if isinstance(r, dict) and r.get("id") and r.get("outcome") in instructions.OUTCOMES]
+    _CACHE["checks"] = {str(k): v for k, v in (state.get("checks") or {}).items()
+                        if isinstance(v, dict) and isinstance(v.get("ok"), bool)}
+    genai.load_usage(state.get("model_use"))
+    _CACHE["model_calls_saved"] = genai.USAGE["calls"]
     _CACHE["restored"] = {"alerts": len(live), "saved_at": state.get("saved_at")}
     return True
 
@@ -389,6 +401,8 @@ def _restore():
 def _flush(force=False):
     """Write the state if something changed. The alert queue is written at
     most every few seconds; force=True writes now."""
+    if store.enabled() and "seed" in _CACHE and genai.USAGE["calls"] != _CACHE.get("model_calls_saved", 0):
+        _CACHE["dirty"] = True                       # the model was used since the last save
     if not store.enabled() or not _CACHE.get("dirty") or "seed" not in _CACHE:
         return False
     if not force and time.time() - _CACHE.get("flushed_at", 0.0) < store.interval():
@@ -398,6 +412,7 @@ def _flush(force=False):
         _CACHE["flushed_at"] = time.time()           # also after a failure: a broken disk is not retried on every request
         if ok:
             _CACHE["dirty"] = False
+            _CACHE["model_calls_saved"] = genai.USAGE["calls"]
         return ok
 
 
@@ -494,7 +509,8 @@ def _reprocess():
     raw = _CACHE["seed"] + _CACHE["live"]
     _CACHE["raw"] = raw
     t0 = time.perf_counter()
-    result = process_batch(raw, decided=_CACHE["decisions"])
+    result = process_batch(raw, decided=_CACHE["decisions"], taught=_CACHE.get("taught"),
+                           overruled={aid: c for aid, c in _CACHE.get("checks", {}).items() if c.get("ok") is False})
     m = result["metrics"]
     m["demo_clock"] = os.environ.get("TRIAGLE_DEMO_CLOCK", "false").lower() == "true"
     m["processing_ms"] = round((time.perf_counter() - t0) * 1000, 1)
@@ -893,7 +909,8 @@ def dashboard(request: Request, user=Depends(require_user)):
     return templates.TemplateResponse(request, "dashboard.html", _ctx(
         request, user, active="overview", need=need[:NEED_SHOWN], need_total=len(need), metrics=m, cases=cases,
         dues=dues, breakdown=breakdown, escalated_pct=round(100 * m.get("open", 0) / total, 2),
-        sources=_source_strip(result), overdue=sum(1 for d in dues if d["row"]["status"] == "overdue")))
+        sources=_source_strip(result), overdue=sum(1 for d in dues if d["row"]["status"] == "overdue"),
+        spot=spotcheck.tally(_CACHE.get("checks", {}), _test_clients())))
 
 
 NEED_SHOWN = 12        # alerts needing a decision listed on the overview
@@ -946,6 +963,9 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
         siem=_siem_link(alert, user),
         uc=usecases.for_alert(alert, verdict), steps=_step_words(trail), ask_suggested=analyst.SUGGESTED,
         report_key=report_key, just_decided=just_decided, resolutions=RESOLUTIONS,
+        teachable=instructions.teachable(alert, verdict), teach_days=instructions.DAYS,
+        check=_CACHE.get("checks", {}).get(alert_id),
+        checkable=spotcheck.eligible(alert, verdict, _test_clients()),
         notice=NOTICES.get(notice, ""), can_approve=user["role"] == "analyst",
         now=datetime.datetime.now().strftime("%d %b %Y, %H:%M")))
 
@@ -1151,6 +1171,8 @@ NOTICES = {
     "lifted": "The block was lifted. The action is open again and can be approved a second time.",
     "closed": "Triagle closed this alert itself, so there is nothing for a person to decide on it.",
     "notlifted": "The block was not lifted. The reason is shown on the action below.",
+    "sentback": "You disagreed with Triagle's closure, so this alert is back in the queue. Decide what it was below.",
+    "taught": "Closed, and Triagle will close the same alert on this machine from now on. See Your rules.",
 }
 
 
@@ -1249,6 +1271,7 @@ def _decide(request, alert_id, action_id, ack, decision, reason, user, next_path
 
 @app.post("/alert/resolve")
 def resolve_alert(request: Request, alert_id: str = Form(...), outcome: str = Form(...), note: str = Form(default=""),
+                  teach: str = Form(default=""), scope: str = Form(default="machine"), days: str = Form(default=""),
                   csrf: str = Form(default=""), user=Depends(require_analyst)):
     """An analyst closes an alert Triagle sent to a person, or opens it again.
     The outcome, the name and the note go on the alert and in the audit log."""
@@ -1257,6 +1280,7 @@ def resolve_alert(request: Request, alert_id: str = Form(...), outcome: str = Fo
     if outcome not in RESOLUTIONS and outcome != "reopen":
         raise HTTPException(status_code=400, detail="Unknown outcome.")
     back = f"/alert/{quote(alert_id, safe=':')}"
+    taught_now = False
     with _LOCK:
         result = _load_result()
         v = result["verdicts"].get(alert_id)
@@ -1276,10 +1300,23 @@ def resolve_alert(request: Request, alert_id: str = Form(...), outcome: str = Fo
             _tell(request, "closed_by_analyst", user["name"], alert_id, outcome=RESOLUTIONS[outcome], note=words)
             audit.record("alert closed by analyst", user["name"], alert_id=alert_id, outcome=outcome,
                          note=words or None, triagle_verdict=v.get("disposition"), ip=_client_ip(request))
+            alert = next((a for a in result["alerts"] if a["alert_id"] == alert_id), None)
+            if teach and outcome in instructions.OUTCOMES and alert and instructions.teachable(alert, v):
+                # "close the same thing from now on": the decision becomes a rule this customer owns
+                rule = instructions.make(alert, outcome, RESOLUTIONS[outcome], words, user["name"],
+                                         scope="account" if scope == "account" else "machine",
+                                         days=int(days) if days.isdigit() else instructions.DEFAULT_DAYS)
+                _CACHE["taught"].append(rule)
+                audit.record("rule taught", user["name"], rule=rule["id"], alert_id=alert_id, outcome=outcome,
+                             title=rule["title"], where=instructions.where(rule), until=rule["until"],
+                             note=words or None, ip=_client_ip(request))
+                _CACHE.pop("result", None)           # it may already cover alerts that arrived since
+                result = _load_result()
+                taught_now = True
         _apply_resolutions(result)
         _CACHE["rev"] = _CACHE.get("rev", 0) + 1
         _changed(now=True)
-    return RedirectResponse(url=back, status_code=303)
+    return RedirectResponse(url=back + ("?notice=taught" if taught_now else ""), status_code=303)
 
 
 @app.post("/action/lift")
@@ -1321,6 +1358,200 @@ def tuning_page(request: Request, user=Depends(require_user)):
     return templates.TemplateResponse(request, "tuning.html", _ctx(
         request, user, active="tuning", rule_health=result.get("rule_health", []), metrics=result["metrics"],
         now=datetime.datetime.now().strftime("%d %b %Y, %H:%M")))
+
+
+# ---- rules a person taught Triagle -------------------------------------------
+
+def _taught_rows(result):
+    used = result.get("taught_used", {})
+    rows = []
+    for r in reversed(_CACHE.get("taught", [])):
+        hit = used.get(r["id"], {})
+        rows.append({"rule": r, "state": instructions.state(r), "where": instructions.where(r),
+                     "count": hit.get("count", 0), "last": hit.get("last", "")})
+    rows.sort(key=lambda x: {"on": 0, "ended": 1, "off": 2}[x["state"]])
+    return rows
+
+
+@app.get("/taught", response_class=HTMLResponse)
+def taught_page(request: Request, user=Depends(require_user)):
+    """The rules analysts have taught Triagle, with who, when, why and how
+    often each has been used."""
+    result = _load_result()
+    return templates.TemplateResponse(request, "taught.html", _ctx(
+        request, user, active="taught", rows=_taught_rows(result), days=instructions.DAYS,
+        can_change=user["role"] == "analyst"))
+
+
+@app.post("/taught/change")
+def taught_change(request: Request, rule_id: str = Form(...), do: str = Form(...), days: str = Form(default=""),
+                  csrf: str = Form(default=""), user=Depends(require_analyst)):
+    """Switch a taught rule off, or run it for more days."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload the page and try again.")
+    if do not in ("off", "renew"):
+        raise HTTPException(status_code=400, detail="Unknown change.")
+    with _LOCK:
+        _ensure_state()
+        rule = next((r for r in _CACHE["taught"] if r["id"] == rule_id), None)
+        if rule is None:
+            raise HTTPException(status_code=404, detail="No such rule.")
+        if do == "off":
+            instructions.switch_off(rule, user["name"])
+            audit.record("taught rule switched off", user["name"], rule=rule_id, ip=_client_ip(request))
+        else:
+            instructions.renew(rule, user["name"], int(days) if days.isdigit() else instructions.DEFAULT_DAYS)
+            audit.record("taught rule renewed", user["name"], rule=rule_id, until=rule["until"],
+                         ip=_client_ip(request))
+        _CACHE.pop("result", None)
+        _load_result()
+        _changed(now=True)
+    return RedirectResponse(url="/taught", status_code=303)
+
+
+# ---- spot checks: how often a person agrees with a closure --------------------
+
+CHECKS_SHOWN = 10
+MINUTES_PER_ALERT = 2      # what reading one alert costs a person; used only for the estimate in the pilot report
+
+
+def _checks_view(result):
+    skip = _test_clients()
+    checks = _CACHE.get("checks", {})
+    rows = []
+    for a in spotcheck.sample(result["alerts"], result["verdicts"], checks, CHECKS_SHOWN, skip):
+        v = result["verdicts"][a["alert_id"]]
+        rows.append({"alert": a, "verdict": v, "uc": usecases.for_alert(a, v)})
+    done = sorted(({"id": k, **v} for k, v in checks.items() if v.get("client") not in skip),
+                  key=lambda c: c.get("at") or "", reverse=True)
+    return {"rows": rows, "tally": spotcheck.tally(checks, skip),
+            "waiting": len(spotcheck.waiting(result["alerts"], result["verdicts"], checks, skip)),
+            "recent": done[:12], "disagreed": [c for c in done if c.get("ok") is False]}
+
+
+@app.get("/checks", response_class=HTMLResponse)
+def checks_page(request: Request, user=Depends(require_user)):
+    """A sample of the alerts Triagle closed, for a person to agree or
+    disagree with, and the figure that comes out of it."""
+    result = _load_result()
+    return templates.TemplateResponse(request, "checks.html", _ctx(
+        request, user, active="checks", can_check=user["role"] == "analyst", **_checks_view(result)))
+
+
+@app.post("/checks/mark")
+def checks_mark(request: Request, alert_id: str = Form(...), agree: str = Form(...),
+                back: str = Form(default="", alias="next"), csrf: str = Form(default=""),
+                user=Depends(require_analyst)):
+    """A person agrees or disagrees with one closure. A disagreement sends
+    the alert back to the queue."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload the page and try again.")
+    if agree not in ("yes", "no"):
+        raise HTTPException(status_code=400, detail="Say yes or no.")
+    agreed = agree == "yes"
+    with _LOCK:
+        result = _load_result()
+        alert = next((a for a in result["alerts"] if a["alert_id"] == alert_id), None)
+        if alert is None:
+            raise HTTPException(status_code=404, detail="No such alert.")
+        checks = _CACHE["checks"]
+        if alert_id not in checks:
+            v = result["verdicts"].get(alert_id) or {}
+            if not spotcheck.eligible(alert, v, _test_clients()):
+                raise HTTPException(status_code=400, detail="Only a closure Triagle made on its own can be checked.")
+            checks[alert_id] = spotcheck.record(
+                alert, v, agreed, user["name"],
+                datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"))
+            audit.record("closure checked", user["name"], alert_id=alert_id, agreed=agreed,
+                         closure=v.get("closure_code"), ip=_client_ip(request))
+            if not agreed:
+                _tell(request, "reopened", user["name"], alert_id, note="A person disagreed with the closure")
+                _CACHE.pop("result", None)
+                _load_result()
+            else:
+                _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+            _changed(now=True)
+        else:
+            agreed = bool(checks[alert_id].get("ok"))
+    if not agreed:
+        return RedirectResponse(url=f"/alert/{quote(alert_id, safe=':')}?notice=sentback", status_code=303)
+    return RedirectResponse(url=_back_to(back, "/checks"), status_code=303)
+
+
+@app.post("/checks/undo")
+def checks_undo(request: Request, alert_id: str = Form(...), back: str = Form(default="", alias="next"),
+                csrf: str = Form(default=""), user=Depends(require_analyst)):
+    """Take a check back, for a wrong click."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload the page and try again.")
+    with _LOCK:
+        _ensure_state()
+        rec = _CACHE["checks"].pop(alert_id, None)
+        if rec:
+            audit.record("closure check withdrawn", user["name"], alert_id=alert_id, was_agreed=rec.get("ok"),
+                         ip=_client_ip(request))
+            if rec.get("ok") is False:
+                _CACHE.pop("result", None)
+                _load_result()
+            else:
+                _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+            _changed(now=True)
+    return RedirectResponse(url=_back_to(back, "/checks"), status_code=303)
+
+
+@app.get("/pilot", response_class=HTMLResponse)
+def pilot_report(request: Request, user=Depends(require_user)):
+    """What a pilot is judged on, on one page: what arrived, what Triagle
+    closed and why, what went to a person, how often a person agreed with a
+    closure, what people taught it, which rules to fix, and what it cost."""
+    result = _load_result()
+    skip = _test_clients()
+    verdicts = result["verdicts"]
+    alerts = [a for a in result["alerts"] if a.get("client") not in skip]
+    ids = {a["alert_id"] for a in alerts}
+    closed = [a for a in alerts if not verdicts[a["alert_id"]].get("escalate")]
+    raised = [verdicts[a["alert_id"]] for a in alerts if verdicts[a["alert_id"]].get("escalate")]
+    codes = {}
+    under = 0                # repeats and burst members: counted under an alert that went to a person
+    for a in closed:
+        v = verdicts[a["alert_id"]]
+        if v.get("closure_code") in spotcheck.SKIP_CODES:
+            under += 1
+            continue
+        key = "TAUGHT" if v.get("instruction") else (v.get("closure_code") or "")
+        codes[key] = codes.get(key, 0) + 1
+    own = len(closed) - under
+    words = dict(CLOSURE_WORDS, TAUGHT="closed on a rule a person taught")
+    reasons = sorted(({"words": words.get(k, k or "other"), "count": n} for k, n in codes.items()),
+                     key=lambda r: -r["count"])
+    outcomes = {}
+    for v in raised:
+        if v.get("resolved"):
+            outcomes[v["resolved"]["label"]] = outcomes.get(v["resolved"]["label"], 0) + 1
+    acts = [x for aid in ids for x in result.get("actions", {}).get(aid, [])]
+    stamps = sorted(a["timestamp"] for a in alerts if a.get("timestamp"))
+    span_days = 0
+    if stamps:
+        from app.engine.relate import parse_ts
+        t0, t1 = parse_ts(stamps[0]), parse_ts(stamps[-1])
+        span_days = max(1, -int(-(t1 - t0) // 86400)) if t0 is not None and t1 is not None else 0
+    rules = [r for r in tuning.analyze_rules(alerts, verdicts) if r["flagged"]]
+    minutes = MINUTES_PER_ALERT * len(closed)
+    return templates.TemplateResponse(request, "pilot.html", _ctx(
+        request, user, customers=sorted({a.get("client") or "" for a in alerts}),
+        first=stamps[0] if stamps else "", last=stamps[-1] if stamps else "", span_days=span_days,
+        received=len(alerts), closed=len(closed), raised=len(raised), own=own, under=under,
+        own_pct=round(100 * own / len(alerts)) if alerts else 0,
+        not_read_pct=round(100 * len(closed) / len(alerts)) if alerts else 0,
+        still_open=sum(1 for v in raised if not v.get("resolved")), outcomes=outcomes, reasons=reasons,
+        cases=sum(1 for inc in result["incidents"] if set(inc["alert_ids"]) & ids),
+        approved=sum(1 for x in acts if x.get("status") in ("executed", "approved")),
+        declined=sum(1 for x in acts if x.get("status") == "declined"),
+        waiting_acts=sum(1 for x in acts if x.get("status") == "pending"),
+        checks=_checks_view(result), taught=_taught_rows(result), rules=rules[:8], rules_total=len(rules),
+        minutes_per_alert=MINUTES_PER_ALERT, hours=round(minutes / 60, 1),
+        rolled_off=result["metrics"].get("rolled_off", 0), usage=genai.usage(), model=genai.model_name(),
+        now=datetime.datetime.now(_IST).strftime("%d %b %Y, %H:%M IST")))
 
 
 @app.get("/report/{entity}", response_class=HTMLResponse)

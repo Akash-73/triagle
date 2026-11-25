@@ -52,6 +52,51 @@ STATUS = {"provider": None, "model": None, "ok": None, "error": None, "at": None
 
 _cache = {"project": None, "token": None, "token_exp": 0.0}
 
+# What the model has been asked to do and what it cost, as the API itself
+# reports it with every answer. Counts only: no prompt or answer is kept.
+# Prices are per million tokens, in US dollars, as published for the default
+# model; set TRIAGLE_PRICE_IN and TRIAGLE_PRICE_OUT when the price list or
+# the model changes. Thinking tokens are billed as output.
+USAGE = {"calls": 0, "input": 0, "output": 0, "thinking": 0, "since": None}
+PRICE_IN_USD, PRICE_OUT_USD = 1.50, 9.00
+
+
+def _price(name, default):
+    try:
+        return max(0.0, float(os.environ.get(name, "")))
+    except ValueError:
+        return default
+
+
+def _meter(resp_json):
+    """Add one answer's token counts to the running totals."""
+    used = resp_json.get("usageMetadata") or {}
+    USAGE["calls"] += 1
+    USAGE["input"] += int(used.get("promptTokenCount") or 0)
+    USAGE["output"] += int(used.get("candidatesTokenCount") or 0)
+    USAGE["thinking"] += int(used.get("thoughtsTokenCount") or 0)
+    USAGE["since"] = USAGE["since"] or datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def usage():
+    """Calls, tokens and what they cost at the published price."""
+    p_in, p_out = _price("TRIAGLE_PRICE_IN", PRICE_IN_USD), _price("TRIAGLE_PRICE_OUT", PRICE_OUT_USD)
+    cost = (USAGE["input"] * p_in + (USAGE["output"] + USAGE["thinking"]) * p_out) / 1_000_000
+    return {**USAGE, "cost_usd": round(cost, 4), "price_in": p_in, "price_out": p_out,
+            "per_call_usd": round(cost / USAGE["calls"], 4) if USAGE["calls"] else 0.0}
+
+
+def load_usage(saved):
+    """Carry the totals over a restart."""
+    if not isinstance(saved, dict):
+        return
+    for k in ("calls", "input", "output", "thinking"):
+        try:
+            USAGE[k] = max(0, int(saved.get(k) or 0))
+        except (TypeError, ValueError):
+            USAGE[k] = 0
+    USAGE["since"] = str(saved["since"]) if saved.get("since") else None
+
 # How long the model may think before it writes. Triagle asks it to put into
 # prose a verdict the rules have already reached, so a short think is enough
 # and the answer comes back in a few seconds instead of ten.
@@ -211,7 +256,9 @@ def _vertex(system, user, max_tokens, temperature):
         if resp.status_code in (401, 403):
             _cache["token"] = None
         raise ModelError(_error_text(resp))
-    text = _extract(resp.json())
+    data = resp.json()
+    _meter(data)
+    text = _extract(data)
     if not text:
         raise ModelError("The model returned no text.")
     return text
@@ -227,7 +274,9 @@ def _ai_studio(system, user, max_tokens, temperature):
                  system, user, max_tokens, temperature)
     if resp.status_code != 200:
         raise ModelError(_error_text(resp))
-    text = _extract(resp.json())
+    data = resp.json()
+    _meter(data)
+    text = _extract(data)
     if not text:
         raise ModelError("The model returned no text.")
     return text
@@ -286,7 +335,7 @@ def status():
         "configured": configured(), "transport": transport, "model": model_name(), "thinking": thinking(),
         "location": location() if vertex_enabled() else None,
         "project": project() if vertex_enabled() else None,
-        "last": dict(STATUS),
+        "last": dict(STATUS), "usage": usage(),
     }
 
 

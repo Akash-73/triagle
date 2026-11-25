@@ -36,6 +36,8 @@
           {% if verdict.duplicate_of %}<dt>Raised on</dt><dd><a href="/alert/{{ verdict.duplicate_of }}">the first alert of the burst</a></dd>{% endif %}
           {% if verdict.recommended_actions %}<dt>Do next</dt><dd>{% for a in verdict.recommended_actions %}{{ a }}{% if not loop.last %}<br>{% endif %}{% endfor %}</dd>{% endif %}
           {% if verdict.tuning_recommendation %}<dt>Fix the noise</dt><dd>{{ verdict.tuning_recommendation }}</dd>{% endif %}
+          {% if verdict.instruction %}<dt>Taught rule</dt><dd><a href="/taught#{{ verdict.instruction }}">{{ verdict.instruction }}</a>, under Your rules</dd>{% endif %}
+          {% if check and check.ok %}<dt>Checked</dt><dd>{{ check.by }} checked this closure and agreed, {{ check.at|ist_short }}</dd>{% endif %}
           <dt>Question to answer</dt><dd>{{ uc.question }}</dd>
         </dl>
         <p class="by" style="margin-top:12px;">Decided by rules, the same way every time. The model can explain this alert; it cannot change the verdict.</p>
@@ -119,11 +121,31 @@
         <form method="post" action="/alert/resolve">
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alert_id" value="{{ alert.alert_id }}">
           <input type="text" name="note" maxlength="300" placeholder="What it was (optional, recorded)" aria-label="Note">
+          {% if teachable %}
+          <label class="teach"><input type="checkbox" name="teach" value="1"> <span><b>Do the same next time.</b> Close this alert on {{ alert.host or alert.entity }} without asking, when I choose expected activity or false positive.</span></label>
+          <div class="row teach-how">
+            <select name="scope" aria-label="Where the rule applies"><option value="machine">On this machine</option>{% if alert.user %}<option value="account">On this machine, for account {{ alert.user }}</option>{% endif %}</select>
+            <select name="days" aria-label="How long the rule runs">{% for d in teach_days %}<option value="{{ d }}"{% if d == 30 %} selected{% endif %}>for {{ d }} days</option>{% endfor %}</select>
+          </div>
+          {% endif %}
           <div class="row">{% for key, label in resolutions.items() %}<button class="btn" type="submit" name="outcome" value="{{ key }}">{{ label }}</button>{% endfor %}</div>
+          {% if not teachable %}<div class="why">Triagle raised this on evidence (a risk signal, a known-bad address or a sign-in pattern), so it cannot be taught to close it next time.</div>{% endif %}
         </form>
       {% else %}
         <div class="why">Waiting for an analyst to decide what this was.</div>
       {% endif %}
+      </div>
+    </section>
+    {% endif %}
+    {% if checkable and can_approve and not check %}
+    <section class="panel" id="check">
+      <header><h2>Was this right?</h2></header>
+      <div class="act">
+        <div class="why">Triagle closed this alert on its own. Your answer is counted in the spot checks. If you disagree, the alert goes back to the queue.</div>
+        <form method="post" action="/checks/mark">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alert_id" value="{{ alert.alert_id }}"><input type="hidden" name="next" value="/alert/{{ alert.alert_id }}">
+          <div class="row"><button class="btn" type="submit" name="agree" value="yes">Agree</button><button class="btn" type="submit" name="agree" value="no">Disagree, send it back</button></div>
+        </form>
       </div>
     </section>
     {% endif %}

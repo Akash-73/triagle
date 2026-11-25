@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Your rules · Triagle{% endblock %}
+{% block heading %}Your rules{% endblock %}
+{% block content %}
+<p class="note" style="max-width:86ch; margin-bottom:16px;">What your analysts have taught Triagle. When someone closes an alert as expected activity or as a false positive, they can ask Triagle to close the same alert on that machine from then on. Each rule says who taught it and why, runs for a set number of days, and can be switched off here. A taught rule never closes an alert that was raised on evidence: a risk signal, a known-bad address or a sign-in pattern.</p>
+<section class="panel">
+  <header><h2>Taught rules</h2><span class="n">{{ rows|selectattr('state', 'equalto', 'on')|list|length }} in force, {{ rows|length }} in all</span></header>
+  {% if rows %}
+  <div class="scroll-x"><table class="tbl">
+    <thead><tr><th>It closes</th><th style="width:19%">Where</th><th style="width:25%">Taught by</th><th style="width:128px">Runs until</th><th class="num" style="width:96px">Used</th>{% if can_change %}<th style="width:190px"></th>{% endif %}</tr></thead>
+    <tbody>{% for x in rows %}{% set r = x.rule %}
+    <tr id="{{ r.id }}"{% if x.state != 'on' %} class="closed"{% endif %}>
+      <td><a class="primary" href="/alerts?show=all&amp;closed=all&amp;q={{ (r.title or '')[:80]|urlencode }}" title="The alerts this detection rule raised">{{ r.title }}</a>
+        {% if x.state == 'on' %}<span class="tag ok">In force</span>{% elif x.state == 'ended' %}<span class="tag warn">Ran out</span>{% else %}<span class="tag">Switched off</span>{% endif %}
+        <span class="sub" style="white-space:normal;">{{ source_name(r.source) }}{% if r.rule_id %}, rule {{ r.rule_id }}{% endif %} · {{ r.id }} · closed as {{ r.label|lower }}</span></td>
+      <td>{{ r.host }}{% if r.user %}<span class="sub">account {{ r.user }}</span>{% endif %}<span class="sub">{{ r.client }}</span></td>
+      <td>{{ r.by }}, {{ r.at|ist_short }}{% if r.note %}<span class="sub" style="white-space:normal;">{{ r.note }}</span>{% endif %}<span class="sub"><a href="/alert/{{ r.from_alert }}">the alert it came from</a></span></td>
+      <td class="nowrap">{{ r.until|ist_short }}{% if x.state == 'off' and r.off_by %}<span class="sub">off by {{ r.off_by }}</span>{% endif %}</td>
+      <td class="num">{{ x.count }}{% if x.last %}<span class="sub">last {{ x.last|ist_short }}</span>{% endif %}</td>
+      {% if can_change %}<td>
+        <form method="post" action="/taught/change" style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="rule_id" value="{{ r.id }}">
+          {% if x.state == 'on' %}<button class="btn small" type="submit" name="do" value="off">Switch off</button>{% endif %}
+          <input type="hidden" name="days" value="30"><button class="btn small" type="submit" name="do" value="renew">{{ 'Run 30 more days' if x.state == 'on' else 'Start again, 30 days' }}</button>
+        </form></td>{% endif %}
+    </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="empty"><b>Nothing taught yet.</b>Open an alert that needs a decision, close it as expected activity or as a false positive, and tick "Do the same next time". The rule appears here.</div>{% endif %}
+</section>
+{% endblock %}

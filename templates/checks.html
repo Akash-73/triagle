@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Spot checks · Triagle{% endblock %}
+{% block heading %}Spot checks{% endblock %}
+{% block top_actions %}<a class="btn small" href="/pilot">Pilot report</a>{% endblock %}
+{% block content %}
+<p class="note" style="max-width:86ch; margin-bottom:16px;">Triagle closes most alerts on its own. This page is how you find out whether it should have. It offers a sample of its closures, taken across every reason for closing and every detection rule, and you say whether you agree. If you disagree, the alert goes back to the queue and the disagreement is counted against Triagle.</p>
+
+<section style="margin-bottom:20px;">
+  <p class="handover">
+    {% if tally.checked %}<b>{{ tally.checked }}</b> closure{{ '' if tally.checked == 1 else 's' }} checked by a person.
+    <b>{{ tally.agreed }}</b> agreed{% if tally.disagreed %}, <b class="n-crit">{{ tally.disagreed }}</b> disagreed{% endif %}.
+    Agreement <b>{{ tally.pct }}%</b>.
+    {% else %}No closure has been checked yet.{% endif %}
+    <b>{{ waiting }}</b> more could be checked.
+  </p>
+</section>
+
+<section class="panel" id="next">
+  <header><h2>Check these next</h2><span class="n">{{ rows|length }} of {{ waiting }}</span></header>
+  {% if rows %}
+  <div class="scroll-x"><table class="tbl">
+    <thead><tr><th style="width:30%">Alert</th><th style="width:15%">Asset</th><th>Why Triagle closed it</th>{% if can_check %}<th style="width:210px"></th>{% endif %}</tr></thead>
+    <tbody>{% for r in rows %}
+    <tr>
+      <td><a class="primary" href="/alert/{{ r.alert.alert_id }}">{{ r.alert.title }}</a><span class="sub">{{ source_name(r.alert.source) }}{% if r.alert.indicators.rule_level %}, rated level {{ r.alert.indicators.rule_level }}{% endif %} · {{ r.alert.timestamp|ist_short }}</span></td>
+      <td>{{ r.alert.host or r.alert.entity }}{% if r.alert.user %}<span class="sub">{{ r.alert.user }}</span>{% endif %}</td>
+      <td style="color:var(--text-2);">{{ r.verdict.summary }}<span class="sub">{{ closure_words(r.verdict.closure_code) }}</span></td>
+      {% if can_check %}<td>
+        <form method="post" action="/checks/mark" style="display:flex; gap:6px; justify-content:flex-end;">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alert_id" value="{{ r.alert.alert_id }}">
+          <button class="btn small" type="submit" name="agree" value="yes">Agree</button>
+          <button class="btn small" type="submit" name="agree" value="no" title="Sends the alert back to the queue">Disagree</button>
+        </form></td>{% endif %}
+    </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% elif tally.checked %}<div class="empty"><b>Every closure in the queue has been checked.</b>New ones appear here as alerts arrive.</div>
+  {% else %}<div class="empty"><b>Nothing to check yet.</b>Closures appear here once alerts from a connected tool have arrived.</div>{% endif %}
+</section>
+
+{% if disagreed %}
+<section class="panel" style="margin-top:18px;">
+  <header><h2>Closures a person disagreed with</h2><span class="n">{{ disagreed|length }}</span></header>
+  <div class="scroll-x"><table class="tbl">
+    <thead><tr><th style="width:32%">Alert</th><th>What Triagle had said</th><th style="width:24%">Checked by</th></tr></thead>
+    <tbody>{% for c in disagreed %}
+    <tr><td><a class="primary" href="/alert/{{ c.id }}">{{ c.title }}</a><span class="sub">{{ c.host }}</span></td>
+      <td style="color:var(--text-2);">{{ c.summary }}</td><td>{{ c.by }}, {{ c.at|ist_short }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if recent %}
+<section class="panel" style="margin-top:18px;">
+  <header><h2>Checked most recently</h2><span class="n">{{ recent|length }}</span></header>
+  <div class="scroll-x"><table class="tbl">
+    <thead><tr><th style="width:36%">Alert</th><th style="width:110px">Answer</th><th>Checked by</th>{% if can_check %}<th style="width:90px"></th>{% endif %}</tr></thead>
+    <tbody>{% for c in recent %}
+    <tr class="closed"><td><a href="/alert/{{ c.id }}">{{ c.title }}</a><span class="sub">{{ c.host }}</span></td>
+      <td>{% if c.ok %}<span class="tag ok">Agreed</span>{% else %}<span class="tag bad">Disagreed</span>{% endif %}</td>
+      <td>{{ c.by }}, {{ c.at|ist_short }}</td>
+      {% if can_check %}<td><form method="post" action="/checks/undo" style="display:flex; justify-content:flex-end;">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alert_id" value="{{ c.id }}">
+        <button class="btn small quiet" type="submit" title="Take this answer back">Undo</button></form></td>{% endif %}
+    </tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

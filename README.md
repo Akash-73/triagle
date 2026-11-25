@@ -177,6 +177,39 @@ Assets are recognised by name, or listed in `TRIAGLE_OT_CONTROLLERS` and
 `TRIAGLE_OT_STATIONS`. In a real deployment the list comes from the OT
 monitor's inventory. See `app/engine/ot.py` and `tests/test_ot.py`.
 
+## Teaching it, and checking it
+
+Two things a customer can do from the screen, without anyone changing Triagle's code.
+
+**Teach it.** When an analyst closes an alert as expected activity or as a false
+positive, they can tick "Do the same next time". Triagle then closes the same
+detection rule on that machine (and, if they choose, for that account) from then on.
+The rules are listed under **Your rules**, with who taught each one, why, how often it
+has been used and when it runs out.
+
+- A taught rule runs for 7, 30 or 90 days and then stops, unless someone renews it.
+- It never closes an alert raised on evidence: a risk signal on the alert, a known-bad
+  address, a sign-in pattern such as password guessing, or anything about operational
+  technology.
+- It never reaches back. Switching it off stops it from that moment and leaves what it
+  closed as it was.
+- Once a taught rule has been used, **Detection tuning** says how to make the same
+  change in the tool itself.
+
+**Check it.** **Spot checks** offers a sample of the alerts Triagle closed on its own,
+taken across every reason for closing and every detection rule. An analyst agrees or
+disagrees with each. A disagreement sends the alert back to the queue. The share agreed
+with is the figure a pilot is judged on, and it is never rounded up.
+
+**Pilot report** (`/pilot`) puts it on one printable page: what arrived, what was
+closed and why, what went to a person, the agreement figure, what people taught it,
+which rules to fix in the tool, and what the model cost.
+
+The model's cost is counted from the token figures the API returns with each answer
+(see **Connectors**, Model). Prices are per million tokens in US dollars and default to
+the published price of the default model. Set `TRIAGLE_PRICE_IN` and
+`TRIAGLE_PRICE_OUT` if the price list or the model changes.
+
 ## Telling the SIEM what to fix
 
 The Detection tuning page looks at the rule behind each alert: what the tool

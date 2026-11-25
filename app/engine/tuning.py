@@ -28,7 +28,10 @@ Two rules about counting:
     address already raised, the earlier failed sign-ins from that address.
   - What a person decided outranks what Triagle did. Alerts a person marked
     as false positives make the rule a candidate. Alerts a person confirmed
-    as expected do not.
+    as expected do not, unless they also taught Triagle to close the same
+    alert from then on (instructions.py) and it has: then the tool is asking
+    for attention a person has already said it does not deserve, and the
+    lasting fix is in the tool.
 
 This only ever flags. Triagle never switches a rule off: a noisy rule can
 still catch the one real attack.
@@ -138,6 +141,14 @@ def _advice(s):
                       f"{_plural(k, 'that alert shows', 'those alerts have in common')}.")
     if s[RAISED]:
         return KEEP, "Keep it. " + _went_to_a_person(s)
+    if s["taught"]:
+        k, hosts = s["taught"], ", ".join(sorted(s["taught_hosts"])[:3])
+        if s["source"] == "wazuh" and s["rule_id"]:
+            how = (f"To stop them at the source, add a child rule of {s['rule_id']} at level 0 in Wazuh "
+                   f"for that machine. The rule stays as it is for everything else.")
+        else:
+            how = f"To stop them at the source, add an exception for that machine in {tool}."
+        return TUNE, (f"A person taught Triagle to close this on {hosts}, and it has closed {k} since. {how}")
     if s[EXPECTED]:
         return EXPECTED, "A person confirmed this as expected activity. Nothing to tune."
 
@@ -176,6 +187,7 @@ def analyze_rules(alerts, verdicts):
     stats = defaultdict(lambda: {"volume": 0, RAISED: 0, EXPECTED: 0, FALSE: 0, CLOSED: 0, "under": 0,
                                  "under_raised": 0, "rating": "low", "levels": set(), "ids": set(),
                                  "codes": Counter(), "reasons": Counter(), "specific": 0,
+                                 "taught": 0, "taught_hosts": set(),
                                  "title": "", "source": ""})
     for a in alerts:
         v = verdicts.get(a["alert_id"]) or {}
@@ -196,6 +208,9 @@ def analyze_rules(alerts, verdicts):
             s["under"] += 1
             if bucket == RAISED:
                 s["under_raised"] += 1
+        if bucket == CLOSED and v.get("instruction"):
+            s["taught"] += 1
+            s["taught_hosts"].add(str(a.get("host") or a.get("entity") or ""))
         if bucket == CLOSED:
             s["codes"][v.get("closure_code") or ""] += 1
             s["reasons"][_first_sentence(v.get("reasoning") or v.get("summary"))] += 1

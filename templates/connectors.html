@@ -73,6 +73,7 @@
           <dt>Reached through</dt><dd>{{ model_status.transport or 'Nothing configured' }}{% if model_status.location %}, location {{ model_status.location }}{% endif %}</dd>
           {% if model_status.project %}<dt>Project</dt><dd class="mono">{{ model_status.project }}</dd>{% endif %}
           <dt>Last call</dt><dd id="model-last">{% if model_status.last.ok %}Answered in {{ model_status.last.seconds }} s{% elif model_status.last.ok is false %}Failed: {{ model_status.last.error }}{% else %}None yet{% endif %}</dd>
+          <dt>Used so far</dt><dd>{% set u = model_status.usage %}{% if u.calls %}{{ u.calls }} call{{ '' if u.calls == 1 else 's' }}, {{ u.input }} tokens in and {{ u.output + u.thinking }} out{% if u.since %}, since {{ u.since|ist_short }} IST{% endif %}. About ${{ '%.4f'|format(u.cost_usd) }} in all, ${{ '%.4f'|format(u.per_call_usd) }} a call, at the published price of ${{ '%.2f'|format(u.price_in) }} in and ${{ '%.2f'|format(u.price_out) }} out per million tokens.{% else %}No calls counted yet. Counting starts when a case account is written or a question is asked.{% endif %}</dd>
           <dt>Used for</dt><dd>Writing the account of a case and answering an analyst's questions about it.</dd>
           <dt>Never used for</dt><dd>Deciding a verdict, choosing a target or running an action. Those come from rules and a person.</dd>
           <dt>Before a prompt leaves</dt><dd>Aadhaar numbers, PANs, UPI IDs, mobile numbers and email addresses are masked, and restored in the answer.</dd>
