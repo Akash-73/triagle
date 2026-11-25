@@ -218,7 +218,7 @@ def test_a_deployment_can_offer_one_scenario_only(site, monkeypatch):
     assert '<select name="scenario"' in a.get("/live").text, "both are offered by default"
     monkeypatch.setenv("TRIAGLE_DEMO_SCENARIOS", "bank")
     page = a.get("/live").text
-    assert '<select name="scenario"' not in page and "Tirupati" not in page
+    assert '<select name="scenario"' not in page and "Tarang" not in page
     out, _ = send(a, kind="intrusion", scenario="power")
     assert out["state"]["run"]["customer"] == TEST, "asking for one that is not offered runs the one that is"
     r = a.post("/demo/fire", data={"csrf": token(a), "scenario": "power"}, follow_redirects=False)
