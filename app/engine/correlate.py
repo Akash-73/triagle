@@ -107,7 +107,7 @@ def correlate(alerts, verdicts=None, hours=None):
         key = (hosts.most_common(1) or counts.most_common(1))[0][0]
         sources = sorted({a.source for a in group})
         first = group[0]                 # groups are filled in time order
-        ref = hashlib.sha1(f"{first.client}|{first.alert_id}".encode()).hexdigest()[:6].upper()
+        ref = hashlib.sha1(f"{first.client}|{first.alert_id}".encode(), usedforsecurity=False).hexdigest()[:6].upper()
         incidents.append({
             "id": f"INC-{ref}",
             "key": key,

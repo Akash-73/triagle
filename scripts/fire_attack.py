@@ -26,6 +26,8 @@ from app import demo_attack  # noqa: E402
 
 
 def post(url, key, payload):
+    if not url.lower().startswith(("https://", "http://")):
+        raise SystemExit("The address must start with https:// or http://")
     data = json.dumps(payload).encode()
     req = urllib.request.Request(url.rstrip("/") + "/ingest", data=data, method="POST",
                                  headers={"Content-Type": "application/json",

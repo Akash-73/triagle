@@ -208,7 +208,7 @@ def from_wazuh(raw, client):
     wid = raw.get("id")
     if not wid:
         seed = f"{raw.get('timestamp')}|{rule.get('id')}|{agent.get('id')}|{raw.get('full_log', '')[:200]}"
-        wid = hashlib.sha1(seed.encode()).hexdigest()[:16]
+        wid = hashlib.sha1(seed.encode(), usedforsecurity=False).hexdigest()[:16]      # an id, not a secret
 
     kind, reason, drift = classify(raw)
     groups = _groups(rule)

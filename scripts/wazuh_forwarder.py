@@ -446,6 +446,8 @@ def main():
     args = ap.parse_args()
     if not args.dry_run and not (args.triagle and args.key):
         ap.error("--triagle and --key are required (or set TRIAGLE_URL and TRIAGLE_INGEST_KEY)")
+    if args.triagle and not args.triagle.lower().startswith(("https://", "http://")):
+        ap.error("--triagle must be a web address that starts with https://")
     try:
         return run(args)
     except KeyboardInterrupt:

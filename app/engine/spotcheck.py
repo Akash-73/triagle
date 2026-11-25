@@ -39,7 +39,7 @@ def eligible(alert, verdict, skip_clients=()):
 
 
 def _rank(seed, text):
-    return hashlib.sha1(f"{seed}|{text}".encode()).hexdigest()
+    return hashlib.sha1(f"{seed}|{text}".encode(), usedforsecurity=False).hexdigest()      # an ordering, not a secret
 
 
 def _turns(groups):
