@@ -1501,11 +1501,19 @@ def checks_read(request: Request, csrf: str = Form(default=""), user=Depends(req
         sample = spotcheck.sample(result["alerts"], result["verdicts"], _CACHE["checks"], CHECKS_SHOWN,
                                   _test_clients())
         todo = [a for a in sample if a["alert_id"] not in _CACHE["second"]]
-        rows = [(a, result["verdicts"][a["alert_id"]]) for a in todo]
-        house = "\n".join(h for h in (_house(result, c) for c in sorted({a.get("client") or "" for a in todo})) if h)
+        # one call per customer, so one customer's house knowledge is never in a prompt with another's alerts
+        batches = {}
+        for a in todo:
+            batches.setdefault(a.get("client") or "", []).append((a, result["verdicts"][a["alert_id"]]))
+        houses = {c: _house(result, c) for c in batches}
+    rows = [r for group in batches.values() for r in group]
     if not rows:
         return RedirectResponse(url="/checks?read=none", status_code=303)
-    found, provider, error = nightshift.second_read(rows, house)       # outside the lock: this is the slow part
+    found, provider, error = {}, None, None
+    for c, group in batches.items():                                    # outside the lock: this is the slow part
+        got, by, err = nightshift.second_read(group, houses[c])
+        found.update(got)
+        provider, error = provider or by, error or err
     with _LOCK:
         at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
         for aid, view in found.items():

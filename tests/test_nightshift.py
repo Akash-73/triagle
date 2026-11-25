@@ -273,3 +273,25 @@ def test_the_summary_is_written_by_the_model_for_an_analyst_and_kept_for_everyon
     main._MORNING.clear()
     app.get("/api/morning")
     assert "HOUSE KNOWLEDGE" in model["calls"][-1]["user"] and "Monthly patching" in model["calls"][-1]["user"]
+
+
+def test_each_customers_closures_are_read_with_that_customers_knowledge_only(app, model):
+    from tests.test_bursts import _wz
+    start = _secs(dt.datetime.now(dt.timezone.utc).replace(microsecond=0) - dt.timedelta(minutes=20))
+    other = [_wz(start + i, "5501", 3, "PAM: Login session opened.", ("pam", "syslog", "authentication_success"),
+                 {"dstuser": "ops"}, host="branch-01", client="Second Customer Ltd", n=700 + i) for i in range(2)]
+    assert app.post("/ingest", headers={"X-Triagle-Key": KEY}, json=other).json()["accepted"] == 2
+    main._CACHE["taught"].append({"id": "TR-GREEN", "client": "Greenvale Co-operative Bank", "on": True,
+                                  "title": "PAM: Login session opened.", "host": "wazuh-demo", "user": "",
+                                  "outcome": "expected", "label": "Expected activity", "note": "Deploy account",
+                                  "at": "2026-11-25T00:00:00+00:00", "until": "2026-12-25T00:00:00+00:00"})
+    model["reply"] = lambda system, user: json.dumps(
+        [{"n": i + 1, "view": "agree", "why": "Routine."} for i in range(user.count("Closed because:"))])
+    app.post("/checks/read", data={"csrf": _csrf(app.get("/checks").text)})
+    prompts = [c["user"] for c in model["calls"]]
+    assert len(prompts) == 2, "one call per customer"
+    for text in prompts:
+        mine = "branch-01" in text
+        assert mine != ("wazuh-demo" in text), "a prompt holds one customer's alerts"
+        assert ("TR-GREEN" in text) == (not mine), "and only that customer's taught rules"
+    assert len(main._CACHE["second"]) == 10
