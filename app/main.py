@@ -530,7 +530,7 @@ def _reprocess():
     m["received"] = m["total"] + rolled["total"]
     m["closed_all"] = m["auto_closed"] + rolled["closed"]
     m["escalated_all"] = m["escalated"] + rolled["escalated"]
-    m["closed_pct_all"] = round(100 * m["closed_all"] / m["received"]) if m["received"] else 0
+    m["closed_pct_all"] = (100 * m["closed_all"]) // m["received"] if m["received"] else 0      # never rounded up
     m["closed_by_code"] = codes
     m["rolled_off"] = rolled["total"]
 
@@ -1601,6 +1601,12 @@ def checks_undo(request: Request, alert_id: str = Form(...), back: str = Form(de
     return RedirectResponse(url=_back_to(back, "/checks"), status_code=303)
 
 
+def _share(part, whole):
+    """A share as a whole percent, never rounded up: 598 of 600 is 99%, because
+    "100% closed" would say nothing went to a person."""
+    return (100 * part) // whole if whole else 0
+
+
 @app.get("/pilot", response_class=HTMLResponse)
 def pilot_report(request: Request, user=Depends(require_user)):
     """What a pilot is judged on, on one page: what arrived, what Triagle
@@ -1643,8 +1649,7 @@ def pilot_report(request: Request, user=Depends(require_user)):
         request, user, customers=sorted({a.get("client") or "" for a in alerts}),
         first=stamps[0] if stamps else "", last=stamps[-1] if stamps else "", span_days=span_days,
         received=len(alerts), closed=len(closed), raised=len(raised), own=own, under=under,
-        own_pct=round(100 * own / len(alerts)) if alerts else 0,
-        not_read_pct=round(100 * len(closed) / len(alerts)) if alerts else 0,
+        own_pct=_share(own, len(alerts)), not_read_pct=_share(len(closed), len(alerts)),
         still_open=sum(1 for v in raised if not v.get("resolved")), outcomes=outcomes, reasons=reasons,
         cases=sum(1 for inc in result["incidents"] if set(inc["alert_ids"]) & ids),
         approved=sum(1 for x in acts if x.get("status") in ("executed", "approved")),

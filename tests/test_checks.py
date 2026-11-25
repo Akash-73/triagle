@@ -170,6 +170,12 @@ def test_the_pilot_report_carries_the_figures_and_checks_survive_a_restart(app):
     assert viewer.get("/pilot").status_code == 200
 
 
+def test_the_share_closed_is_never_rounded_up():
+    assert main._share(598, 600) == 99                       # 99.67: "100%" would say nothing went to a person
+    assert main._share(600, 600) == 100 and main._share(594, 600) == 99
+    assert main._share(0, 0) == 0
+
+
 def test_agreement_is_never_rounded_up():
     checks = {str(i): {"ok": i != 0, "client": "Bank"} for i in range(300)}
     assert spotcheck.tally(checks)["pct"] == 99.6            # 299 of 300 is 99.67: not shown as 99.7 or 100
