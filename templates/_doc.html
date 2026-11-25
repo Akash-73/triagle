@@ -7,6 +7,7 @@
 <link rel="preload" href="/static/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/triagle.css?v={{ asset_v }}">
 <link rel="stylesheet" href="/static/document.css?v={{ asset_v }}">
+<script src="/static/triagle.js?v={{ asset_v }}" defer></script>
 {% endmacro %}
 
 {% macro brand() %}
@@ -15,7 +16,7 @@
 
 {# Any element with data-due shows the time left and turns its row amber, then red. #}
 {% macro due_script() %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function () {
   function fmt(ms) {
     var s = Math.floor(Math.abs(ms) / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;

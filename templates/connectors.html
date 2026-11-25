@@ -26,7 +26,7 @@
             </ol>
             <p class="note" style="margin-top:12px;">
               {% if ingest_key %}These steps already contain this deployment's ingest key, <code id="key-{{ s.key }}">{{ ingest_key }}</code>. Treat it like a password.
-              {% elif key_set %}The ingest key is set for this deployment. {% if not auth_on %}It is shown here only when sign-in is on.{% else %}Ask an analyst for it.{% endif %}
+              {% elif key_set %}The ingest key is set for this deployment and is not shown on this page. Read it from the deployment's secret store.{% if key_customers %} There is a key for each of these customers: {{ key_customers|join(', ') }}. A tool that presents a customer's key writes to that customer's queue only.{% endif %}
               {% else %}No ingest key is set. Set TRIAGLE_INGEST_KEY on the deployment before connecting a tool.{% endif %}
               Alerts appear on the <a href="/alerts?show=all">Alerts</a> page within seconds of arriving.
             </p>
@@ -114,7 +114,7 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function () {
   var CSRF = {{ csrf|tojson }}, EX = {{ examples|tojson }};
   // connect buttons

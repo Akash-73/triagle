@@ -4,9 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% block title %}Triagle{% endblock %}</title>
-<script>try{var t=localStorage.getItem('triagle-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<script nonce="{{ csp_nonce() }}">try{var t=localStorage.getItem('triagle-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 <link rel="preload" href="/static/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/triagle.css?v={{ asset_v }}">
+<script src="/static/triagle.js?v={{ asset_v }}" defer></script>
 {% block head %}{% endblock %}
 </head>
 <body>
@@ -42,6 +43,7 @@
       <div class="who"><span class="tag warn" title="Anyone with the address can use this console">sign-in is OFF</span></div>
       {% endif %}
       <button class="btn small quiet" type="button" id="theme" style="justify-self:start; padding-left:0;">Switch to light</button>
+      <a href="/security" style="font-size:.86rem; color:var(--text-3);">Security and data handling</a>
     </div>
   </aside>
 
@@ -59,8 +61,8 @@
     </div>
   </div>
 </div>
-<button id="fresh" class="btn primary toast" hidden onclick="location.reload()">New alerts arrived. Refresh</button>
-<script>
+<button id="fresh" class="btn primary toast" hidden data-act="reload">New alerts arrived. Refresh</button>
+<script nonce="{{ csp_nonce() }}">
 (function () {
   var root = document.documentElement, btn = document.getElementById('theme');
   function label() { btn.textContent = root.getAttribute('data-theme') === 'light' ? 'Switch to dark' : 'Switch to light'; }

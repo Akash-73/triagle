@@ -178,11 +178,15 @@ def test_connectors_page_lists_every_connector_with_this_deployments_address(app
     assert "Sending" in page                           # the Wazuh feed loaded by the fixture
 
 
-def test_the_ingest_key_is_shown_to_an_analyst_and_not_to_a_viewer(app):
+def test_the_ingest_key_is_not_written_into_the_page(app, monkeypatch):
+    page = app.get("/connectors").text                          # a signed-in analyst
+    assert 'id="key-wazuh"' not in page and "X-Triagle-Key: YOUR_INGEST_KEY" in page, "a console is shown on projectors"
+    assert "is not shown on this page" in page
+    monkeypatch.setenv("TRIAGLE_SHOW_INGEST_KEY", "on")         # while a first tool is being connected
     assert f"<code id=\"key-wazuh\">{KEY}</code>" in app.get("/connectors").text
     v = TestClient(main.app)
     v.post("/login", data={"username": "viewerbob", "password": "look"})
-    assert 'id="key-wazuh"' not in v.get("/connectors").text
+    assert 'id="key-wazuh"' not in v.get("/connectors").text    # never to a viewer
 
 
 def test_trying_an_alert_returns_a_verdict_and_stores_nothing(app):

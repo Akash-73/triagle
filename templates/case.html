@@ -123,7 +123,7 @@
 {% endblock %}
 {% block scripts %}
 {{ parts.ask_script(csrf) }}
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function () {
   var dl = document.getElementById('notes'), by = document.getElementById('notes-by');
   fetch('/api/notes?case={{ incident.id|urlencode }}', { credentials: 'same-origin' })

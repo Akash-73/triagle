@@ -17,3 +17,31 @@ jobs:
         run: python -m pytest -q
       - name: Known vulnerabilities in dependencies
         run: pip-audit -r requirements.txt
+
+  image:
+    # The image that is deployed. Its build runs every test, so a deploy of a
+    # change that breaks one fails here first.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t triagle:ci .
+      - name: It starts, answers, and does not run as root
+        run: |
+          docker run -d --name app -p 8000:8000 -e TRIAGLE_ADMIN_PASSWORD=ci-only triagle:ci
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8000/health && break; sleep 1; done
+          curl -fs http://127.0.0.1:8000/health | grep -q '"ok":true'
+          uid=$(docker exec app cat /proc/1/status | awk '/^Uid:/{print $2}')
+          echo "the app runs as uid $uid"
+          test "$uid" = "10001"
+          docker exec app sh -c 'test ! -d /app/tests'
+          docker rm -f app
+      - name: Where only root can write the saved state, it stays up and says why
+        run: |
+          sudo mkdir -p /tmp/rootonly && sudo chown root:root /tmp/rootonly && sudo chmod 755 /tmp/rootonly
+          docker run -d --name app -p 8001:8000 -e TRIAGLE_ADMIN_PASSWORD=ci-only \
+            -e TRIAGLE_STATE_FILE=/state/state.json.gz -v /tmp/rootonly:/state triagle:ci
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8001/health && break; sleep 1; done
+          curl -fs http://127.0.0.1:8001/health | grep -q '"ok":true'
+          docker logs app 2>&1 | grep -q "Running as root"
+          docker rm -f app

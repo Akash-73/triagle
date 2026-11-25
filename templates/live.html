@@ -53,7 +53,7 @@
 </section>
 <noscript><p class="callout warn" style="margin-top:16px;">This page needs JavaScript to update. The same alerts are listed under <a href="/alerts">Alerts</a>.</p></noscript>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function () {
   var state = {{ state|tojson }};
   var csrf = {{ csrf|tojson }}, canTest = {{ can_test|tojson }};

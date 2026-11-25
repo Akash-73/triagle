@@ -120,7 +120,7 @@
 {% endmacro %}
 
 {% macro ask_script(csrf) %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function () {
   var box = document.getElementById('ask'); if (!box) return;
   var form = box.querySelector('form'), input = form.querySelector('input'), out = box.querySelector('.answers');

@@ -9,6 +9,7 @@ plus a client-ready incident report to forward to the end customer.
 Triagle — triage, decided.
 """
 import atexit
+import contextvars
 import os
 import json
 import time
@@ -31,7 +32,7 @@ from app.engine.response import execute_action, DECISION_KEYS
 from app import store
 from app.engine import certin, regclock
 from app.agent import backend
-from app import auth, audit
+from app import auth, audit, sso
 from app.engine import sources_meta, worknotes, reputation, analyst, genai, usecases, siem_link, tuning
 from app.engine import instructions, spotcheck, nightshift
 from app.engine.correlate import GENERIC_ENTITIES
@@ -39,7 +40,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.8.0", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.9.0", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -88,6 +89,12 @@ def _ago(iso, now=None):
 
 
 templates.env.filters["ist_short"] = _ist_short
+
+# Each page carries a random value that its own <script> tags repeat. The
+# browser runs only scripts that carry it, so script text that reaches a page
+# some other way does not run.
+_NONCE = contextvars.ContextVar("csp_nonce", default="")
+templates.env.globals["csp_nonce"] = lambda: _NONCE.get()
 
 CLOSURE_WORDS = {
     "BENIGN_EXPECTED": "routine activity", "BENIGN_KNOWN_TOOL": "known admin tools",
@@ -151,9 +158,26 @@ def require_analyst(user=Depends(require_user)):
     return user
 
 
+def _forwarded_hops():
+    """How many proxies of our own stand in front of the app. Each one adds the
+    address it saw to the end of X-Forwarded-For. Cloud Run's front end is one;
+    a load balancer in front of that makes two (TRIAGLE_FORWARDED_HOPS)."""
+    try:
+        return max(0, int(os.environ.get("TRIAGLE_FORWARDED_HOPS", "1" if os.environ.get("K_SERVICE") else "0")))
+    except ValueError:
+        return 0
+
+
 def _client_ip(request: Request):
-    fwd = request.headers.get("x-forwarded-for", "")
-    return (fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "")) or "-"
+    """The address of whoever is calling. X-Forwarded-For starts with whatever
+    the caller chose to send, so only the entries our own proxies added, at the
+    end, are believed. With no proxy of ours in front, the header is ignored."""
+    peer = (request.client.host if request.client else "") or "-"
+    hops = _forwarded_hops()
+    if not hops:
+        return peer
+    parts = [x.strip() for x in request.headers.get("x-forwarded-for", "").split(",") if x.strip()]
+    return parts[-hops] if len(parts) >= hops else peer
 
 
 def _is_https(request: Request):
@@ -206,16 +230,21 @@ atexit.register(lambda: _flush(force=True))         # a clean stop writes whatev
 
 @app.middleware("http")
 async def _security_headers(request: Request, call_next):
+    nonce = secrets.token_urlsafe(16)
+    _NONCE.set(nonce)
     resp = await call_next(request)
     _flush()                                         # writes only if something changed and a save is due
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
-    # Everything the pages load is served from here. Scripts and styles are
-    # written inline in the templates, so those stay allowed; nothing may be
-    # loaded from another site, framed, or posted to another site.
+    resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+    # Everything the pages load is served from here. A script runs only if it
+    # carries this response's nonce, so script text written into a page by
+    # anyone else does not run, and neither does an inline handler. Styles are
+    # still written in the templates. Nothing may be loaded from another site,
+    # framed, or posted to another site.
     resp.headers.setdefault("Content-Security-Policy",
-                            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                            f"default-src 'self'; script-src 'self' 'nonce-{nonce}'; "
                             "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
                             "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
     resp.headers.setdefault("Cache-Control", "public, max-age=86400" if request.url.path.startswith("/static/")
@@ -225,30 +254,79 @@ async def _security_headers(request: Request, call_next):
     return resp
 
 
+SSO_ERRORS = {
+    "sso": "Single sign-on did not finish. Try again.",
+    "list": "That account is not on this console's list. Ask an analyst to add it.",
+}
+
+
+def _login_ctx(next_path, error=None):
+    return {"next": auth.safe_next(next_path), "error": error, "sso_on": sso.configured(), "sso_name": sso.name(),
+            "password_on": auth.password_login(), "code_on": auth.any_second_factor()}
+
+
 @app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request, next: str = "/"):
+def login_page(request: Request, next: str = "/", error: str = ""):
     user = current_user(request)
     if user and not user.get("guest"):
         return RedirectResponse(url=auth.safe_next(next), status_code=303)
-    return templates.TemplateResponse(request, "login.html", {"next": auth.safe_next(next), "error": None})
+    return templates.TemplateResponse(request, "login.html", _login_ctx(next, SSO_ERRORS.get(error)))
 
 
 @app.post("/login")
 def login_submit(request: Request, username: str = Form(default=""), password: str = Form(default=""),
-                 next: str = Form(default="/")):
+                 code: str = Form(default=""), next: str = Form(default="/")):
     ip = _client_ip(request)
-    user, reason = auth.check_login(username, password, ip)
+    user, reason = auth.check_login(username, password, ip, code=code)
     if not user:
         audit.record("sign-in failed", (username or "-")[:64], ip=ip, reason=reason)
         msg = ("Too many failed attempts. Try again in a few minutes." if reason == "locked"
+               else "Wrong username, password or code." if auth.any_second_factor()
                else "Wrong username or password.")
-        return templates.TemplateResponse(request, "login.html",
-                                          {"next": auth.safe_next(next), "error": msg},
+        return templates.TemplateResponse(request, "login.html", _login_ctx(next, msg),
                                           status_code=429 if reason == "locked" else 401)
-    audit.record("signed in", user["name"], ip=ip, role=user["role"])
+    audit.record("signed in", user["name"], ip=ip, role=user["role"],
+                 second_factor=True if auth.needs_code(user["name"]) else None)
     resp = RedirectResponse(url=auth.safe_next(next), status_code=303)
     resp.set_cookie(auth.COOKIE, auth.make_session(user), httponly=True, samesite="lax",
                     secure=_is_https(request), max_age=auth._state["session_seconds"], path="/")
+    return resp
+
+
+@app.get("/auth/start")
+def sso_start(request: Request, next: str = "/"):
+    """Send the browser to the identity provider to sign in."""
+    if not sso.configured():
+        raise HTTPException(status_code=404, detail="Single sign-on is not set up on this console.")
+    back = sso.public_url(_base_url(request)) + "/auth/callback"
+    url, cookie = sso.begin(back, auth.safe_next(next))
+    if not url:
+        return RedirectResponse(url="/login?error=sso", status_code=303)
+    resp = RedirectResponse(url=url, status_code=303)
+    resp.set_cookie(sso.COOKIE, cookie, httponly=True, samesite="lax", secure=_is_https(request),
+                    max_age=sso.START_SECONDS, path="/auth")
+    return resp
+
+
+@app.get("/auth/callback")
+def sso_callback(request: Request, code: str = "", state: str = ""):
+    """The identity provider sends the browser back here. The address it
+    proved is let in only if it is on this console's list."""
+    if not sso.configured():
+        raise HTTPException(status_code=404, detail="Single sign-on is not set up on this console.")
+    ip = _client_ip(request)
+    email, nxt, reason = sso.finish(code, state, request.cookies.get(sso.COOKIE, ""))
+    user = auth.sso_user(email) if email else None
+    if not user:
+        audit.record("sign-in failed", (email or "-")[:120], ip=ip, method="single sign-on",
+                     reason=reason if not email else "not on the list")
+        resp = RedirectResponse(url="/login?error=" + ("list" if email else "sso"), status_code=303)
+    else:
+        audit.record("signed in", user["name"], ip=ip, role=user["role"], method="single sign-on")
+        resp = RedirectResponse(url=auth.safe_next(nxt), status_code=303)
+        resp.set_cookie(auth.COOKIE, auth.make_session(user), httponly=True, samesite="lax",
+                        secure=_is_https(request), max_age=auth._state["session_seconds"], path="/")
+    resp.delete_cookie(sso.COOKIE, path="/auth")
     return resp
 
 
@@ -260,6 +338,16 @@ def logout(request: Request, csrf: str = Form(default="")):
     resp = RedirectResponse(url="/" if guest_view() else "/login", status_code=303)
     resp.delete_cookie(auth.COOKIE, path="/")
     return resp
+
+
+@app.get("/security", response_class=HTMLResponse)
+def trust_page(request: Request):
+    """Open to anyone: what Triagle holds, who can reach it and what is not
+    done yet. It says nothing about this deployment's own settings."""
+    return templates.TemplateResponse(request, "trust.html", {
+        "asset_v": ASSET_V, "contact": os.environ.get("TRIAGLE_CONTACT", "").strip()[:120],
+        "customer_keys": bool(INGEST_KEYS), "unprivileged": os.geteuid() != 0, "platform_log": audit._to_stdout(),
+        "as_of": datetime.datetime.now(_IST).strftime("%d %B %Y").lstrip("0")})
 
 
 @app.get("/audit", response_class=HTMLResponse)
@@ -481,6 +569,7 @@ def api_outbox(request: Request, client: str = "", after: int = 0, epoch: str = 
     the caller should too."""
     if not _ingest_authorized(request):
         raise HTTPException(status_code=401, detail="Provide a valid X-Triagle-Key header or sign in as an analyst.")
+    client = _key_customer(request) or client        # a customer's key reads that customer's record only
     with _LOCK:
         _ensure_state()
         box = _outbox()
@@ -2085,14 +2174,47 @@ def benchmark_page(request: Request, user=Depends(require_user)):
 INGEST_KEY = os.environ.get("TRIAGLE_INGEST_KEY", "")
 
 
+def _customer_keys(text=None):
+    """TRIAGLE_INGEST_KEYS: one key for each customer, as "Customer name=key"
+    lines (or separated by ;). A tool that presents a customer's key can write
+    to that customer's queue and read back that customer's record, and to no
+    other. {key: customer}."""
+    text = os.environ.get("TRIAGLE_INGEST_KEYS", "") if text is None else text
+    out = {}
+    for part in re.split(r"[;\n]+", text):
+        name, sep, key = part.rpartition("=")
+        name, key = name.strip(), key.strip()
+        if sep and name and len(key) >= 16:          # a short key is refused, not half-trusted
+            out[key] = name
+    return out
+
+
+INGEST_KEYS = _customer_keys()
+
+
+def _key_customer(request: Request):
+    """The customer whose key this request carries, or None. Every configured
+    key is compared, each in constant time, so the answer takes as long for a
+    wrong key as for a right one."""
+    given = request.headers.get("x-triagle-key", "")
+    found = None
+    for key, customer in INGEST_KEYS.items():
+        if hmac.compare_digest(given.encode(), key.encode()) and found is None:
+            found = customer
+    return found
+
+
 def _ingest_authorized(request: Request):
     """A SIEM webhook authenticates with the X-Triagle-Key header; a person
     on the console authenticates with their analyst session. Either is fine."""
     key = request.headers.get("x-triagle-key", "")
-    if INGEST_KEY and hmac.compare_digest(key, INGEST_KEY):
+    customer = _key_customer(request)
+    if customer:
+        return "siem-webhook: " + customer
+    if INGEST_KEY and hmac.compare_digest(key.encode(), INGEST_KEY.encode()):
         return "siem-webhook"
     user = current_user(request)
-    if user and (not auth.enabled() or user["role"] == "analyst"):
+    if user and (not auth.enabled() or user["role"] == "analyst") and not user.get("guest"):
         return user["name"]
     return None
 
@@ -2112,9 +2234,19 @@ async def ingest(request: Request):
     items = body if isinstance(body, list) else [body]
     if len(items) > 50:
         raise HTTPException(status_code=413, detail="Send at most 50 alerts per request.")
+    customer = _key_customer(request)
+    renamed = 0
+    if customer:
+        # The key says whose alerts these are. Whatever name the sender wrote is replaced.
+        for it in items:
+            if isinstance(it, dict):
+                if it.get("client") not in (None, "", customer):
+                    renamed += 1
+                it["client"] = customer
     accepted = _add_alerts(items)
-    if accepted:
-        audit.record("alerts ingested", who, count=accepted, ip=_client_ip(request))
+    if accepted or renamed:
+        audit.record("alerts ingested", who, count=accepted, ip=_client_ip(request),
+                     named_another_customer=renamed or None)
     out = {"accepted": accepted, "received": len(items), "queue": len(_CACHE.get("raw", []))}
     if request.query_params.get("verdicts") in ("1", "true", "yes"):
         out["verdicts"] = _verdicts_for(items, _base_url(request))
@@ -2200,12 +2332,15 @@ def connectors_page(request: Request, user=Depends(require_user)):
                         "clients": sorted(feed["clients"]) if feed else [],
                         "steps": examples.setup_steps(c["key"], base),
                         "examples": examples.EXAMPLES.get(c["key"], [])})
-    # the key is shown only to a signed-in analyst: with sign-in off, anyone
-    # holding the address could read it and inject alerts
-    show_key = auth.enabled() and user["role"] == "analyst" and bool(INGEST_KEY)
+    # The key is not written into the page: a console is shown on projectors
+    # and in screenshots. TRIAGLE_SHOW_INGEST_KEY=on puts it back, for a
+    # signed-in analyst, while a first tool is being connected.
+    show_key = (auth.enabled() and user["role"] == "analyst" and not user.get("guest") and bool(INGEST_KEY)
+                and os.environ.get("TRIAGLE_SHOW_INGEST_KEY", "").strip().lower() in ("on", "true", "1"))
     return templates.TemplateResponse(request, "connectors.html", _ctx(
         request, user, active="connectors", sources=sources, base_url=base,
-        ingest_key=INGEST_KEY if show_key else "", key_set=bool(INGEST_KEY),
+        ingest_key=INGEST_KEY if show_key else "", key_set=bool(INGEST_KEY or INGEST_KEYS),
+        key_customers=sorted(set(INGEST_KEYS.values())),
         model_status=genai.status(), firewall=gcp_firewall.summary(), auth_on=auth.enabled(),
         learns={"taught": sum(1 for r in _CACHE.get("taught", []) if instructions.state(r) == "on"),
                 "decided": len(_CACHE.get("resolutions", {})), "checked": len(_CACHE.get("checks", {})),
@@ -2693,6 +2828,9 @@ def healthz(request: Request):
     user = current_user(request)
     if user and not user.get("guest"):
         out.update(saved_state=store.status(), backend=backend.BACKEND, mask_pii=backend.MASK_PII,
+                   runs_as="root" if os.geteuid() == 0 else f"unprivileged user {os.geteuid()}",
+                   single_sign_on=sso.configured(), second_factor=auth.any_second_factor(),
+                   customer_keys=len(set(INGEST_KEYS.values())),
                    model_calls=backend.STATS["calls"], identifiers_masked=backend.STATS["masked"],
                    sign_in=auth.enabled(), audit_chain_ok=audit.verify()["ok"])
     return out

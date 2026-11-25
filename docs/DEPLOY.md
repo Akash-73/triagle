@@ -72,3 +72,51 @@ goes to Cloud Logging, which keeps it.
 
 The alert queue is written at most every 10 seconds
 (`TRIAGLE_STATE_SECONDS`). A decision a person makes is written at once.
+
+## Hardening a deployment
+
+Deploy version 0.9 or later first. Then, in Cloud Shell, from the repository:
+
+```bash
+bash scripts/harden_cloud.sh
+```
+
+It does four things, and each is safe to run again.
+
+1. **Secrets.** The sign-in password, the signing secret and the intake key
+   move from the service's plain settings into Secret Manager. Nothing secret
+   is printed.
+2. **A key for each customer.** The existing intake key is tied to one
+   customer (`CUSTOMER="Name" bash scripts/harden_cloud.sh` to say which). From
+   then on the key decides whose alerts arrive, whatever name the sender
+   writes. Add a customer by adding a line `Customer name=key` to the secret
+   `triagle-ingest-keys`.
+3. **Backups.** The bucket keeps every earlier version of the saved state
+   for 7 days, and refuses public access.
+4. **Not root.** The bucket is mounted for uid 10001. At its next start the
+   app finds it can write there as an unprivileged user and gives up root.
+   Until then it stays root and says so in its log, because running
+   unprivileged over a root-owned mount would silently stop every save.
+
+Afterwards open `/health` while signed in. It reports `runs_as`,
+`customer_keys`, `single_sign_on`, `second_factor` and `saved_state`.
+
+### Sign-in for a team
+
+| Setting | What it does |
+|---|---|
+| `TRIAGLE_USERS` | Named accounts: `name:role:hash` or `name:role:hash:KEY`. `python -m app.auth hash` makes the hash, `python -m app.auth totp name` makes the authenticator key |
+| `TRIAGLE_ADMIN_TOTP` | An authenticator key for `admin`. With it set, `admin` cannot sign in without the current six-digit code |
+| `TRIAGLE_OIDC_CLIENT_ID`, `TRIAGLE_OIDC_CLIENT_SECRET` | Single sign-on. From your identity provider's console. The redirect address to register is `https://YOUR-ADDRESS/auth/callback` |
+| `TRIAGLE_OIDC_ISSUER` | Default `https://accounts.google.com`. Any OpenID Connect provider works, for example a Microsoft Entra ID tenant |
+| `TRIAGLE_OIDC_USERS` | Who may come in, and as what: `email:analyst,email:viewer`. Nobody else gets in, whatever account they hold at the provider |
+| `TRIAGLE_PASSWORD_LOGIN=off` | One way in: turns password sign-in off. Ignored unless single sign-on is fully set up |
+| `TRIAGLE_PUBLIC_URL` | The console's own address, when it sits behind a custom domain |
+| `TRIAGLE_FORWARDED_HOPS` | How many proxies of yours stand in front. 1 on Cloud Run (the default there), 2 behind a load balancer |
+| `TRIAGLE_CONTACT` | An address shown on the public `/security` page |
+
+### What the build checks
+
+`docker build` runs every test, so `gcloud run deploy --source .` cannot
+publish a change that breaks one. GitHub builds the same image on every push
+and confirms it starts, answers, and does not run as root.

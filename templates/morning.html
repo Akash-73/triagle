@@ -12,7 +12,7 @@
     {% for c in customers %}{% if c != f.client %}<a class="btn small" href="/morning?client={{ c|urlencode }}&amp;hours={{ f.hours }}" title="The morning report for this customer">{{ c }}</a>{% endif %}{% endfor %}
     {% for h in hours_options %}<a class="btn small" href="/morning?client={{ f.client|urlencode }}&amp;hours={{ h }}"{% if h == f.hours %} aria-current="true" style="font-weight:650; border-color:var(--text-2);"{% endif %}>{{ h }} hours</a>{% endfor %}
     {% endif %}
-    <button class="btn small primary" type="button" onclick="window.print()">Save as PDF</button>
+    <button class="btn small primary" type="button" data-act="print">Save as PDF</button>
   </div>
 </div>
 
@@ -82,7 +82,7 @@
   <footer>The figures and rows are Triagle's own record. The summary at the top is written from them: by Gemini when a signed-in analyst opens this page, otherwise by rule. Nothing here was sent to anyone; an analyst sends it.</footer>
 </article>
 {% if f %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function () {
   var by = document.getElementById('summary-by'), box = document.getElementById('summary');
   fetch('/api/morning?client={{ f.client|urlencode }}&hours={{ f.hours }}', { headers: { 'Accept': 'application/json' } })

@@ -1,0 +1,90 @@
+{% import "_doc.html" as doc %}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+{{ doc.head('Security and data handling · Triagle', asset_v) }}
+</head>
+<body class="doc">
+<div class="docbar">
+  <a href="/">Back to the console</a>
+  <div class="right">
+    <button class="btn small primary" type="button" data-act="print">Save as PDF</button>
+  </div>
+</div>
+
+<article class="sheet">
+  <header>
+    {{ doc.brand() }}
+    <div class="about"><b>Security and data handling</b>How Triagle is built and run<br>{{ as_of }}</div>
+  </header>
+
+  <div class="page">
+    <h1>What Triagle holds, who can see it, and what it can do</h1>
+    <p class="lead">Triagle reads the alerts your security tools raise, decides each one by rule, and brings the few that matter to a person. This page says plainly what it is given, where that is kept, who can reach it, and what is not done yet.</p>
+
+    <h2>What Triagle is given</h2>
+    <table class="tbl"><tbody>
+      <tr><td style="width:34%">Alerts from the tools you connect</td><td>Each alert as the tool wrote it: machine names, account names, addresses and command lines. Triagle is not given raw logs, files, mailboxes or passwords.</td></tr>
+      <tr><td>What your analysts decide</td><td>Closures, approvals, the rules they teach, and the spot checks they make.</td></tr>
+    </tbody></table>
+
+    <h2>Where it is kept</h2>
+    <table class="tbl"><tbody>
+      <tr><td style="width:34%">Your SIEM stays the record</td><td>Triagle never changes or deletes anything in the tool an alert came from. It writes its verdict back beside the alert.</td></tr>
+      <tr><td>A working queue</td><td>The newest alerts and the analysts' decisions, in one file in a storage bucket that belongs to the deployment, encrypted at rest. Older closed alerts roll off.</td></tr>
+      <tr><td>One deployment for each provider</td><td>A managed security provider gets its own service, its own storage and its own keys. Nothing is shared between deployments.</td></tr>
+    </tbody></table>
+
+    <h2>Keeping one customer's alerts from another's</h2>
+    <table class="tbl"><tbody>
+      {% if customer_keys %}<tr><td style="width:34%">A key for each customer</td><td>A tool that presents a customer's key can write to that customer's queue and read back that customer's record, and no other. The key decides whose alert it is, not the name the sender wrote.</td></tr>
+      {% else %}<tr><td style="width:34%">A key on the way in</td><td>A tool must present a secret key to send alerts. A deployment that serves several customers gives each one its own key, and the key then decides whose alert it is.</td></tr>{% endif %}
+      <tr><td>The engine stays inside one customer</td><td>Related alerts, sign-in counts, repeats and cases are worked out for one customer at a time.</td></tr>
+      <tr><td>So does the model</td><td>What the model is shown about earlier decisions comes from that customer's own analysts only.</td></tr>
+    </tbody></table>
+
+    <h2>Who can see it</h2>
+    <table class="tbl"><tbody>
+      <tr><td style="width:34%">Signing in</td><td>Single sign-on through your identity provider (OpenID Connect), or a password with a code from an authenticator app. Nobody gets in by having an account elsewhere: an administrator lists each person.</td></tr>
+      <tr><td>Roles</td><td>An analyst can approve and close. A viewer can only read. Roles are checked on the server for every request.</td></tr>
+      <tr><td>Guessing</td><td>Five wrong attempts lock the name and the address for five minutes. Sessions end after eight hours.</td></tr>
+      <tr><td>Guests</td><td>A deployment can be opened to read-only guests for a demonstration. That is off unless someone turns it on.</td></tr>
+    </tbody></table>
+
+    <h2>What the model sees</h2>
+    <table class="tbl"><tbody>
+      <tr><td style="width:34%">Verdicts are made without it</td><td>The verdict on an alert comes from rules, the same way every time. No model is called to decide.</td></tr>
+      <tr><td>Writing is where it is used</td><td>When an analyst opens a case, a morning report or a draft message, the text for that item is sent to Google's Gemini through Google Cloud.</td></tr>
+      <tr><td>Masked first</td><td>Aadhaar numbers, PANs, UPI IDs, phone numbers and email addresses are replaced by placeholders before the text leaves, and put back in the answer. Names and street addresses are not recognised.</td></tr>
+      <tr><td>Not used for training</td><td>Nothing is sent anywhere to train a model. Google states that it does not use this data to train its models without permission.</td></tr>
+    </tbody></table>
+
+    <h2>What Triagle can do</h2>
+    <table class="tbl"><tbody>
+      <tr><td style="width:34%">Nothing by itself</td><td>Every response, such as blocking an address, waits for a named analyst to approve it.</td></tr>
+      <tr><td>The record</td><td>Sign-ins, approvals and intake are written to a log in which each line carries a hash of the line before, {% if platform_log %}with a copy in the platform's own log{% else %}so an edited line shows{% endif %}.</td></tr>
+    </tbody></table>
+
+    <h2>How it is built and checked</h2>
+    <table class="tbl"><tbody>
+      <tr><td style="width:34%">Tests before every release</td><td>The software cannot be packaged unless every automated test passes. The tests include who may call each address in the application.</td></tr>
+      <tr><td>Scanning</td><td>Every change is scanned for known weaknesses in the code and in the libraries it uses.</td></tr>
+      <tr><td>In the browser</td><td>Pages run only Triagle's own scripts, cannot be framed by another site, and cannot post a form to another site.</td></tr>
+      <tr><td>On the server</td><td>{% if unprivileged %}The application runs as an unprivileged user and holds one narrow cloud role.{% else %}The application holds one narrow cloud role.{% endif %}</td></tr>
+    </tbody></table>
+
+    <h2>Not done yet</h2>
+    <table class="tbl"><tbody>
+      <tr><td style="width:34%">An independent penetration test</td><td>Planned before the first customer pilot. Until then the checks above are our own.</td></tr>
+      <tr><td>A certificate such as ISO 27001 or SOC 2</td><td>None yet.</td></tr>
+      <tr><td>A login for a provider's own customers</td><td>Today a provider's analysts sign in. A customer receives its reports from them.</td></tr>
+    </tbody></table>
+
+    <h2>Telling us about a problem</h2>
+    <p>{% if contact %}Write to {{ contact }}. {% endif %}If you have found a weakness, please report it privately before making it public: open the Security tab of <a href="https://github.com/Akash-73/triagle">the code repository</a> and choose "Report a vulnerability". We aim to answer within three working days.</p>
+  </div>
+
+  <footer>This page describes the software as it is today. It is not a contract. A data processing agreement is signed with each customer before any of its alerts are sent.</footer>
+</article>
+</body>
+</html>
