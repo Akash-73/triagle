@@ -75,28 +75,40 @@ The alert queue is written at most every 10 seconds
 
 ## Hardening a deployment
 
-Deploy version 0.9 or later first. Then, in Cloud Shell, from the repository:
+Before any deploy, take a copy of the saved state. This is safe on any version:
+
+```bash
+bash scripts/harden_cloud.sh backup
+```
+
+Then deploy version 0.9 or later, and in Cloud Shell, from the repository:
 
 ```bash
 bash scripts/harden_cloud.sh
 ```
 
-It does four things, and each is safe to run again.
+It does five things, and each is safe to run again.
 
-1. **Secrets.** The sign-in password, the signing secret and the intake key
+1. **Backups.** A dated copy of the saved state is taken first. From then on
+   the bucket keeps every earlier version of the file for 7 days, and refuses
+   public access. The copy is in the same bucket, so it protects against a
+   bad save or a bad deploy, not against losing the bucket.
+2. **Secrets.** The sign-in password, the signing secret and the intake key
    move from the service's plain settings into Secret Manager. Nothing secret
    is printed.
-2. **A key for each customer.** The existing intake key is tied to one
-   customer (`CUSTOMER="Name" bash scripts/harden_cloud.sh` to say which). From
-   then on the key decides whose alerts arrive, whatever name the sender
-   writes. Add a customer by adding a line `Customer name=key` to the secret
-   `triagle-ingest-keys`.
-3. **Backups.** The bucket keeps every earlier version of the saved state
-   for 7 days, and refuses public access.
+3. **A key for each customer.** The existing intake key is tied to one
+   customer (`CUSTOMER="Name" bash scripts/harden_cloud.sh` to say which; it
+   must be the name the forwarder already sends). From then on the key decides
+   whose alerts arrive, whatever name the sender writes. Add a customer by
+   adding a line `Customer name=key` to the secret `triagle-ingest-keys`.
 4. **Not root.** The bucket is mounted for uid 10001. At its next start the
    app finds it can write there as an unprivileged user and gives up root.
    Until then it stays root and says so in its log, because running
    unprivileged over a root-owned mount would silently stop every save.
+5. **A check, and a way back.** The script tries the intake key before it
+   changes anything and again on the new revision. If the key no longer gets
+   in, it puts the previous revision back by itself and says so. If the new
+   revision does not start at all, Cloud Run keeps serving the old one.
 
 Afterwards open `/health` while signed in. It reports `runs_as`,
 `customer_keys`, `single_sign_on`, `second_factor` and `saved_state`.

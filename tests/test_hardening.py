@@ -375,6 +375,13 @@ def test_a_wrong_or_missing_key_is_refused(keyed):
     assert main._customer_keys("Tiny=short") == {}, "a short key is refused, not half-trusted"
 
 
+def test_a_key_may_contain_an_equals_sign():
+    """A base64 key usually ends in "=". The customer's name ends at the first one."""
+    key = "c2VjcmV0LWtleS1mb3ItYS1iYW5r=="
+    assert main._customer_keys(f"Greenvale Co-operative Bank={key}") == {key: "Greenvale Co-operative Bank"}
+    assert main._customer_keys(f"Bank One={BANK_KEY}\nGrid Two = {key} ; ") == {BANK_KEY: "Bank One", key: "Grid Two"}
+
+
 def test_a_customers_key_reads_back_that_customers_record_only(keyed):
     with main._LOCK:
         main._ensure_state()

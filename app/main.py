@@ -2178,11 +2178,14 @@ def _customer_keys(text=None):
     """TRIAGLE_INGEST_KEYS: one key for each customer, as "Customer name=key"
     lines (or separated by ;). A tool that presents a customer's key can write
     to that customer's queue and read back that customer's record, and to no
-    other. {key: customer}."""
+    other. {key: customer}.
+
+    The name ends at the first "=", so a key may itself contain "=" (a base64
+    key usually ends in one). A customer name may not."""
     text = os.environ.get("TRIAGLE_INGEST_KEYS", "") if text is None else text
     out = {}
     for part in re.split(r"[;\n]+", text):
-        name, sep, key = part.rpartition("=")
+        name, sep, key = part.partition("=")
         name, key = name.strip(), key.strip()
         if sep and name and len(key) >= 16:          # a short key is refused, not half-trusted
             out[key] = name
