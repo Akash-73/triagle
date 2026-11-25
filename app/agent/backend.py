@@ -42,7 +42,7 @@ def _gemini(system, user):
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not key:
         return None
-    model = os.environ.get("TRIAGLE_MODEL", "gemini-3.8-flash")
+    model = os.environ.get("TRIAGLE_MODEL", "gemini-3.5-flash")
     base = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
     resp = requests.post(
         f"{base}/models/{model}:generateContent",

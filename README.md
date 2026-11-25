@@ -4,9 +4,16 @@
 
 Triagle sits on top of the SIEM and security tools a company already has. It
 triages every alert, never closes a real attack, and keeps the company inside
-the regulator's reporting clock. It is built for India's regulated mid-market
-(co-operative banks, NBFCs, brokers, hospitals, utilities) and the MSSPs that
-serve them: organisations that are required to run a SOC and cannot staff one.
+the regulator's reporting clock. It is built for managed security providers in
+India, the firms that run the night shift for many companies, and for the
+regulated organisations they watch: co-operative banks, NBFCs, brokers,
+hospitals and utilities that are required to run a SOC and cannot staff one.
+
+Live since 24 November 2026 on a real Wazuh feed, on Google Cloud Run:
+<https://triagle-20867456071.us-central1.run.app> (anyone can look around; a
+change needs a signed-in analyst). How it is secured, and what is not done
+yet, is on its public page [/security](https://triagle-20867456071.us-central1.run.app/security)
+and in [SECURITY.md](SECURITY.md).
 
 For every alert it runs an investigation — planning which evidence to gather,
 calling investigative tools, reasoning over what it finds, and reaching an
@@ -99,7 +106,7 @@ context and investigation logic are the moat. Set `TRIAGLE_LLM_BACKEND`:
 | Backend | Env vars | Notes |
 |---|---|---|
 | `deterministic` (default) | none | rule-based planner, zero cost, always works |
-| `gemini` | `GEMINI_API_KEY` | Google Gemini API; default model `gemini-3.8-flash`, override with `TRIAGLE_MODEL` |
+| `gemini` | `GEMINI_API_KEY` | Google Gemini API; default model `gemini-3.5-flash`, override with `TRIAGLE_MODEL` |
 | `anthropic` | `ANTHROPIC_API_KEY` | Claude — top reasoning quality |
 | `deepseek` | `DEEPSEEK_API_KEY` | cheap, strong reasoning |
 | `nvidia` | `NVIDIA_API_KEY` | NIM free-tier hosted open models |
@@ -307,6 +314,9 @@ Nobody reaches the console without signing in.
 | `TRIAGLE_AUTH=off` | Turns sign-in off. Laptop demos only; the dashboard shows a red "sign-in is OFF" |
 | `TRIAGLE_GUEST=view` | Anyone with the address can look around, try an alert and ask about a case without signing in. Every change still needs a signed-in analyst |
 | `TRIAGLE_STATE_FILE` | Saves the queue, decisions and filed reports to this file so a restart does not empty the console. See [docs/DEPLOY.md](docs/DEPLOY.md) |
+| `TRIAGLE_ADMIN_TOTP`, or a fourth field in `TRIAGLE_USERS` | A second factor: a six-digit code from an authenticator app (RFC 6238). `python -m app.auth totp name` makes the key |
+| `TRIAGLE_OIDC_CLIENT_ID`, `TRIAGLE_OIDC_CLIENT_SECRET`, `TRIAGLE_OIDC_USERS` | Single sign-on with Google, Microsoft Entra ID or any OpenID Connect provider, for the addresses on the list and nobody else |
+| `TRIAGLE_INGEST_KEYS` | One intake key for each customer, as `Customer name=key` lines. The key, not the sender, decides whose queue an alert joins |
 
 If no user is configured the app does not run open: it creates `admin` with
 a random password and prints it once in the server log.
@@ -323,16 +333,44 @@ that matters. On Cloud Run each entry is also written to Google Cloud
 Logging, which survives a redeploy. On a host with an ephemeral disk (Render's free tier) the log
 is lost on redeploy unless you mount a disk.
 
-Not yet: password reset, per-client access (every user sees every client),
-single sign-on, two-factor. The queue, action status and filings are held in
-memory: they survive new alerts arriving but not a restart. The audit log is
-the durable record of who approved, declined or filed what.
+Not yet: password reset, and a login for each client (every signed-in user
+sees every client in the deployment; each client's feed has its own key).
+The queue, decisions and filings are held in memory and saved to one file,
+so they survive a restart. There is no database yet.
+
+## Security
+
+What is in place, with the code and the tests in this repository:
+
+- **Sign-in.** Salted scrypt password hashes, a lockout after five failures,
+  an optional authenticator code, optional single sign-on, roles checked on
+  the server, and a token on every form.
+- **A key for each customer.** A customer's key writes to that customer's
+  queue and reads back that customer's record, and no other.
+- **Nothing acts alone.** A response runs only after a named analyst
+  approves it, and each approval goes in a hash-chained audit log.
+- **Pages.** A content-security policy under which a script runs only if it
+  is one of Triagle's own files or carries a one-time code made for that
+  page. No framing, strict transport security, no caching.
+- **The image.** It cannot be built unless every test passes. The app gives
+  up root before it starts, unless its storage is still mounted for root, in
+  which case it says so in its log.
+- **The pipeline.** Tests, a dependency audit, an image check and CodeQL
+  code scanning run on every push.
+- **A deployment.** `scripts/harden_cloud.sh` backs up the saved state,
+  moves secrets into Secret Manager, ties the intake key to its customer,
+  and puts the previous revision back by itself if the feed stops getting
+  in. See [docs/DEPLOY.md](docs/DEPLOY.md).
+
+What is not done: an independent penetration test, a database, a login for
+each client, and an Indian hosting region. To report a problem, see
+[SECURITY.md](SECURITY.md).
 
 ## Measured
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 182 tests, no network or key needed
+python -m pytest -q                 # 429 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```
@@ -426,8 +464,13 @@ tests/                    test suite
 - [ ] Live run of the benchmark on a model backend
 - [x] Sign-in with roles and a hash-chained audit log of approvals
 - [x] Saved state: the queue, decisions and filed reports survive a restart
-- [ ] Per-client access control
-- [ ] Analyst feedback loop — learn per-client "normal"
+- [x] A key for each client's feed, so one client cannot write to or read another's queue
+- [ ] A login for each client
+- [x] Analyst feedback loop: an analyst teaches a rule from the screen, for one client and one machine
+- [x] Second factor and single sign-on (OpenID Connect)
+- [x] Hardened build: strict script policy, unprivileged image, tests that block a build, code scanning
+- [ ] A database in place of the single state file
+- [ ] An independent penetration test
 - [x] Live connector: Wazuh, with a forwarder and a queue that holds up on a real stream
 - [x] Regulatory clock: CERT-In, RBI, SEBI, CSIRT-Power, Data Protection Board
 - [x] OT-safe response: no isolation of controllers or operator stations, containment at the boundary
