@@ -41,9 +41,9 @@ SCENARIOS = {
     },
     "power": {
         "label": "power utility (OT)",
-        "client": "Tirupati Power Grid",
+        "client": "Tarang Power Grid",
         "host": "TPG-SCADA-HMI-04", "dc": "TPG-DC-01", "wks": "TPG-WKS-22",
-        "user": "r.deshmukh", "upn": "r.deshmukh@tirupatipower.example", "home": "Hyderabad IN",
+        "user": "r.deshmukh", "upn": "r.deshmukh@tarangpower.example", "home": "Hyderabad IN",
         "rtu": "TPG-RTU-FEEDER-07",
     },
 }

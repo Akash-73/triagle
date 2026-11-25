@@ -154,3 +154,23 @@ def test_an_alert_triagle_closed_itself_is_not_for_a_person_to_close(app):
     assert r.status_code == 303 and "notice=closed" in r.headers["location"]
     assert _resolve(app, _burst(), "nonsense", token=token).status_code == 400
     assert _resolve(app, "no-such-alert", "expected", token=token).status_code == 404
+
+
+def test_a_response_is_not_asked_for_on_an_alert_a_person_closed_as_harmless(app):
+    """An alert closed as a false positive must not go on showing 'Approve and run'."""
+    res = main._load_result()
+    aid = next(a for a, acts in res["actions"].items()
+               if any(x["status"] == "pending" for x in acts) and res["verdicts"][a].get("escalate"))
+    assert "Approve" in app.get(f"/alert/{aid}").text
+    before = main._waiting(res, [aid])
+    assert before >= 1
+    _resolve(app, aid, "false_positive", "Known test")
+    res = main._load_result()
+    assert main._waiting(res, [aid]) == 0 and main._not_needed(res["verdicts"][aid])
+    page = app.get(f"/alert/{aid}").text
+    assert "Nothing left to do." in page and "is not needed" in page
+    assert 'name="decision"' not in page and "Approve and run" not in page
+    _resolve(app, aid, "reopen")
+    assert "Approve" in app.get(f"/alert/{aid}").text, "opened again, the response is back"
+    _resolve(app, aid, "handled")
+    assert main._waiting(main._load_result(), [aid]) == before, "a real incident that was dealt with keeps its response"

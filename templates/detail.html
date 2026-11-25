@@ -196,7 +196,10 @@
     {% endif %}
     <section class="panel">
       <header><h2>Response</h2><span class="n">{{ actions|length }}</span></header>
-      {% if actions %}{% for act in actions %}{{ parts.action_card(act, csrf, can_approve, '/alert/' ~ alert.alert_id) }}{% endfor %}
+      {% if actions and not_needed %}
+      {% for act in actions %}{% if act.status != 'pending' %}{{ parts.action_card(act, csrf, can_approve, '/alert/' ~ alert.alert_id) }}{% endif %}{% endfor %}
+      {% if actions|selectattr('status', 'equalto', 'pending')|list %}<div class="empty"><b>Nothing left to do.</b>A person closed this alert as {{ verdict.resolved.label|lower }}, so the response Triagle proposed is not needed. Open the alert again to bring it back.</div>{% endif %}
+      {% elif actions %}{% for act in actions %}{{ parts.action_card(act, csrf, can_approve, '/alert/' ~ alert.alert_id) }}{% endfor %}
       {% elif verdict.escalate %}<div class="empty"><b>No action proposed.</b>Nothing here has a safe, specific containment step. Follow "Do next" in the verdict.</div>
       {% else %}<div class="empty"><b>Nothing to do.</b>This alert was closed.</div>{% endif %}
     </section>

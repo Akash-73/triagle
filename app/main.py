@@ -586,6 +586,19 @@ def _is_open(verdict):
     return bool(verdict.get("escalate")) and not verdict.get("resolved")
 
 
+def _not_needed(verdict):
+    """A person closed this alert as expected activity or as a false positive,
+    so a response still waiting on it has nothing left to respond to."""
+    return ((verdict or {}).get("resolved") or {}).get("outcome") in ("expected", "false_positive")
+
+
+def _waiting(result, alert_ids):
+    """Response actions still waiting for approval on these alerts, leaving
+    out those on an alert a person has closed as harmless."""
+    return sum(1 for aid in alert_ids if not _not_needed(result["verdicts"].get(aid))
+               for x in result.get("actions", {}).get(aid, []) if x.get("status") == "pending")
+
+
 def _load_result():
     with _LOCK:
         _ensure_state()
@@ -876,8 +889,7 @@ def _cases(result):
         cases.append({"inc": inc, "uc": usecases.for_case(members), "clock": clock,
                       "probing": certin.probing_only(members),
                       "severity": {v: k for k, v in _SEV_ORDER.items()}.get(worst, "low"),
-                      "pending": sum(1 for aid in inc["alert_ids"] for x in result.get("actions", {}).get(aid, [])
-                                     if x.get("status") == "pending")})
+                      "pending": _waiting(result, inc["alert_ids"])})
     cases.sort(key=lambda c: (0 if c["clock"] and c["clock"]["next"] else 1,
                               c["clock"]["next"]["seconds_left"] if c["clock"] and c["clock"]["next"] else 0,
                               _SEV_ORDER.get(c["severity"], 9), -c["inc"]["size"]))
@@ -969,6 +981,7 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
         report_key=report_key, just_decided=just_decided, resolutions=RESOLUTIONS,
         teachable=instructions.teachable(alert, verdict), teach_days=instructions.DAYS,
         check=_CACHE.get("checks", {}).get(alert_id), second=_CACHE.get("second", {}).get(alert_id),
+        not_needed=_not_needed(verdict),
         model_on=genai.configured(),
         checkable=spotcheck.eligible(alert, verdict, _test_clients()),
         notice=NOTICES.get(notice, ""), can_approve=user["role"] == "analyst",
@@ -1636,7 +1649,7 @@ def pilot_report(request: Request, user=Depends(require_user)):
         cases=sum(1 for inc in result["incidents"] if set(inc["alert_ids"]) & ids),
         approved=sum(1 for x in acts if x.get("status") in ("executed", "approved")),
         declined=sum(1 for x in acts if x.get("status") == "declined"),
-        waiting_acts=sum(1 for x in acts if x.get("status") == "pending"),
+        waiting_acts=_waiting(result, ids),
         checks=_checks_view(result), taught=_taught_rows(result), rules=rules[:8], rules_total=len(rules),
         minutes_per_alert=MINUTES_PER_ALERT, hours=round(minutes / 60, 1),
         rolled_off=result["metrics"].get("rolled_off", 0), usage=genai.usage(), model=genai.model_name(),
@@ -1707,7 +1720,7 @@ def _overnight(result, client, hours):
         "decided": sum(1 for v in raised if v.get("resolved")),
         "reasons": sorted(reasons.items(), key=lambda kv: -kv[1]), "open_items": open_items, "cases": cases,
         "approved": sum(1 for x in acts if x.get("status") in ("executed", "approved")),
-        "waiting": sum(1 for x in acts if x.get("status") == "pending"), "due": due, "tune": tune,
+        "waiting": _waiting(result, ids), "due": due, "tune": tune,
     }
 
 

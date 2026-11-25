@@ -160,9 +160,9 @@ def test_each_scenario_fires_into_its_own_tenant_with_its_own_regulators(app):
     r = app.post("/demo/fire", data={"csrf": _csrf(app), "scenario": "power"}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"].startswith("/case/INC-")
     landed = main._find_incident(main._load_result(), r.headers["location"].rsplit("/", 1)[1])
-    assert landed["client"] == "Tirupati Power Grid" and "TPG-SCADA-HMI-04" in landed["entities"]
+    assert landed["client"] == "Tarang Power Grid" and "TPG-SCADA-HMI-04" in landed["entities"]
     page = app.get("/clock").text
-    card = page[page.index('<h2>Tirupati Power Grid'):]
+    card = page[page.index('<h2>Tarang Power Grid'):]
     card = card[:card.index('</section>')]
     assert "CSIRT-Power" in card and "Power utility" in card
     # CSIRT-Power's rule binds from 1 April 2027 and the Data Protection Board's from 13 May 2027.
@@ -176,7 +176,7 @@ def test_each_scenario_fires_into_its_own_tenant_with_its_own_regulators(app):
     res = main._load_result()
     landed = main._find_incident(res, r.headers["location"].rsplit("/", 1)[1])
     assert landed["client"] == "Northgate Urban Co-operative Bank" and "NUB-CBS-APP-02" in landed["entities"]
-    assert not any(a["client"] == "Tirupati Power Grid" for a in res["alerts"])     # one demo incident at a time
+    assert not any(a["client"] == "Tarang Power Grid" for a in res["alerts"])     # one demo incident at a time
     inc = next(i for i in res["incidents"] if i["client"] == "Northgate Urban Co-operative Bank")
     assert {x["regulator"] for x in main._clock(res, inc)["rows"]} == {"certin", "rbi", "dpdp"}
 
