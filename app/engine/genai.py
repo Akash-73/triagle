@@ -48,6 +48,7 @@ Settings:
   TRIAGLE_MODEL_KEY         its key, if it asks for one
 """
 import os
+import queue
 import re
 import subprocess
 import threading
@@ -243,9 +244,15 @@ def _body(system, user, max_tokens, temperature, level=None):
 
 RETRY_STATUS = (429, 500, 502, 503, 504)
 RETRY_WAIT = 1.5          # seconds before the one second try
-# How long a written account or an answer is waited for before it is asked for
-# once more. One normally takes 4 to 8 seconds.
+# How long a written account or an answer is waited for at most. One normally
+# takes 2 to 6 seconds, and on the live feed about one in eight hangs for
+# twenty seconds or more. So an answer that has not come after WRITE_HEDGE
+# seconds is asked for a second time beside the first, and whichever comes
+# first is used (write, below). A call that asks for the least thinking
+# normally answers in 2 seconds, so it is asked again sooner.
 WRITE_SECONDS = 25
+WRITE_HEDGE = 7
+WRITE_HEDGE_QUICK = 4
 
 
 def _send(url, headers, body, timeout, again_on_timeout=False):
@@ -471,6 +478,76 @@ def generate_prose(system, user, max_tokens=4096, temperature=0.2, timeout=60, a
     STATUS.update(provider=None, ok=False, error="No model is configured for this deployment.",
                   model=model_name(), at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     return None, None
+
+
+def first(fn, after, limit, again=True):
+    """fn() in a thread of its own. If it has not answered after `after`
+    seconds, a second fn() is started beside it. Returns the first answer
+    that is not None. Returns None when both have failed, or when `limit`
+    seconds have passed. A call that fails at once is tried once more at
+    once, unless `again` is False. Never raises."""
+    answers = queue.Queue()
+
+    def work():
+        try:
+            answers.put(fn())
+        except Exception:
+            answers.put(None)
+
+    def start():
+        threading.Thread(target=work, daemon=True).start()
+
+    start()
+    started, finished = 1, 0
+    began = time.time()
+    while True:
+        now = time.time()
+        if now - began >= limit:
+            return None
+        until = (began + after) if started == 1 else (began + limit)
+        try:
+            got = answers.get(timeout=max(0.01, min(until, began + limit) - now))
+        except queue.Empty:
+            if started == 1:
+                start()
+                started = 2
+            continue
+        finished += 1
+        if got is not None:
+            return got
+        if finished >= started:
+            if started == 2 or not again:
+                return None
+            start()
+            started = 2
+
+
+def write(system, user, max_tokens=4096, temperature=0.2, thinking_level=None, hedge=None):
+    """(text, provider) for words a person is waiting for on a page: an
+    account, an answer, a report. Never raises.
+
+    Found on the live site on 26 November: the account of an alert took thirty
+    seconds, because the first request hung, was waited for in full, and only
+    then asked again. Here a slow answer is asked for a second time beside the
+    first, and whichever comes first is used. A request that fails outright is
+    not repeated: generate_prose has already asked a busy service once more."""
+    after = hedge if hedge is not None else (WRITE_HEDGE_QUICK if thinking_level == "minimal" else WRITE_HEDGE)
+
+    def ask():
+        text, provider = generate_prose(system, user, max_tokens=max_tokens, temperature=temperature,
+                                        timeout=WRITE_SECONDS, thinking_level=thinking_level)
+        return (text, provider) if text else None
+
+    return first(ask, after, WRITE_SECONDS, again=False) or (None, None)
+
+
+def account_thinking():
+    """How much the model thinks before it writes the account of one alert.
+    The least, unless told otherwise: the account is four short lines from
+    facts it is handed, and a person is watching the page fill.
+    TRIAGLE_ACCOUNT_THINKING=low puts it back to the usual level."""
+    v = os.environ.get("TRIAGLE_ACCOUNT_THINKING", "minimal").strip().lower()
+    return v if v in ("minimal", "low", "medium", "high") else "minimal"
 
 
 PROVIDER_LABEL = {"vertex": "Gemini on Vertex AI", "aistudio": "Gemini", "own": "your own model"}

@@ -452,6 +452,46 @@ def test_the_pages_name_the_model_that_is_connected(cloud_run, monkeypatch):
     assert "Your own model server at 10.0.0.5:8000" in c.get("/connectors").text
 
 
+def test_words_a_person_is_waiting_for_are_asked_for_a_second_time_when_the_first_is_slow(monkeypatch):
+    """Found on the live site on 26 November: the account of an alert took
+    thirty seconds. The first request hung, was waited for in full, and only
+    then asked again. Now the second asking starts beside the first."""
+    import time
+    from app.engine import worknotes
+    calls = []
+
+    def slow_then_quick(system, user, **kw):
+        calls.append(kw)
+        if len(calls) == 1:
+            time.sleep(2.0)                                  # the request that hangs
+            return "too late", "vertex"
+        return "What happened: the second asking answered.", "vertex"
+
+    monkeypatch.setattr(genai, "generate_prose", slow_then_quick)
+    began = time.time()
+    assert genai.write("s", "u", hedge=0.05) == ("What happened: the second asking answered.", "vertex")
+    assert time.time() - began < 1.5 and len(calls) == 2, "it did not wait for the slow one"
+    assert all(k["timeout"] == genai.WRITE_SECONDS for k in calls)
+
+    # a request that fails outright is not sent twice: a busy service was already asked once more, lower down
+    calls.clear()
+    monkeypatch.setattr(genai, "generate_prose", lambda system, user, **kw: (calls.append(kw), (None, None))[1])
+    assert genai.write("s", "u", hedge=5) == (None, None) and len(calls) == 1
+
+    # the account of one alert asks for the least thinking, because a person is watching the page fill
+    calls.clear()
+    monkeypatch.setattr(genai, "generate_prose", lambda system, user, **kw: (calls.append(kw), ("What happened: x.", "vertex"))[1])
+    alert = {"alert_id": "a", "title": "t", "host": "h", "timestamp": "2026-11-26T10:00:00Z", "source": "wazuh"}
+    assert worknotes.alert_notes(alert, {"escalate": False, "closure_code": "BENIGN_EXPECTED"})[1] is True
+    assert calls[-1]["thinking_level"] == "minimal"
+    monkeypatch.setenv("TRIAGLE_ACCOUNT_THINKING", "low")
+    worknotes.alert_notes(alert, {"escalate": False, "closure_code": "BENIGN_EXPECTED"})
+    assert calls[-1]["thinking_level"] == "low", "one setting puts it back, without a new build"
+    worknotes.work_notes({"key": "h", "client": "c", "sources": ["wazuh"]}, [{"alert": alert, "verdict": {"escalate": True}}])
+    assert calls[-1]["thinking_level"] is None, "a case account keeps the usual level"
+    assert genai.WRITE_HEDGE_QUICK < genai.WRITE_HEDGE < genai.WRITE_SECONDS
+
+
 def test_the_ask_box_names_the_model_even_when_it_is_not_answering(cloud_run):
     """The top bar may say the model is not answering. The sentence under the
     question box is about which model answers, so it uses the model's name."""

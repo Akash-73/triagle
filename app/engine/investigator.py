@@ -557,46 +557,8 @@ def settle(engine_escalated, on_evidence, view, usable=True, addressed=""):
 
 # ---- asking the model ----------------------------------------------------------------
 
-def _first(fn, after, limit):
-    """fn() in a thread of its own. If it has not answered after `after`
-    seconds, a second fn() is started beside it. Returns the first answer
-    that is not None. Returns None when both have failed, or when `limit`
-    seconds have passed. A call that fails at once is tried once more at
-    once. Never raises."""
-    answers = queue.Queue()
-
-    def work():
-        try:
-            answers.put(fn())
-        except Exception:
-            answers.put(None)
-
-    def start():
-        threading.Thread(target=work, daemon=True).start()
-
-    start()
-    started, finished = 1, 0
-    began = time.time()
-    while True:
-        now = time.time()
-        if now - began >= limit:
-            return None
-        until = (began + after) if started == 1 else (began + limit)
-        try:
-            got = answers.get(timeout=max(0.01, min(until, began + limit) - now))
-        except queue.Empty:
-            if started == 1:
-                start()
-                started = 2
-            continue
-        finished += 1
-        if got is not None:
-            return got
-        if finished >= started:
-            if started == 2:
-                return None
-            start()
-            started = 2
+# A slow answer is asked for a second time beside the first (genai.first).
+_first = genai.first
 
 
 def _asker(ask, calls):

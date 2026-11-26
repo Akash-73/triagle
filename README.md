@@ -397,7 +397,7 @@ each client, and an Indian hosting region. To report a problem, see
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 479 tests, no network or key needed
+python -m pytest -q                 # 480 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```

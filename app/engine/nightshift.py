@@ -68,8 +68,7 @@ def _call(system, user, temperature=0.2):
     mapping = {}
     system_m, mapping = privacy.mask(system, mapping)
     user_m, mapping = privacy.mask(user, mapping)
-    text, provider = genai.generate_prose(system_m, user_m, max_tokens=4096, temperature=temperature,
-                                          timeout=genai.WRITE_SECONDS, again_on_timeout=True)
+    text, provider = genai.write(system_m, user_m, max_tokens=4096, temperature=temperature, hedge=10)
     if not text:
         return None, None
     return privacy.unmask(text, mapping), genai.PROVIDER_LABEL.get(provider, "Gemini")
