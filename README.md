@@ -370,7 +370,7 @@ each client, and an Indian hosting region. To report a problem, see
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 429 tests, no network or key needed
+python -m pytest -q                 # 438 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```
@@ -475,7 +475,8 @@ tests/                    test suite
 - [x] Regulatory clock: CERT-In, RBI, SEBI, CSIRT-Power, Data Protection Board
 - [x] OT-safe response: no isolation of controllers or operator stations, containment at the boundary
 - [x] One real containment action end to end: an approved block becomes a Google Cloud firewall rule, and can be lifted ([docs/RESPONSE.md](docs/RESPONSE.md))
-- [ ] Live threat-intelligence feeds
+- [x] Public blocklists for addresses, downloaded and searched inside Triagle so no indicator is sent out
+- [ ] Live reputation for file hashes and domains
 - [ ] Vector-DB context store for richer investigation
 - [ ] Per-client SLA + closure-code analytics
 

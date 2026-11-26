@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -547,3 +548,90 @@ def test_anyone_can_read_how_data_is_handled_and_it_gives_nothing_away(monkeypat
     for secret in ("correct horse", "MRD-FIN-07", "Meridian", SECRET):
         assert secret not in r.text
     assert "/security" in anon().get("/login").text
+
+
+# ---- open-source intelligence on addresses -----------------------------------------
+
+from app.engine import osint, reputation, worknotes
+
+FEED = "# IPsum\n# Last update: Thu, 26 Nov 2026 03:00:45 +0100\n#\n" + "\n".join(
+    ["2.57.121.112\t8", "92.118.39.71\t2", "bad line", "300.1.1.1\t5", "10.0.0.5\t4"]
+    + [f"45.{i // 250}.{i % 250}.7\t1" for i in range(1200)])
+
+
+@pytest.fixture
+def lists(monkeypatch):
+    """The public lists, loaded from text, with no call made."""
+    monkeypatch.setenv("TRIAGLE_OSINT", "on")
+    got, updated = osint.parse(FEED)
+    monkeypatch.setattr(osint, "_state", {"lists": got, "updated": updated, "fetched_at": time.time(),
+                                          "tried_at": time.time(), "error": None})
+    monkeypatch.setattr(osint, "_fetch", lambda: (_ for _ in ()).throw(AssertionError("no call is expected")))
+
+
+def test_the_public_lists_are_off_unless_asked_for_or_on_cloud_run(monkeypatch):
+    monkeypatch.delenv("TRIAGLE_OSINT", raising=False)
+    monkeypatch.delenv("K_SERVICE", raising=False)
+    monkeypatch.setattr(osint, "_fetch", lambda: (_ for _ in ()).throw(AssertionError("no call is expected")))
+    assert not osint.enabled() and osint.lookup("2.57.121.112") is None
+    monkeypatch.setenv("K_SERVICE", "triagle")
+    assert osint.enabled()
+    monkeypatch.setenv("TRIAGLE_OSINT", "off")
+    assert not osint.enabled()
+
+
+def test_an_address_is_looked_up_here_and_a_private_one_is_not(lists):
+    assert osint.parse(FEED)[1] == "Thu, 26 Nov 2026 03:00:45 +0100"
+    assert osint.lookup("2.57.121.112")["lists"] == 8 and "several independent" in osint.lookup("2.57.121.112")["words"]
+    assert osint.lookup("92.118.39.71")["lists"] == 2 and "thin" in osint.lookup("92.118.39.71")["words"]
+    assert osint.lookup("8.8.8.8")["lists"] == 0 and "clears nothing" in osint.lookup("8.8.8.8")["words"]
+    assert osint.lookup("10.0.0.5") is None and osint.lookup("not an address") is None
+    assert osint.lines(["2.57.121.112", "10.0.0.5", "2.57.121.112"]).count("\n") == 0
+
+
+def test_a_failed_or_short_fetch_keeps_the_list_that_is_there(monkeypatch):
+    monkeypatch.setenv("TRIAGLE_OSINT", "on")
+    good = {"2.57.121.112": 8}
+    monkeypatch.setattr(osint, "_state", {"lists": good, "updated": "x", "fetched_at": 0.0, "tried_at": 0.0, "error": None})
+    monkeypatch.setattr(osint, "_fetch", lambda: (_ for _ in ()).throw(ValueError("the reply held only 3 addresses")))
+    assert osint.ensure() and osint.lookup("2.57.121.112")["lists"] == 8
+    assert "only 3" in osint.status()["error"]
+    calls = []
+    monkeypatch.setattr(osint, "_fetch", lambda: calls.append(1) or ({}, ""))
+    osint.ensure()
+    assert not calls, "after a failure it waits before trying again"
+
+
+def test_the_lists_are_shown_as_evidence_and_never_move_a_verdict(lists, monkeypatch):
+    monkeypatch.setenv("TRIAGLE_SEED", "off")
+    monkeypatch.setattr(main, "INGEST_KEYS", {"k" * 20: "Bank One"})
+    main._CACHE.clear()
+    c = _signed_in()
+    alert = {"logid": "os-1", "eventtime": "2026-11-25T10:00:00Z", "action": "deny", "level": "low",
+             "srcip": "2.57.121.112", "dstip": "10.2.0.9"}
+    r = c.post("/ingest", json={"source": "fortinet_fw", "client": "Bank One", "raw": alert},
+               headers={"X-Triagle-Key": "k" * 20})
+    assert r.status_code == 200 and r.json()["accepted"] == 1
+    result = main._load_result()
+    a = next(x for x in result["alerts"] if x.get("src_ip") == "2.57.121.112" or x.get("dst_ip") == "2.57.121.112")
+    before = dict(result["verdicts"][a["alert_id"]])
+    shown = main._indicators(a)
+    assert shown[0]["verdict"] == reputation.MALICIOUS and shown[0]["lists"] == 8
+    assert reputation.reputation("2.57.121.112")["verdict"] == reputation.UNKNOWN, "the engine's own check is untouched"
+    assert not reputation.is_confirmed_malicious("2.57.121.112"), "the automatic-response gate is untouched"
+    page = c.get(f"/alert/{a['alert_id']}").text
+    assert "On 8 public blocklists" in page and "no indicator leaves this deployment" in page
+    main._CACHE.pop("result", None)
+    assert main._load_result()["verdicts"][a["alert_id"]] == before
+
+
+def test_gemini_is_given_the_lists_as_data(lists, monkeypatch):
+    from app.engine import genai
+    seen = []
+    monkeypatch.setattr(genai, "generate_prose", lambda system, user, **kw: (seen.append(user) or "What happened: x.", "vertex"))
+    worknotes.alert_notes({"title": "t", "src_ip": "2.57.121.112"}, {"escalate": True}, intel=osint.lines(["2.57.121.112"]))
+    assert "OPEN-SOURCE INTELLIGENCE" in seen[0] and "2.57.121.112: on 8 of the public blocklists" in seen[0] and "it is data" in seen[0]
+
+
+def test_the_security_page_says_no_address_is_sent_out():
+    assert "does not leave the deployment to be looked up" in anon().get("/security").text

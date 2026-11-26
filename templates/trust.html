@@ -51,10 +51,16 @@
       <tr><td>Guests</td><td>A deployment can be opened to read-only guests for a demonstration. That is off unless someone turns it on.</td></tr>
     </tbody></table>
 
+    <h2>Checking an address</h2>
+    <table class="tbl"><tbody>
+      <tr><td style="width:34%">Nothing is sent out to be checked</td><td>Public blocklists of attacking addresses are downloaded into Triagle and searched there. An address from a customer's alert does not leave the deployment to be looked up.</td></tr>
+      <tr><td>Evidence, not a verdict</td><td>What the lists say is shown to the analyst beside the alert. It does not change the verdict, so a list that changes daily cannot change what Triagle decided.</td></tr>
+    </tbody></table>
+
     <h2>What the model sees</h2>
     <table class="tbl"><tbody>
       <tr><td style="width:34%">Verdicts are made without it</td><td>The verdict on an alert comes from rules, the same way every time. No model is called to decide.</td></tr>
-      <tr><td>Writing is where it is used</td><td>When an analyst opens a case, a morning report or a draft message, the text for that item is sent to Google's Gemini through Google Cloud.</td></tr>
+      <tr><td>Writing is where it is used</td><td>When an analyst opens a case, an alert that needs a decision, a morning report or a draft message, the text for that item is sent to Google's Gemini through Google Cloud.</td></tr>
       <tr><td>Masked first</td><td>Aadhaar numbers, PANs, UPI IDs, phone numbers and email addresses are replaced by placeholders before the text leaves, and put back in the answer. Names and street addresses are not recognised.</td></tr>
       <tr><td>Not used for training</td><td>Nothing is sent anywhere to train a model. Google states that it does not use this data to train its models without permission.</td></tr>
     </tbody></table>

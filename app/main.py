@@ -34,13 +34,13 @@ from app.engine import certin, regclock
 from app.agent import backend
 from app import auth, audit, sso
 from app.engine import sources_meta, worknotes, reputation, analyst, genai, usecases, siem_link, tuning
-from app.engine import instructions, spotcheck, nightshift
+from app.engine import instructions, spotcheck, nightshift, osint
 from app.engine.correlate import GENERIC_ENTITIES
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.9.1", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.9.2", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -840,12 +840,71 @@ def _entity_set(alert):
     return vals
 
 
+def _indicators(alert):
+    """The indicators on an alert with what is known about each: the pack that
+    ships with Triagle, and for a public address the public blocklists
+    (app.engine.osint). For the page and the report only. The verdict and the
+    automatic-response policy read the pack alone, so a feed that changes
+    daily never moves a verdict."""
+    out = []
+    for r in reputation.enrich(alert):
+        hit = osint.lookup(r["indicator"]) if r.get("type") == "ip" else None
+        if hit:
+            r = dict(r, lists=hit["lists"])
+            if r["verdict"] == reputation.UNKNOWN:
+                r["verdict"] = (reputation.MALICIOUS if hit["lists"] >= 3
+                                else reputation.SUSPICIOUS if hit["lists"] else reputation.UNKNOWN)
+                r["note"] = hit["words"]
+                r["sources"] = [(osint.NAME, hit["words"])]
+            elif hit["lists"]:
+                r["note"] = f"{r.get('note', '')} Also on {hit['lists']} public blocklists.".strip()
+        out.append(r)
+    return out
+
+
+def _intel_footer():
+    """One sentence under an Indicators table: where the reputation came from."""
+    st = osint.status()
+    if st["enabled"] and st["addresses"]:
+        return (f"Addresses are checked against {osint.NAME}, {osint.ABOUT}. The list is downloaded into Triagle "
+                f"and searched here, so no indicator leaves this deployment. It holds {st['addresses']:,} addresses"
+                + (f", last rebuilt {st['updated']}" if st["updated"] else "")
+                + ". File hashes and domains are checked against the intelligence pack that ships with Triagle. "
+                  "Reputation is evidence for the analyst. It does not change the verdict.")
+    if st["enabled"]:
+        return ("The public blocklists could not be fetched just now, so addresses were checked against the "
+                "intelligence pack that ships with Triagle only.")
+    return "Reputation comes from the intelligence pack that ships with Triagle. Public blocklists are switched off on this deployment."
+
+
+templates.env.globals["intel_footer"] = _intel_footer
+
+
+def _addresses(alerts):
+    return [v for a in alerts for v in (a.get("src_ip"), a.get("dst_ip")) if v]
+
+
+def _with_lists(steps, alerts):
+    """Add what the public blocklists say to the intelligence step, so the
+    list of steps and the Indicators table tell one story."""
+    listed = []
+    for v in dict.fromkeys(_addresses(alerts)):
+        hit = osint.lookup(v)
+        if hit and hit["lists"]:
+            listed.append(f"{hit['address']} is on {hit['lists']}")
+    if not listed:
+        return steps
+    extra = " Public blocklists: " + "; ".join(listed[:4]) + "."
+    own = lambda found: found.replace("No threat-intel match for ", "Not in Triagle's own pack: ", 1)
+    return [dict(st, found=(own(st["found"]) + extra)) if st["did"] == STEP_WORDS["threat_intel"] else st for st in steps]
+
+
 def _investigation(result, alert):
     """Build the 'what Triagle checked and found' intelligence view for one
     alert: indicator reputation, related alerts on the same client, and the
     correlation reasoning. Pure read over the already-computed result, so it
     never touches the triage pipeline."""
-    indicators = reputation.enrich(alert)
+    indicators = _indicators(alert)
     malicious = [r for r in indicators if r["verdict"] == "malicious"]
 
     focus = _entity_set(alert)
@@ -1066,7 +1125,7 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
     return templates.TemplateResponse(request, "detail.html", _ctx(
         request, user, active="alerts", alert=alert, verdict=verdict, trail=trail, actions=actions, intel=intel,
         siem=_siem_link(alert, user),
-        uc=usecases.for_alert(alert, verdict), steps=_step_words(trail), ask_suggested=analyst.SUGGESTED,
+        uc=usecases.for_alert(alert, verdict), steps=_with_lists(_step_words(trail), [alert]), ask_suggested=analyst.SUGGESTED,
         report_key=report_key, just_decided=just_decided, resolutions=RESOLUTIONS,
         teachable=instructions.teachable(alert, verdict), teach_days=instructions.DAYS,
         check=_CACHE.get("checks", {}).get(alert_id), second=_CACHE.get("second", {}).get(alert_id),
@@ -1208,9 +1267,10 @@ def case_page(request: Request, ref: str, notice: str = "", user=Depends(require
             if st["found"] not in seen:
                 seen.add(st["found"])
                 steps.append(st)
+    steps = _with_lists(steps, [m["alert"] for m in members])
     indicators, seen_ind = [], set()
     for m in members:
-        for r in reputation.enrich(m["alert"]):
+        for r in _indicators(m["alert"]):
             if r["indicator"].lower() not in seen_ind:
                 seen_ind.add(r["indicator"].lower())
                 indicators.append(r)
@@ -1254,7 +1314,8 @@ def api_notes(request: Request, case: str = "", alert: str = "", user=Depends(re
                 pass                                # keep the fallback rather than hammer a failing model
             else:
                 _WORKNOTES[key] = worknotes.work_notes(incident, members,
-                                                       house=_house(result, incident.get("client")))
+                                                       house=_house(result, incident.get("client")),
+                                                       intel=osint.lines(_addresses([m["alert"] for m in members])))
                 _NOTES_AT[key] = time.time()
         text, by_model, provider = _WORKNOTES[key]
     return {"text": text, "by_model": by_model, "provider": provider,
@@ -1279,7 +1340,8 @@ def _alert_account(request, result, alert_id, user):
                     raise HTTPException(status_code=429, detail="Too many requests to the model. Wait a minute.")
             else:
                 steps = [f"{st.get('tool')}: {st.get('result_summary')}" for st in result.get("trails", {}).get(alert_id, [])]
-                _WORKNOTES[key] = worknotes.alert_notes(alert, verdict, steps, house=_house(result, alert.get("client")))
+                _WORKNOTES[key] = worknotes.alert_notes(alert, verdict, steps, house=_house(result, alert.get("client")),
+                                                        intel=osint.lines(_addresses([alert])))
                 _NOTES_AT[key] = time.time()
                 if len(_WORKNOTES) > 4000:                  # a long-running console: keep the newest
                     for old in list(_WORKNOTES)[:1000]:
@@ -1946,7 +2008,7 @@ def incident_report(request: Request, entity: str, user=Depends(require_user)):
     member_ids = set(incident["alert_ids"])
     seen, indicators = set(), []
     for m in members:
-        for r in reputation.enrich(m["alert"]):
+        for r in _indicators(m["alert"]):
             if r["indicator"].lower() not in seen:
                 seen.add(r["indicator"].lower())
                 indicators.append(r)
@@ -2862,7 +2924,7 @@ def healthz(request: Request):
     if user and not user.get("guest"):
         out.update(saved_state=store.status(), backend=backend.BACKEND, mask_pii=backend.MASK_PII,
                    runs_as="root" if os.geteuid() == 0 else f"unprivileged user {os.geteuid()}",
-                   single_sign_on=sso.configured(), second_factor=auth.any_second_factor(),
+                   single_sign_on=sso.configured(), second_factor=auth.any_second_factor(), blocklists=osint.status(),
                    customer_keys=len(set(INGEST_KEYS.values())),
                    model_calls=backend.STATS["calls"], identifiers_masked=backend.STATS["masked"],
                    sign_in=auth.enabled(), audit_chain_ok=audit.verify()["ok"])

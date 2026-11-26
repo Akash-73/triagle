@@ -247,7 +247,7 @@ def test_a_cases_account_is_written_once_however_many_ask_at_the_same_time(site,
     case = out["case"]
     calls = []
 
-    def slow_writer(incident, members, house=""):
+    def slow_writer(incident, members, house="", intel=""):
         calls.append(incident["id"])
         time.sleep(0.4)
         return ("Written account.", True, "vertex")

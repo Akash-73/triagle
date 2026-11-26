@@ -44,7 +44,7 @@
       {% endfor %}</tbody>
     </table></div>
     {% else %}<p class="note">No address, file hash or domain in these alerts has a bad reputation.</p>{% endif %}
-    <p class="small" style="margin-top:8px;">Reputation comes from Triagle's offline intelligence pack in this deployment.</p>
+    <p class="small" style="margin-top:8px;">{{ intel_footer() }}</p>
 
     <h2>Response <span class="n">{{ intel.outcome }}</span></h2>
     {% if intel.actions %}
