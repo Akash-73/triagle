@@ -95,7 +95,7 @@ def test_the_case_page_shows_the_workflow_and_the_discovery_as_context(app):
     inc = _case(app)
     page = app.get(f"/case/{inc['id']}").text
     for word in ("Detected", "Investigated", "Contained", "Reported", "Timeline", "What Triagle checked",
-                 "Ask Gemini about this case", "Reports due"):
+                 "Ask Triagle about this case", "Reports due"):
         assert word in page, word
     assert "shown as context" in page and "whoami  /all" in page      # the closed discovery, in the timeline
     assert "Approve and run" in page                                   # isolating the host waits for a person
@@ -152,16 +152,20 @@ def test_one_alert_gets_an_account_and_the_model_is_told_the_verdict_is_final(ap
     assert result["verdicts"][closed["alert_id"]] == main._load_result()["verdicts"][closed["alert_id"]], "nothing changes a verdict"
 
 
-def test_the_alert_page_writes_the_account_itself_only_for_what_reached_a_person(app, monkeypatch):
+def test_every_alert_a_person_opens_gets_its_account_in_one_voice(app, monkeypatch):
     from app.engine import genai
     monkeypatch.setattr(genai, "configured", lambda: True)
     result = main._load_result()
     raised = next(a for a in result["alerts"] if result["verdicts"][a["alert_id"]].get("escalate"))
     closed = next(a for a in result["alerts"] if not result["verdicts"][a["alert_id"]].get("escalate"))
     page = app.get(f"/alert/{raised['alert_id']}").text
-    assert "Gemini's account" in page and 'data-auto="1"' in page and "Ask Gemini about this alert" in page
+    assert "Triagle's account" in page and 'data-auto="1"' in page and "Ask Triagle about this alert" in page
     page = app.get(f"/alert/{closed['alert_id']}").text
-    assert 'data-auto="0"' in page and "Have Gemini write the account" in page
+    assert 'data-auto="1"' in page and "no model was called" not in page and "Gemini's account" not in page
+    monkeypatch.setattr(main, "_ask_allowed", lambda *a, **k: False)        # over the budget: a summary, not an error
+    main._WORKNOTES.clear()
+    j = app.get(f"/api/notes?alert={closed['alert_id']}").json()
+    assert j["by_model"] is False and j["text"].startswith("What happened:")
 
 
 def test_an_unknown_case_is_a_404(app):

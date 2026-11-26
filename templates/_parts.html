@@ -109,7 +109,7 @@
 {# The question box. Answers come from the model, from this case's evidence. #}
 {% macro ask_box(case_ref, suggested, model, what='case') %}
 <section class="panel ask" id="ask" data-case="{{ case_ref }}">
-  <header><h2>Ask Gemini about this {{ what }}</h2></header>
+  <header><h2>Ask Triagle about this {{ what }}</h2></header>
   <div class="body">
     <div class="suggest">{% for q in suggested %}<button class="btn small" type="button" data-q="{{ q }}">{{ q }}</button>{% endfor %}</div>
     <form><input type="text" maxlength="500" placeholder="Ask a question" aria-label="Your question"><button class="btn primary" type="submit">Ask</button></form>

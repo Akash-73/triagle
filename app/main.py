@@ -40,7 +40,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.9.2", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.9.3", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -1125,7 +1125,10 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
     return templates.TemplateResponse(request, "detail.html", _ctx(
         request, user, active="alerts", alert=alert, verdict=verdict, trail=trail, actions=actions, intel=intel,
         siem=_siem_link(alert, user),
-        uc=usecases.for_alert(alert, verdict), steps=_with_lists(_step_words(trail), [alert]), ask_suggested=analyst.SUGGESTED,
+        uc=usecases.for_alert(alert, verdict), steps=_with_lists(_step_words(trail), [alert]),
+        ask_suggested=(analyst.SUGGESTED if (verdict or {}).get("escalate") else
+                       ["What happened, in two sentences?", "Why was this closed and not sent to a person?",
+                        "What would make this worth reopening?"]),
         report_key=report_key, just_decided=just_decided, resolutions=RESOLUTIONS,
         teachable=instructions.teachable(alert, verdict), teach_days=instructions.DAYS,
         check=_CACHE.get("checks", {}).get(alert_id), second=_CACHE.get("second", {}).get(alert_id),
@@ -1336,8 +1339,9 @@ def _alert_account(request, result, alert_id, user):
         stale = cached and not cached[1] and time.time() - _NOTES_AT.get(key, 0) > NOTES_RETRY_SECONDS
         if not cached or stale:
             if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
-                if not cached:
-                    raise HTTPException(status_code=429, detail="Too many requests to the model. Wait a minute.")
+                if not cached:                      # over the budget: the summary built by rules, not kept
+                    return {"text": worknotes._alert_fallback(alert, verdict), "by_model": False,
+                            "provider": "automated summary", "error": "Too many requests to the model just now."}
             else:
                 steps = [f"{st.get('tool')}: {st.get('result_summary')}" for st in result.get("trails", {}).get(alert_id, [])]
                 _WORKNOTES[key] = worknotes.alert_notes(alert, verdict, steps, house=_house(result, alert.get("client")),
