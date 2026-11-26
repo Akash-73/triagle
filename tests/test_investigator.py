@@ -162,6 +162,29 @@ def test_a_second_run_that_differs_on_the_same_evidence_counts_as_not_settled():
     assert again["view"] == "unsure" and "drift" in [g["code"] for g in again["guards"]]
     same = last(list(investigator.run(case(), earlier=first, ask=model(plan, [SUSPICIOUS]))))
     assert same["view"] == "suspicious" and not same["guards"]
+    # on other evidence a different reading stands, and the change is on the record, never silent
+    other = last(list(investigator.run(case(), earlier=first, ask=model([{"tool": "reputation"}, {"tool": "asset_history"}], [BENIGN]))))
+    assert other["view"] == "benign" and [g["code"] for g in other["guards"]] == ["earlier"]
+    assert "read this as suspicious" in other["guards"][0]["words"]
+
+
+def test_the_evidence_is_read_twice_in_two_orders():
+    """The same facts, laid out in the opposite order the second time. A model
+    whose reading depends on the order is caught, even one that never varies."""
+    ask = model([{"tool": "raw_event"}, {"tool": "sign_in_pattern"}], [SUSPICIOUS])
+    list(investigator.run(case(), ask=ask))
+    first, second = [user for system, user, _t in ask.seen if "Give your own reading" in system]
+    assert first != second and sorted(first.splitlines()) == sorted(second.splitlines()), "the same lines, in another order"
+    assert first.index("CHECK 1: raw_event") < first.index("CHECK 2: sign_in_pattern")
+    assert second.index("CHECK 2: sign_in_pattern") < second.index("CHECK 1: raw_event")
+
+    def swayed_by_order(system, user, temperature=0.2):
+        if "Give your own reading" not in system:
+            return json.dumps({"tool": "conclude"}) if "CHECK 2" in user else json.dumps({"tool": "raw_event" if "CHECK 1" not in user else "sign_in_pattern"})
+        return json.dumps(SUSPICIOUS if user.index("CHECK 1:") < user.index("CHECK 2:") else BENIGN)
+
+    r = last(list(investigator.run(case(), ask=swayed_by_order)))
+    assert r["view"] == "unsure" and "two_readings" in [g["code"] for g in r["guards"]]
 
 
 def test_text_that_speaks_to_a_model_is_caught_by_rule():
@@ -255,6 +278,12 @@ def test_an_analysts_run_is_kept_and_a_closure_it_disagrees_with_goes_to_a_perso
     e = audit.read()[0]
     assert e["event"] == "alert investigated by the model" and e["effect"] == "raise" and e["checks"] == ["raw_event", "related_alerts"]
     assert "agent" in main._snapshot() and a["alert_id"] in main._snapshot()["agent"]
+    # the Spot checks page lists the run: what the engine had, what the investigator read, what happened
+    checks = c.get("/checks").text
+    assert "Investigated by the model on its own" in checks and f'/alert/{a["alert_id"]}#agent' in checks
+    assert "Closed it" in checks and "Sent to a person" in checks and a["title"] in checks
+    kept = main._CACHE["agent"][a["alert_id"]]
+    assert kept["title"] == a["title"] and kept["seconds"] >= 0 and kept["cost_usd"] == 0, "kept with the run, so it outlives the alert"
     # a later run that calls it harmless does not take it back from the person
     a_model(monkeypatch, [BENIGN])
     r, events = investigate(c, a["alert_id"])

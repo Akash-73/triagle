@@ -350,8 +350,8 @@ What is in place, with the code and the tests in this repository:
 - **A model that investigates, inside rules.** For an alert a person opens,
   Gemini leads its own investigation: it chooses among declared, read-only
   checks and gives its own reading, without being told the engine's verdict.
-  Plain code bounds it. Only declared checks run. The evidence is read twice
-  and two readings that differ count as unsure. Anything it names must be in
+  Plain code bounds it. Only declared checks run. The evidence is read twice,
+  in two orders, and two readings that differ count as unsure. Anything it names must be in
   the evidence. Text in an alert that speaks to an AI is caught by rule. And
   the result goes one way only: a model can send a closed alert to a person,
   and can never close one or lower one raised on evidence
@@ -386,7 +386,7 @@ each client, and an Indian hosting region. To report a problem, see
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 463 tests, no network or key needed
+python -m pytest -q                 # 464 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```

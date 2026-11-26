@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% macro agent_tag(r) %}{% if r.raised or r.effect == 'raise' %}<span class="tag warn">Sent to a person</span>{% elif r.effect == 'overruled' %}<span class="tag warn">Overruled by rule</span>{% elif r.effect == 'recommend' %}<span class="tag">Advice only</span>{% elif r.agrees %}<span class="tag ok">Agrees</span>{% else %}<span class="tag">Not settled</span>{% endif %}{% endmacro %}
 {% block title %}Spot checks · Triagle{% endblock %}
 {% block heading %}Spot checks{% endblock %}
 {% block top_actions %}<a class="btn small" href="/pilot">Pilot report</a>{% endblock %}
@@ -29,7 +30,8 @@
       <td><a class="primary" href="/alert/{{ r.alert.alert_id }}">{{ r.alert.title }}</a><span class="sub">{{ source_name(r.alert.source) }}{% if r.alert.indicators.rule_level %}, rated level {{ r.alert.indicators.rule_level }}{% endif %} · {{ r.alert.timestamp|ist_short }}</span></td>
       <td>{{ r.alert.host or r.alert.entity }}{% if r.alert.user %}<span class="sub">{{ r.alert.user }}</span>{% endif %}</td>
       <td style="color:var(--text-2);">{{ r.verdict.summary }}<span class="sub">{{ closure_words(r.verdict.closure_code) }}</span></td>
-      <td>{% if r.second %}{% if r.second.view == 'look' %}<span class="tag warn">Look again</span>{% else %}<span class="tag ok">Agrees</span>{% endif %}<span class="sub" style="white-space:normal;">{{ r.second.why }}</span>{% else %}<span class="sub">Not read yet</span>{% endif %}</td>
+      <td>{% if r.agent %}{{ agent_tag(r.agent) }}<span class="sub" style="white-space:normal;">The investigator: {{ r.agent.summary or r.agent.outcome }}</span>
+          {% elif r.second %}{% if r.second.view == 'look' %}<span class="tag warn">Look again</span>{% else %}<span class="tag ok">Agrees</span>{% endif %}<span class="sub" style="white-space:normal;">{{ r.second.why }}</span>{% else %}<span class="sub">Not read yet</span>{% endif %}</td>
       {% if can_check %}<td>
         <form method="post" action="/checks/mark" style="display:flex; gap:6px; justify-content:flex-end;">
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alert_id" value="{{ r.alert.alert_id }}">
@@ -42,6 +44,24 @@
   {% elif tally.checked %}<div class="empty"><b>Every closure in the queue has been checked.</b>New ones appear here as alerts arrive.</div>
   {% else %}<div class="empty"><b>Nothing to check yet.</b>Closures appear here once alerts from a connected tool have arrived.</div>{% endif %}
 </section>
+
+{% if agent_runs %}
+<section class="panel" style="margin-top:18px;" id="investigated">
+  <header><h2>Investigated by the model on its own</h2><span class="n">{{ agent_runs|length }}{% if agent_run_count > agent_runs|length %} of {{ agent_run_count }}{% endif %}</span></header>
+  <div class="body note" style="padding-bottom:0;">For each of these, {{ model_word() }} chose its own checks and gave a reading without being told the engine's verdict. Rules then settled any difference, one way only: a model can send an alert to a person and can never close one.</div>
+  <div class="scroll-x"><table class="tbl">
+    <thead><tr><th style="width:30%">Alert</th><th style="width:15%">The engine had</th><th style="width:17%">The investigator read it as</th><th>What happened</th><th style="width:150px">Run</th></tr></thead>
+    <tbody>{% for r in agent_runs %}
+    <tr><td><a class="primary" href="/alert/{{ r.id }}#agent">{{ r.title }}</a><span class="sub">{{ r.host }}</span></td>
+      <td>{{ 'Sent it to a person' if r.engine.escalated else 'Closed it' }}</td>
+      <td>{{ view_words(r.view) if r.usable else 'No reading' }}{% if r.usable and r.view != 'unsure' and r.confidence %} <span style="color:var(--text-3)">{{ r.confidence }}%</span>{% endif %}
+        <span class="sub">{{ r.steps|length }} check{{ '' if r.steps|length == 1 else 's' }}{% if r.guards %}, {{ r.guards|length }} guardrail{{ '' if r.guards|length == 1 else 's' }} applied{% endif %}</span></td>
+      <td>{{ agent_tag(r) }}<span class="sub" style="white-space:normal;">{{ r.outcome }}</span></td>
+      <td>{{ r.by }}<span class="sub">{{ r.at|ist_short }}</span></td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
 
 {% if disagreed %}
 <section class="panel" style="margin-top:18px;">

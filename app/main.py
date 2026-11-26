@@ -40,7 +40,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.10.1", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.10.2", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -1666,12 +1666,18 @@ def _checks_view(result):
     rows = []
     for a in spotcheck.sample(result["alerts"], result["verdicts"], checks, CHECKS_SHOWN, skip):
         v = result["verdicts"][a["alert_id"]]
-        rows.append({"alert": a, "verdict": v, "uc": usecases.for_alert(a, v), "second": second.get(a["alert_id"])})
+        rows.append({"alert": a, "verdict": v, "uc": usecases.for_alert(a, v), "second": second.get(a["alert_id"]),
+                     "agent": _CACHE.get("agent", {}).get(a["alert_id"])})
     # what the model would look at again comes first; the rest keep their order
     rows.sort(key=lambda r: 0 if (r["second"] or {}).get("view") == "look" else 1)
     done = sorted(({"id": k, **v} for k, v in checks.items() if v.get("client") not in skip),
                   key=lambda c: c.get("at") or "", reverse=True)
-    return {"rows": rows, "tally": spotcheck.tally(checks, skip),
+    titles = {a["alert_id"]: a for a in result["alerts"]}
+    runs = sorted(({"id": k, **v, "title": v.get("title") or (titles.get(k) or {}).get("title") or k,
+                    "host": v.get("host") or (titles.get(k) or {}).get("host") or ""}
+                   for k, v in _CACHE.get("agent", {}).items() if v.get("client") not in skip),
+                  key=lambda r: r.get("at") or "", reverse=True)
+    return {"rows": rows, "tally": spotcheck.tally(checks, skip), "agent_runs": runs[:15], "agent_run_count": len(runs),
             "waiting": len(spotcheck.waiting(result["alerts"], result["verdicts"], checks, skip)),
             "recent": done[:12], "disagreed": [c for c in done if c.get("ok") is False],
             "unread": sum(1 for r in rows if not r["second"]),
@@ -2674,7 +2680,9 @@ def _agent_record(res, alert, verdict, by, earlier):
         words += " An earlier run sent this alert to a person, and it stays there until a person closes it."
     res = {**res, "steps": [{**s, "found": s["found"][:700]} for s in res["steps"]]}       # what is kept stays small
     return {**res, "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), "by": by,
-            "client": alert.get("client") or "", "effect": out["effect"], "agrees": out["agrees"], "outcome": words,
+            "client": alert.get("client") or "", "title": alert.get("title") or "",
+            "host": alert.get("host") or alert.get("entity") or "",
+            "effect": out["effect"], "agrees": out["agrees"], "outcome": words,
             "raised": raised, "engine": {"escalated": engine_escalated, "on_evidence": on_evidence}}
 
 
@@ -2689,6 +2697,7 @@ def _agent_tally(skip=()):
 
 templates.env.globals["agent_tally"] = lambda: _agent_tally(_test_clients())
 templates.env.globals["model_word"] = genai.word
+templates.env.globals["view_words"] = lambda view: investigator.VIEW_WORDS.get(view, "Not settled")
 
 
 @app.post("/api/agent/run")

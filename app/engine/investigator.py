@@ -23,8 +23,9 @@ The guardrails, all of them plain code:
                    asked for. Two of those and Triagle stops asking.
   a floor          A reading on fewer than two checks is not accepted: the
                    missing checks are run by rule and the page says so.
-  two readings     The same evidence is read twice. If the two readings
-                   differ, the investigator counts as unsure.
+  two readings     The same evidence is read twice, the second time in the
+                   opposite order. If the two readings differ, the
+                   investigator counts as unsure.
   grounding        An address, hash or CVE named in a reading must be in the
                    evidence the model was given. If it is not, the reading is
                    set aside.
@@ -34,9 +35,11 @@ The guardrails, all of them plain code:
   one direction    settle() below. The model can send a closed alert to a
                    person. It can never close one, and it can never overrule
                    evidence.
-  drift            A second run that reads the same alert differently from
-                   the first counts as unsure. An alert the investigator has
-                   already sent to a person stays there.
+  drift            A second run that reads the same evidence differently
+                   from the first counts as unsure. If the evidence differs,
+                   the change of reading is put on the record, never made
+                   silently. An alert the investigator has already sent to a
+                   person stays there.
 
 Every prompt is masked for personal identifiers before it leaves the process
 (app.privacy) and unmasked on the way back.
@@ -443,8 +446,9 @@ def run(case, earlier=None, ask=None):
     started, spent = time.time(), (genai.USAGE["input"], genai.USAGE["output"] + genai.USAGE["thinking"])
     system = PLAN_SYSTEM.format(tools="\n".join(f"- {name}: {about}" for name, (_f, about, _d) in TOOLS.items()))
 
-    def evidence_text():
-        return "\n\n".join(f"CHECK {s['n']}: {s['tool']}\n{s['found']}" for s in steps) or "(no check has been run yet)"
+    def evidence_text(last_first=False):
+        shown = list(reversed(steps)) if last_first else steps
+        return "\n\n".join(f"CHECK {s['n']}: {s['tool']}\n{s['found']}" for s in shown) or "(no check has been run yet)"
 
     def do(tool, why, by_rule=False):
         try:
@@ -485,9 +489,12 @@ def run(case, earlier=None, ask=None):
             if tool not in {s["tool"] for s in steps}:
                 yield do(tool, "Run by rule: a reading needs at least two checks.", by_rule=True)
 
-    prompt = f"ALERT\n{facts}\n\nEVIDENCE\n{evidence_text()}\n\nGive your reading."
+    # Read twice, and the second time with the evidence in the opposite order. A
+    # reading that changes when the same facts are laid out differently is not one
+    # to act on, and this catches it even with a model that never varies.
+    prompts = [f"ALERT\n{facts}\n\nEVIDENCE\n{evidence_text(last_first)}\n\nGive your reading." for last_first in (False, True)]
     with ThreadPoolExecutor(max_workers=2) as pool:
-        texts = list(pool.map(lambda _i: call(READ_SYSTEM, prompt, 0.0), (1, 2)))
+        texts = list(pool.map(lambda prompt: call(READ_SYSTEM, prompt, 0.0), prompts))
     readings = [r for r in (_reading(t) for t in texts) if r]
     yield {"type": "reading", "views": [r["view"] for r in readings]}
 
@@ -506,10 +513,13 @@ def run(case, earlier=None, ask=None):
         if named:
             guards.append({"code": "grounding", "words": f"The reading named {', '.join(named[:3])}, which is not in the evidence it was given. The reading is set aside."})
             view = "unsure"
-    if usable and earlier and earlier.get("view") in VIEWS and _kind(earlier["view"]) != _kind(view) \
-            and earlier.get("fingerprint") == hashlib.sha256(corpus.encode()).hexdigest()[:16]:
-        guards.append({"code": "drift", "words": f"An earlier run on the same evidence read this as {VIEW_WORDS[earlier['view']].lower()}. Two runs that differ count as not settled."})
-        view = "unsure"
+    if usable and earlier and earlier.get("view") in VIEWS and _kind(earlier["view"]) != _kind(view):
+        was = VIEW_WORDS[earlier["view"]].lower()
+        if earlier.get("fingerprint") == hashlib.sha256(corpus.encode()).hexdigest()[:16]:
+            guards.append({"code": "drift", "words": f"An earlier run on the same evidence read this as {was}. Two runs that differ count as not settled."})
+            view = "unsure"
+        else:                                    # never a silent change of mind
+            guards.append({"code": "earlier", "words": f"An earlier run read this as {was}. This run saw different evidence, so its reading is shown, and the change is on the record."})
     addressed = addressed_to_a_model(alert)
     if addressed:
         guards.append({"code": "addressed", "words": f"The alert's own text speaks to an AI model (\"{addressed}\")."})
