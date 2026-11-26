@@ -96,7 +96,8 @@ def work_notes(incident, members, house="", intel=""):
     mapping = {}
     system_m, mapping = privacy.mask(SYSTEM, mapping)
     user_m, mapping = privacy.mask(user, mapping)
-    text, provider = genai.generate_prose(system_m, user_m, max_tokens=4096, temperature=0.2)
+    text, provider = genai.generate_prose(system_m, user_m, max_tokens=4096, temperature=0.2,
+                                          timeout=genai.WRITE_SECONDS, again_on_timeout=True)
     if text:
         return privacy.unmask(text, mapping), True, genai.PROVIDER_LABEL.get(provider, "Gemini")
     return _fallback(incident, members), False, "automated summary"
@@ -177,7 +178,8 @@ def alert_notes(alert, verdict, steps=(), house="", intel=""):
     mapping = {}
     system_m, mapping = privacy.mask(ALERT_SYSTEM, mapping)
     user_m, mapping = privacy.mask(user, mapping)
-    text, provider = genai.generate_prose(system_m, user_m, max_tokens=4096, temperature=0.2)
+    text, provider = genai.generate_prose(system_m, user_m, max_tokens=4096, temperature=0.2,
+                                          timeout=genai.WRITE_SECONDS, again_on_timeout=True)
     if text:
         return privacy.unmask(text, mapping), True, genai.PROVIDER_LABEL.get(provider, "Gemini")
     return _alert_fallback(alert, verdict or {}), False, "automated summary"

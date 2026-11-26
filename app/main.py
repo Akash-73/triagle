@@ -40,7 +40,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.10.2", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.10.3", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -1141,7 +1141,7 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
         teachable=instructions.teachable(alert, verdict), teach_days=instructions.DAYS,
         check=_CACHE.get("checks", {}).get(alert_id), second=_CACHE.get("second", {}).get(alert_id),
         agent=_CACHE.get("agent", {}).get(alert_id), agent_on=investigator.enabled(),
-        agent_keeps=_keeps(user), agent_tools=len(investigator.TOOLS), agent_steps=investigator.max_steps(),
+        agent_keeps=_keeps(user), agent_tools=len(investigator.TOOLS) - len(investigator.BASE), agent_steps=investigator.max_steps(),
         not_needed=_not_needed(verdict),
         model_on=genai.configured(),
         checkable=spotcheck.eligible(alert, verdict, _test_clients()),

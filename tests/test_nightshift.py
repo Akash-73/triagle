@@ -32,8 +32,8 @@ def model(monkeypatch):
     """A stand-in for Gemini that records what it is sent."""
     box = {"calls": [], "reply": None}
 
-    def fake(system, user, max_tokens=4096, temperature=0.2):
-        box["calls"].append({"system": system, "user": user, "temperature": temperature})
+    def fake(system, user, max_tokens=4096, temperature=0.2, timeout=60, again_on_timeout=False):
+        box["calls"].append({"system": system, "user": user, "temperature": temperature, "wait": (timeout, again_on_timeout)})
         reply = box["reply"](system, user) if callable(box["reply"]) else box["reply"]
         return (reply, "vertex") if reply else (None, None)
 

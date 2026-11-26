@@ -1,7 +1,7 @@
 """
 Triagle — the model access layer: Gemini on Vertex AI, or a model you run.
 
-One call, three transports, chosen at runtime:
+One call, and one transport for each deployment, chosen at start:
 
   - YOUR OWN MODEL. Set TRIAGLE_MODEL_BASE to the address of any server that
     speaks the OpenAI chat format (Ollama, vLLM, LM Studio, a gateway inside
@@ -17,7 +17,8 @@ One call, three transports, chosen at runtime:
     The service account needs the role "Vertex AI User".
 
   - AI STUDIO (a laptop without a project): the generativelanguage API with
-    GEMINI_API_KEY.
+    GEMINI_API_KEY. Never used where Vertex AI is enabled, not even when
+    Vertex AI fails: it is a different service with different terms.
 
   - Neither reachable: returns (None, None) and the caller uses its own
     deterministic fallback. Nothing here raises.
@@ -59,7 +60,7 @@ _META_HEADERS = {"Metadata-Flavor": "Google"}
 # What happened on the most recent call, for the console. No prompt text is
 # kept here, only how the call went.
 STATUS = {"provider": None, "model": None, "ok": None, "error": None, "at": None, "seconds": None,
-          "calls": 0, "failures": 0, "retries": 0}
+          "calls": 0, "failures": 0, "retries": 0, "recent": []}
 
 _cache = {"project": None, "token": None, "token_exp": 0.0}
 
@@ -230,36 +231,46 @@ def _body(system, user, max_tokens, temperature, level=None):
 
 RETRY_STATUS = (429, 500, 502, 503, 504)
 RETRY_WAIT = 1.5          # seconds before the one second try
+# How long a written account or an answer is waited for before it is asked for
+# once more. One normally takes 4 to 8 seconds.
+WRITE_SECONDS = 25
 
 
-def _send(url, headers, body, timeout):
+def _send(url, headers, body, timeout, again_on_timeout=False):
     """One request, and one more if the service says it is busy or the
     connection drops. A shared quota answers 429 for a moment when it is full,
-    and a second try a moment later nearly always goes through. A call that
-    timed out is not tried again: the wait has already been long."""
+    and a second try a moment later nearly always goes through.
+
+    A call that timed out is tried again only when the caller asks, which it
+    does when it has set a short wait: on the live feed an answer that
+    normally takes two seconds sometimes hangs for thirty, and a fresh request
+    is answered at once. With the default long wait it is not tried again."""
     for attempt in (1, 2):
+        pause = RETRY_WAIT
         try:
             resp = requests.post(url, headers=headers, json=body, timeout=timeout)
         except requests.Timeout:
-            raise
+            if not again_on_timeout or attempt == 2:
+                raise
+            resp, pause = None, 0            # it has waited long enough already
         except requests.ConnectionError:
             if attempt == 2:
                 raise
             resp = None
         if attempt == 1 and (resp is None or resp.status_code in RETRY_STATUS):
             STATUS["retries"] = STATUS.get("retries", 0) + 1
-            time.sleep(RETRY_WAIT)
+            time.sleep(pause)
             continue
         return resp
 
 
-def _post(url, headers, system, user, max_tokens, temperature, timeout=60):
+def _post(url, headers, system, user, max_tokens, temperature, timeout=60, again=False):
     """One call to the model. A model that has no thinking setting answers
     HTTP 400 to it: ask again without, and stop sending it to that model."""
     level = thinking()
-    resp = _send(url, headers, _body(system, user, max_tokens, temperature, level), timeout)
+    resp = _send(url, headers, _body(system, user, max_tokens, temperature, level), timeout, again)
     if resp.status_code == 400 and level:
-        plain = _send(url, headers, _body(system, user, max_tokens, temperature), timeout)
+        plain = _send(url, headers, _body(system, user, max_tokens, temperature), timeout, again)
         if plain.status_code == 200:
             _no_thinking.add(model_name())
         return plain
@@ -290,7 +301,7 @@ def vertex_url(proj, loc, model):
             f"/publishers/google/models/{model}:generateContent")
 
 
-def _vertex(system, user, max_tokens, temperature, timeout=60):
+def _vertex(system, user, max_tokens, temperature, timeout=60, again=False):
     proj = project()
     if not proj:
         raise ModelError("No Google Cloud project found. Set GOOGLE_CLOUD_PROJECT.")
@@ -299,7 +310,7 @@ def _vertex(system, user, max_tokens, temperature, timeout=60):
         raise ModelError("No Google Cloud credentials found for this service.")
     resp = _post(vertex_url(proj, location(), model_name()),
                  {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                 system, user, max_tokens, temperature, timeout)
+                 system, user, max_tokens, temperature, timeout, again)
     if resp.status_code != 200:
         if resp.status_code in (401, 403):
             _cache["token"] = None
@@ -312,14 +323,14 @@ def _vertex(system, user, max_tokens, temperature, timeout=60):
     return text
 
 
-def _ai_studio(system, user, max_tokens, temperature, timeout=60):
+def _ai_studio(system, user, max_tokens, temperature, timeout=60, again=False):
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not key:
         return None
     base = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
     resp = _post(f"{base}/models/{model_name()}:generateContent",
                  {"x-goog-api-key": key, "Content-Type": "application/json"},
-                 system, user, max_tokens, temperature, timeout)
+                 system, user, max_tokens, temperature, timeout, again)
     if resp.status_code != 200:
         raise ModelError(_error_text(resp))
     data = resp.json()
@@ -333,7 +344,7 @@ def _ai_studio(system, user, max_tokens, temperature, timeout=60):
 _THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
 
 
-def _own(system, user, max_tokens, temperature, timeout=60):
+def _own(system, user, max_tokens, temperature, timeout=60, again=False):
     """A model the customer runs, over the OpenAI chat format. Reasoning
     models served this way put their working inside <think> tags; that is
     dropped, the same as Gemini's thought parts."""
@@ -343,7 +354,7 @@ def _own(system, user, max_tokens, temperature, timeout=60):
         headers["Authorization"] = f"Bearer {key}"
     resp = _send(f"{own_base()}/chat/completions", headers,
                  {"model": model_name(), "temperature": temperature, "max_tokens": max_tokens, "stream": False,
-                  "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}, timeout)
+                  "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}, timeout, again)
     if resp.status_code != 200:
         raise ModelError(_error_text(resp))
     data = resp.json()
@@ -364,47 +375,52 @@ def _record(provider, ok, error, started):
     STATUS["calls"] += 1
     if not ok:
         STATUS["failures"] += 1
+        STATUS["recent"] = (STATUS.get("recent") or [])[-5:] + [
+            {"at": STATUS["at"], "provider": provider, "seconds": STATUS["seconds"], "error": str(error)[:200]}]
 
 
 _FAILS = (ModelError, requests.RequestException, ValueError, KeyError, IndexError, TypeError, AttributeError)
 
 
-def generate_prose(system, user, max_tokens=4096, temperature=0.2, timeout=60):
+def generate_prose(system, user, max_tokens=4096, temperature=0.2, timeout=60, again_on_timeout=False):
     """(text, provider). provider is 'own', 'vertex', 'aistudio' or None.
-    With TRIAGLE_MODEL_BASE set, the customer's own model is the only one
-    asked. Otherwise Vertex AI when enabled, then the AI Studio key. Never
-    raises."""
+    Never raises.
+
+    One transport for a deployment, and no other. With TRIAGLE_MODEL_BASE set
+    that is the customer's own model. Otherwise, where Vertex AI is enabled,
+    it is Vertex AI: a prompt that was promised to Google Cloud is not sent to
+    the AI Studio API when Vertex AI is slow, because that is a different
+    service with different terms. The AI Studio key is used only on a
+    deployment that has no Vertex AI at all, a laptop."""
     if own_base():
         started = time.time()
         try:
-            text = _own(system, user, max_tokens, temperature, timeout)
+            text = _own(system, user, max_tokens, temperature, timeout, again_on_timeout)
             _record("own", True, None, started)
             return text, "own"
         except _FAILS as e:
             _record("own", False, str(e) or e.__class__.__name__, started)
-            return None, None                    # and nothing is sent to anyone else
-    errors = []
+            return None, None
     if vertex_enabled():
         started = time.time()
         try:
-            text = _vertex(system, user, max_tokens, temperature, timeout)
+            text = _vertex(system, user, max_tokens, temperature, timeout, again_on_timeout)
             _record("vertex", True, None, started)
             return text, "vertex"
         except _FAILS as e:
-            errors.append(str(e) or e.__class__.__name__)
-            _record("vertex", False, errors[-1], started)
+            _record("vertex", False, str(e) or e.__class__.__name__, started)
+            return None, None
     started = time.time()
     try:
-        text = _ai_studio(system, user, max_tokens, temperature, timeout)
+        text = _ai_studio(system, user, max_tokens, temperature, timeout, again_on_timeout)
         if text:
             _record("aistudio", True, None, started)
             return text, "aistudio"
     except _FAILS as e:
-        errors.append(str(e) or e.__class__.__name__)
-        _record("aistudio", False, errors[-1], started)
-    if not errors:
-        STATUS.update(provider=None, ok=False, error="No model is configured for this deployment.",
-                      model=model_name(), at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        _record("aistudio", False, str(e) or e.__class__.__name__, started)
+        return None, None
+    STATUS.update(provider=None, ok=False, error="No model is configured for this deployment.",
+                  model=model_name(), at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     return None, None
 
 

@@ -127,6 +127,7 @@
 <script nonce="{{ csp_nonce() }}">
 (function () {
   var dl = document.getElementById('notes'), by = document.getElementById('notes-by');
+  window.triagleHold(1);                   // a refresh now would only start the writing again
   fetch('/api/notes?case={{ incident.id|urlencode }}', { credentials: 'same-origin' })
     .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
     .then(function (j) {
@@ -141,7 +142,8 @@
       by.textContent = j.by_model ? 'Written by ' + j.provider + ' from the evidence below' : 'Summary built by rules. The model did not answer.';
       if (!j.by_model && j.error) by.title = j.error;
     })
-    .catch(function () { dl.innerHTML = ''; var dd = document.createElement('dd'); dd.textContent = 'The account could not be loaded. The timeline below is the evidence.'; dl.appendChild(document.createElement('dt')); dl.appendChild(dd); });
+    .catch(function () { dl.innerHTML = ''; var dd = document.createElement('dd'); dd.textContent = 'The account could not be loaded. The timeline below is the evidence.'; dl.appendChild(document.createElement('dt')); dl.appendChild(dd); })
+    .then(function () { window.triagleHold(-1); });
 })();
 </script>
 {% endblock %}

@@ -123,7 +123,7 @@
 <script nonce="{{ csp_nonce() }}">
 (function () {
   var box = document.getElementById('ask'); if (!box) return;
-  var form = box.querySelector('form'), input = form.querySelector('input'), out = box.querySelector('.answers');
+  var form = box.querySelector('form'), input = form.querySelector('input'), out = box.querySelector('.answers'), asked = false;
   function add(q) {
     var d = document.createElement('div'); d.className = 'qa';
     var qe = document.createElement('div'); qe.className = 'q'; qe.textContent = q;
@@ -135,6 +135,7 @@
   function ask(q) {
     q = (q || '').trim(); if (!q) return;
     var slot = add(q); input.value = '';
+    if (!asked) { asked = true; window.triagleHold(1); }      // an answer is not kept, so a refresh would wipe it
     box.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
     fetch('/api/ask', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ case: box.getAttribute('data-case'), question: q, csrf: {{ csrf|tojson }} }) })

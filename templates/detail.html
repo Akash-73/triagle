@@ -63,7 +63,7 @@
       <div class="body">
         {% if not agent_on %}<p class="note">No model is connected, so the investigator cannot run. The verdict above stands on its own.</p>
         {% else %}
-        <p class="note" id="agent-intro">The verdict above came from the engine's fixed checks. Here {{ model_word() }} investigates the same alert on its own: it chooses among {{ agent_tools }} checks, up to {{ agent_steps }} of them, and it is not told the verdict. Rules then decide what happens if the two differ, and only one way: a model can send an alert to a person, and can never close one.</p>
+        <p class="note" id="agent-intro">The verdict above came from the engine's fixed checks. Here {{ model_word() }} investigates the same alert on its own. It starts from the alert's own record and Triagle's knowledge base, chooses among {{ agent_tools }} more checks, up to {{ agent_steps }} of them, and is not told the verdict. Rules then decide what happens if the two differ, and only one way: a model can send an alert to a person, and can never close one.</p>
         <ol class="steps" id="agent-steps" style="margin-top:12px;" hidden></ol>
         <p class="by waiting" id="agent-status" style="margin-top:10px;" hidden></p>
         <dl class="notes" id="agent-reading" style="margin-top:14px;" hidden></dl>
@@ -254,6 +254,7 @@
   var by = document.getElementById('account-by');
   function say(text) { dl.textContent = ''; var dd = document.createElement('dd'); dd.textContent = text; dl.appendChild(document.createElement('dt')); dl.appendChild(dd); }
   function load() {
+    window.triagleHold(1);                 // a refresh now would only start the writing again
     fetch('/api/notes?alert=' + encodeURIComponent(box.getAttribute('data-alert')), { credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
       .then(function (j) {
@@ -268,7 +269,8 @@
         by.textContent = j.by_model ? 'Written by ' + j.provider : 'Summary built by rules. The model did not answer.';
         if (!j.by_model && j.error) by.title = j.error;
       })
-      .catch(function () { say('The account could not be loaded. The verdict above is the decision.'); });
+      .catch(function () { say('The account could not be loaded. The verdict above is the decision.'); })
+      .then(function () { window.triagleHold(-1); });
   }
   if (box.getAttribute('data-auto') === '1') load();
 })();
@@ -278,7 +280,7 @@
   var box = document.getElementById('agent'), go = document.getElementById('agent-go'); if (!box || !go) return;
   var steps = document.getElementById('agent-steps'), status = document.getElementById('agent-status'),
       reading = document.getElementById('agent-reading'), outcome = document.getElementById('agent-outcome'),
-      foot = document.getElementById('agent-foot'), csrf = {{ csrf|tojson }}, busy = false;
+      foot = document.getElementById('agent-foot'), csrf = {{ csrf|tojson }}, busy = false, stay = false;
   var WORDS = { attack: 'A real attack', suspicious: 'Suspicious', benign: 'Harmless', unsure: 'Not settled' };
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function pair(dt, dd) { reading.appendChild(el('dt', '', dt)); var d = el('dd'); if (typeof dd === 'string') d.textContent = dd; else d.appendChild(dd); reading.appendChild(d); }
@@ -308,6 +310,9 @@
   function say(t) { status.textContent = t; status.hidden = false; }
   function run() {
     if (busy) return; busy = true; go.disabled = true;
+    // New alerts arrive every minute or two, and each one would refresh this page. A refresh in the middle of a
+    // run would cut it off, and after a run that is not kept it would wipe the result while it is being read.
+    if (!stay) window.triagleHold(1);
     steps.textContent = ''; steps.hidden = true; reading.hidden = true; outcome.hidden = true;
     say('{{ model_word()|capitalize }} is choosing its first check…');
     fetch('/api/agent/run', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
@@ -318,7 +323,7 @@
         function on(ev) {
           if (ev.type === 'step') { step(ev); say('{{ model_word()|capitalize }} is choosing its next check…'); }
           else if (ev.type === 'reading') { say('The evidence was read twice. Checking the two readings against each other and against the evidence…'); }
-          else if (ev.type === 'result') { show(ev.result, ev.kept); if (ev.reload) { say('The alert has been sent to the queue. Reloading…'); setTimeout(function () { location.href = location.pathname + '?notice=agent#agent'; }, 1800); } }
+          else if (ev.type === 'result') { show(ev.result, ev.kept); if (!ev.kept) stay = true; if (ev.reload) { say('The alert has been sent to the queue. Reloading…'); setTimeout(function () { location.href = location.pathname + '?notice=agent#agent'; }, 1800); } }
           else if (ev.type === 'error') { say(ev.detail); }
         }
         function pump() {
@@ -331,7 +336,7 @@
         return pump();
       })
       .catch(function (e) { say(e.message || 'The investigator could not finish. The verdict above stands.'); })
-      .then(function () { busy = false; go.disabled = false; });
+      .then(function () { busy = false; go.disabled = false; if (!stay) window.triagleHold(-1); });
   }
   go.addEventListener('click', run);
   var kept = box.getAttribute('data-run');

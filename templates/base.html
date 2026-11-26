@@ -96,6 +96,11 @@
   }
   tick(); setInterval(tick, 1000);
 
+  // A page that is waiting on the model, or showing an answer that is not kept,
+  // says so here, and the refresh below leaves it alone.
+  var held = 0;
+  window.triagleHold = function (d) { held = Math.max(0, held + d); window.__busy = held > 0; };
+
   // offer a refresh when the queue changes; never pull the page from under someone reading it
   var rev = {{ rev|default(0) }};
   {% if poll|default(true) %}

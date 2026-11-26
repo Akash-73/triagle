@@ -48,6 +48,7 @@ def _clean(tmp_path, monkeypatch):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setattr(genai, "RETRY_WAIT", 0)
     genai.STATUS["retries"] = 0
+    genai.STATUS["recent"] = []
     main._ASK_TIMES.clear()
     main._ASK_ALL.clear()
     auth.load_config({"TRIAGLE_ADMIN_PASSWORD": "pw", "TRIAGLE_SECRET": "s",
@@ -217,6 +218,36 @@ def test_a_dropped_connection_is_tried_again_and_a_timeout_is_not(cloud_run, mon
     assert len(cloud_run["posts"]) == 1 and cloud_run["posts"][0]["timeout"] == 7
 
 
+def test_a_slow_answer_is_asked_for_again_only_when_the_wait_was_short(cloud_run, monkeypatch):
+    """On the live feed an answer that takes two seconds sometimes hangs for
+    thirty. The investigator sets a short wait and asks once more."""
+    _answers(cloud_run, monkeypatch, [genai.requests.ReadTimeout("slow"), model_reply("at the second asking")])
+    assert genai.generate_prose("s", "u", timeout=10, again_on_timeout=True) == ("at the second asking", "vertex")
+    assert [p["timeout"] for p in cloud_run["posts"]] == [10, 10] and genai.STATUS["retries"] == 1
+    cloud_run["posts"].clear()
+    _answers(cloud_run, monkeypatch, [genai.requests.ReadTimeout("slow"), genai.requests.ReadTimeout("slow"), model_reply("never")])
+    assert genai.generate_prose("s", "u", timeout=10, again_on_timeout=True) == (None, None)
+    assert len(cloud_run["posts"]) == 2, "once more, and no more"
+
+
+def test_a_prompt_promised_to_vertex_ai_goes_nowhere_else(cloud_run, monkeypatch):
+    """Found on the live site on 26 November: when Vertex AI was slow, the
+    prompt was sent on to the AI Studio API with an old key. That is another
+    service with other terms, and the page says prompts go to Google Cloud."""
+    monkeypatch.setenv("GEMINI_API_KEY", "an-old-key")
+    _answers(cloud_run, monkeypatch, [FakeResp(500, {"error": {"status": "INTERNAL", "message": "Try later"}})] * 2 + [model_reply("never")])
+    assert genai.generate_prose("s", "u") == (None, None)
+    assert len(cloud_run["posts"]) == 2 and all("aiplatform.googleapis.com" in p["url"] for p in cloud_run["posts"])
+    last = genai.status()["last"]
+    assert last["provider"] == "vertex" and "INTERNAL" in last["error"]
+    assert last["recent"][-1]["error"] == last["error"] and last["recent"][-1]["provider"] == "vertex", "the last failures are kept"
+    # a laptop with no Vertex AI still uses its key
+    monkeypatch.setenv("TRIAGLE_VERTEX", "false")
+    monkeypatch.delenv("K_SERVICE")
+    _answers(cloud_run, monkeypatch, [model_reply("from the key")])
+    assert genai.generate_prose("s", "u") == ("from the key", "aistudio")
+
+
 def test_a_refusal_is_not_asked_again(cloud_run, monkeypatch):
     _answers(cloud_run, monkeypatch, [FakeResp(403, {"error": {"status": "PERMISSION_DENIED", "message": "No"}}),
                                       model_reply("never reached")])
@@ -273,7 +304,7 @@ def test_the_investigator_runs_on_a_customers_own_model(cloud_run, monkeypatch):
     from app.engine import investigator
     monkeypatch.setenv("TRIAGLE_MODEL_BASE", "http://localhost:11434/v1")
     monkeypatch.setenv("TRIAGLE_MODEL", "qwen2.5")
-    plan = iter(['{"tool": "raw_event", "why": "start with the record"}', '{"tool": "format_the_disk", "why": "x"}',
+    plan = iter(['{"tool": "timeline", "why": "what else happened"}', '{"tool": "format_the_disk", "why": "x"}',
                  '{"tool": "related_alerts", "why": "is it alone"}', '{"tool": "conclude", "why": "enough"}'])
 
     def post(url, headers=None, json=None, timeout=None):
@@ -288,7 +319,7 @@ def test_the_investigator_runs_on_a_customers_own_model(cloud_run, monkeypatch):
     alert = result["alerts"][0]
     events = list(investigator.run(investigator.Case(alert, result["alerts"])))
     r = events[-1]["result"]
-    assert [s["tool"] for s in r["steps"]] == ["raw_event", "related_alerts"] and r["view"] == "benign"
+    assert [s["tool"] for s in r["steps"]] == ["raw_event", "known_behaviour", "timeline", "related_alerts"] and r["view"] == "benign"
     assert [g["code"] for g in r["guards"]] == ["declared"]
     assert all(p["url"] == "http://localhost:11434/v1/chat/completions" for p in cloud_run["posts"]) and r["calls"] == 6
 
