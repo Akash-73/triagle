@@ -32,9 +32,10 @@ The guardrails, all of them plain code:
   a floor          Every reading rests on at least two checks that are run by
                    rule before the model is asked anything: the alert's own
                    record and the knowledge base.
-  a clock          One answer is waited for a few seconds and asked for once
-                   more. A model that stays slow stops being asked for
-                   checks, and the reading rests on what there is.
+  a clock          An answer that is slow is asked for a second time beside
+                   the first, and whichever comes first is used. A model that
+                   stays slow stops being asked for checks, and the reading
+                   rests on what there is.
   two readings     The same evidence is read twice, the second time in the
                    opposite order. If the two readings differ, the
                    investigator counts as unsure.
@@ -62,7 +63,9 @@ Settings
 """
 import hashlib
 import os
+import queue
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -73,10 +76,14 @@ from app.engine.relate import parse_ts
 
 WINDOW_HOURS = 24
 BASE = ("raw_event", "known_behaviour")      # run by rule, before the model is asked anything
-# How long one answer is waited for. Each is asked for once more if it does not
-# come. Choosing a check normally takes 2 seconds and a reading 4 to 7.
-PLAN_SECONDS = 10
-READ_SECONDS = 18
+# How long one answer is waited for. On the live feed about one answer in eight
+# hangs for ten to thirty seconds, and asking again gets an answer at once. So
+# an answer that has not come after the first figure is asked for a second time
+# beside the first, and whichever comes first is used. The second figure is the
+# longest either is waited for. Choosing a check normally takes 2 seconds and a
+# reading 4 to 7.
+PLAN_HEDGE, PLAN_SECONDS = 4, 20
+READ_HEDGE, READ_SECONDS = 7, 25
 PLAN_BUDGET = 32           # seconds after which the model is not asked for another check
 VIEWS = ("attack", "suspicious", "benign", "unsure")
 VIEW_WORDS = {"attack": "A real attack", "suspicious": "Suspicious", "benign": "Harmless", "unsure": "Not settled"}
@@ -544,6 +551,74 @@ def settle(engine_escalated, on_evidence, view, usable=True, addressed=""):
                      "in Triagle. If you agree, close it as expected activity."}
 
 
+# ---- asking the model ----------------------------------------------------------------
+
+def _first(fn, after, limit):
+    """fn() in a thread of its own. If it has not answered after `after`
+    seconds, a second fn() is started beside it. Returns the first answer
+    that is not None. Returns None when both have failed, or when `limit`
+    seconds have passed. A call that fails at once is tried once more at
+    once. Never raises."""
+    answers = queue.Queue()
+
+    def work():
+        try:
+            answers.put(fn())
+        except Exception:
+            answers.put(None)
+
+    def start():
+        threading.Thread(target=work, daemon=True).start()
+
+    start()
+    started, finished = 1, 0
+    began = time.time()
+    while True:
+        now = time.time()
+        if now - began >= limit:
+            return None
+        until = (began + after) if started == 1 else (began + limit)
+        try:
+            got = answers.get(timeout=max(0.01, min(until, began + limit) - now))
+        except queue.Empty:
+            if started == 1:
+                start()
+                started = 2
+            continue
+        finished += 1
+        if got is not None:
+            return got
+        if finished >= started:
+            if started == 2:
+                return None
+            start()
+            started = 2
+
+
+def _asker(ask, calls):
+    """call(system, user, temperature, hedge, limit, level=None) -> text or None."""
+    lock = threading.Lock()
+
+    def call(system, user, temperature, hedge, limit, level=None):
+        if ask is not None:                                   # the tests stand in for the model here
+            calls[0] += 1
+            return ask(system, user, temperature)
+        system_m, mapping = privacy.mask(system, {})         # a mapping of its own for each call
+        user_m, mapping = privacy.mask(user, mapping)
+
+        def one():
+            with lock:
+                calls[0] += 1                                 # every request that is really sent is counted
+            text, _provider = genai.generate_prose(system_m, user_m, max_tokens=4096, temperature=temperature,
+                                                   timeout=limit, thinking_level=level)
+            return text or None
+
+        text = _first(one, hedge, limit)
+        return privacy.unmask(text, mapping) if text else None
+
+    return call
+
+
 # ---- the run -------------------------------------------------------------------------
 
 # A planning reply that is not run, and what the page says about it. Two of
@@ -610,16 +685,7 @@ def run(case, earlier=None, ask=None):
     `ask(system, user, temperature)` returns the model's text or None; it is
     a parameter so the tests can stand in for the model. Never raises."""
     calls = [0]
-
-    def call(system, user, temperature, wait):
-        calls[0] += 1
-        if ask is not None:
-            return ask(system, user, temperature)
-        system_m, mapping = privacy.mask(system, {})         # a mapping of its own for each call
-        user_m, mapping = privacy.mask(user, mapping)
-        text, _provider = genai.generate_prose(system_m, user_m, max_tokens=4096, temperature=temperature,
-                                               timeout=wait, again_on_timeout=True)
-        return privacy.unmask(text, mapping) if text else None
+    call = _asker(ask, calls)
 
     alert, facts = case.alert, _facts(case.alert)
     steps, guards, strikes = [], [], 0
@@ -654,7 +720,8 @@ def run(case, earlier=None, ask=None):
             guards.append({"code": "slow", "words": "The model was slow to answer, so Triagle stopped asking for more checks. The reading rests on the checks already run."})
             break
         text = call(system, f"ALERT\n{facts}\n\nEVIDENCE SO FAR (checks 1 and 2 were run for you)\n{evidence_text()}\n\n"
-                            f"CHECKS NOT YET RUN: {', '.join(left)}\nThis is turn {turn} of {limit}.", 0.0, PLAN_SECONDS)
+                            f"CHECKS NOT YET RUN: {', '.join(left)}\nThis is turn {turn} of {limit}.",
+                    0.0, PLAN_HEDGE, PLAN_SECONDS, "minimal")           # a small choice: no long thinking wanted
         if text is None:
             guards.append({"code": "silent", "words": "The model did not answer while choosing a check. The reading rests on the checks already run."})
             break
@@ -675,7 +742,7 @@ def run(case, earlier=None, ask=None):
     # to act on, and this catches it even with a model that never varies.
     prompts = [f"ALERT\n{facts}\n\nEVIDENCE\n{evidence_text(last_first)}\n\nGive your reading." for last_first in (False, True)]
     with ThreadPoolExecutor(max_workers=2) as pool:
-        texts = list(pool.map(lambda prompt: call(READ_SYSTEM, prompt, 0.0, READ_SECONDS), prompts))
+        texts = list(pool.map(lambda prompt: call(READ_SYSTEM, prompt, 0.0, READ_HEDGE, READ_SECONDS), prompts))
     readings = [r for r in (_reading(t) for t in texts) if r]
     yield {"type": "reading", "views": [r["view"] for r in readings]}
 
@@ -769,17 +836,8 @@ def compare(case, ask=None):
     Never raises."""
     assert case.bare, "the comparison is run on a case with none of Triagle's knowledge on it"
     calls, steps = [0], []
+    call = _asker(ask, calls)
     started, spent = time.time(), (genai.USAGE["input"], genai.USAGE["output"] + genai.USAGE["thinking"])
-
-    def call(system, user, wait):
-        calls[0] += 1
-        if ask is not None:
-            return ask(system, user, 0.0)
-        system_m, mapping = privacy.mask(system, {})
-        user_m, mapping = privacy.mask(user, mapping)
-        text, _provider = genai.generate_prose(system_m, user_m, max_tokens=4096, temperature=0.0,
-                                               timeout=wait, again_on_timeout=True)
-        return privacy.unmask(text, mapping) if text else None
 
     def do(tool, why, by_rule=False):
         try:
@@ -800,12 +858,14 @@ def compare(case, ask=None):
         if not left or time.time() - started > PLAN_BUDGET:
             break
         text = call(system, f"ALERT\n{facts}\n\nEVIDENCE SO FAR\n{evidence()}\n\n"
-                            f"CHECKS NOT YET RUN: {', '.join(left)}\nThis is turn {turn} of {limit}.", PLAN_SECONDS)
+                            f"CHECKS NOT YET RUN: {', '.join(left)}\nThis is turn {turn} of {limit}.",
+                    0.0, PLAN_HEDGE, PLAN_SECONDS, "minimal")
         tool, why = _choice(text, left) if text else ("conclude", "")
         if tool not in left:                         # conclude, or anything that is not a check it may run
             break
         yield do(tool, why)
-    reading = _reading(call(READ_BARE, f"ALERT\n{facts}\n\nEVIDENCE\n{evidence()}\n\nGive your reading.", READ_SECONDS))
+    reading = _reading(call(READ_BARE, f"ALERT\n{facts}\n\nEVIDENCE\n{evidence()}\n\nGive your reading.",
+                            0.0, READ_HEDGE, READ_SECONDS))
     price = genai.usage()
     cost = ((genai.USAGE["input"] - spent[0]) * price["price_in"]
             + (genai.USAGE["output"] + genai.USAGE["thinking"] - spent[1]) * price["price_out"]) / 1_000_000

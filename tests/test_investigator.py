@@ -205,28 +205,76 @@ def test_small_differences_in_the_form_of_an_answer_are_read():
     assert r["view"] == "suspicious" and r["confidence"] == 85 and not r["guards"]
 
 
-def test_one_slow_answer_cannot_hold_the_page_for_a_minute(monkeypatch):
-    waits = []
+def test_a_slow_answer_is_asked_for_a_second_time_beside_the_first():
+    """On the live feed on 26 November about one answer in eight from the
+    model hung for ten to thirty seconds, and a run took 92. An answer that
+    is slow is now asked for again beside the first one, and whichever comes
+    first is used."""
+    import time as clock
+    started = []
 
-    def prose(system, user, max_tokens=4096, temperature=0.2, timeout=60, again_on_timeout=False):
-        waits.append((timeout, again_on_timeout))
-        return None, None
+    def answers(delays):
+        delays = list(delays)
+
+        def fn():
+            n = len(started)
+            started.append(clock.time())
+            wait, reply = delays[n] if n < len(delays) else (0, None)
+            clock.sleep(wait)
+            return reply
+        return fn
+
+    assert investigator._first(answers([(0, "at once")]), 0.05, 1) == "at once" and len(started) == 1
+    started.clear()
+    t0 = clock.time()
+    assert investigator._first(answers([(3.0, "the slow one"), (0.02, "the second asking")]), 0.05, 6) == "the second asking"
+    assert len(started) == 2 and 0.04 <= started[1] - started[0] < 2.0 and clock.time() - t0 < 2.5, "it did not wait for the slow one"
+    started.clear()
+    assert investigator._first(answers([(0.02, None), (0.02, None), (0, "never asked")]), 3.0, 6) is None
+    assert len(started) == 2, "a call that fails at once is tried once more at once, and no more"
+    started.clear()
+    t0 = clock.time()
+    assert investigator._first(answers([(4.0, "too late"), (4.0, "too late")]), 0.05, 0.3) is None
+    assert 0.28 <= clock.time() - t0 < 3.0 and len(started) == 2, "and nothing is waited for past the limit"
+    assert investigator._first(lambda: 1 / 0, 0.05, 1) is None, "it never raises"
+
+
+def test_the_investigator_asks_twice_when_the_model_is_slow_and_thinks_little_to_choose(monkeypatch):
+    import time as clock
+    monkeypatch.setattr(investigator, "PLAN_HEDGE", 0.05)
+    sent, lock = [], threading.Lock()
+    plan = iter([{"tool": "timeline", "why": "w"}])
+
+    def prose(system, user, max_tokens=4096, temperature=0.2, timeout=60, again_on_timeout=False, thinking_level=None):
+        with lock:
+            sent.append((("read" if "Give your own reading" in system else "plan"), timeout, thinking_level))
+            first_plan = sent[-1][0] == "plan" and sum(1 for k, _t, _l in sent if k == "plan") == 1
+        if first_plan:
+            clock.sleep(4.0)                                  # the first answer hangs
+            return None, None
+        if "Give your own reading" in system:
+            return json.dumps(SUSPICIOUS), "vertex"
+        return json.dumps(next(plan, {"tool": "conclude"})), "vertex"
 
     monkeypatch.setattr(genai, "generate_prose", prose)
+    t0 = clock.time()
     r = last(list(investigator.run(case())))
-    # one wait while choosing, then the two readings: each short, each asked for once more if it does not come
-    assert waits == [(investigator.PLAN_SECONDS, True), (investigator.READ_SECONDS, True), (investigator.READ_SECONDS, True)]
-    assert investigator.PLAN_SECONDS <= 12 and investigator.READ_SECONDS <= 20
-    assert not r["usable"] and r["view"] == "unsure" and len(r["steps"]) == 2
+    assert [s["tool"] for s in r["steps"]] == ["raw_event", "known_behaviour", "timeline"] and r["view"] == "suspicious"
+    assert not r["guards"] and clock.time() - t0 < 3.0, "the run did not wait for the answer that hung"
+    plans, reads = [x for x in sent if x[0] == "plan"], [x for x in sent if x[0] == "read"]
+    assert len(plans) == 3 and len(reads) == 2 and r["calls"] == 5, "every request really sent is counted"
+    assert {level for _k, _t, level in plans} == {"minimal"} and {level for _k, _t, level in reads} == {None}
+    assert {t for _k, t, _l in plans} == {investigator.PLAN_SECONDS} and {t for _k, t, _l in reads} == {investigator.READ_SECONDS}
+    assert investigator.PLAN_SECONDS <= 20 and investigator.READ_SECONDS <= 25 and investigator.READ_HEDGE <= 8
 
 
 def test_a_model_that_stays_slow_is_not_asked_for_more_checks(monkeypatch):
-    monkeypatch.setattr(investigator, "PLAN_BUDGET", 0.05)
+    monkeypatch.setattr(investigator, "PLAN_BUDGET", 0.6)
     inner = model([{"tool": "timeline"}, {"tool": "reputation"}, {"tool": "related_alerts"}], [SUSPICIOUS])
 
     def slow(system, user, temperature=0.2):
         if "Give your own reading" not in system:
-            __import__("time").sleep(0.08)
+            __import__("time").sleep(0.9)
         return inner(system, user, temperature)
 
     r = last(list(investigator.run(case(), ask=slow)))

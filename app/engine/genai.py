@@ -38,7 +38,9 @@ Settings:
   TRIAGLE_VERTEX_LOCATION   default "global"
   TRIAGLE_MODEL             default "gemini-3.5-flash"
   TRIAGLE_THINKING          minimal / low / medium / high, or "default" to leave
-                            the model's own setting alone. Default "low".
+                            the model's own setting alone. Default "low". A caller
+                            may ask for another level for one call; with "default"
+                            that is ignored too.
   GEMINI_API_KEY            AI Studio key, for the fallback transport
   TRIAGLE_MODEL_BASE        address of your own model server, for example
                             http://10.0.0.5:11434/v1. Set TRIAGLE_MODEL to the
@@ -48,7 +50,9 @@ Settings:
 import os
 import re
 import subprocess
+import threading
 import time
+from collections import deque
 from datetime import datetime, timezone
 
 import requests
@@ -61,6 +65,11 @@ _META_HEADERS = {"Metadata-Flavor": "Google"}
 # kept here, only how the call went.
 STATUS = {"provider": None, "model": None, "ok": None, "error": None, "at": None, "seconds": None,
           "calls": 0, "failures": 0, "retries": 0, "recent": []}
+
+# The last calls, one line each: how long, how many tokens, which thinking
+# level. Counts only. It is how a slow model is told from a slow network.
+CALLS = deque(maxlen=40)
+_this = threading.local()
 
 _cache = {"project": None, "token": None, "token_exp": 0.0}
 
@@ -83,6 +92,8 @@ def _price(name, default):
 def _meter(resp_json):
     """Add one answer's token counts to the running totals."""
     used = resp_json.get("usageMetadata") or {}
+    _this.used = (int(used.get("promptTokenCount") or 0), int(used.get("candidatesTokenCount") or 0),
+                  int(used.get("thoughtsTokenCount") or 0))
     USAGE["calls"] += 1
     USAGE["input"] += int(used.get("promptTokenCount") or 0)
     USAGE["output"] += int(used.get("candidatesTokenCount") or 0)
@@ -116,6 +127,7 @@ def load_usage(saved):
 # and the answer comes back in a few seconds instead of ten.
 THINKING_LEVELS = ("minimal", "low", "medium", "high")
 _no_thinking = set()      # models that refused the setting; they run on their own default
+_refused = set()          # (model, level) pairs a model refused when a caller asked for that level
 
 
 def _flag(name):
@@ -264,15 +276,30 @@ def _send(url, headers, body, timeout, again_on_timeout=False):
         return resp
 
 
-def _post(url, headers, system, user, max_tokens, temperature, timeout=60, again=False):
-    """One call to the model. A model that has no thinking setting answers
-    HTTP 400 to it: ask again without, and stop sending it to that model."""
-    level = thinking()
-    resp = _send(url, headers, _body(system, user, max_tokens, temperature, level), timeout, again)
-    if resp.status_code == 400 and level:
+def _post(url, headers, system, user, max_tokens, temperature, timeout=60, again=False, level=None):
+    """One call to the model.
+
+    `level` asks for a thinking level for this call alone, for example
+    "minimal" for a small choice that needs no reasoning. A model that does
+    not offer that level answers HTTP 400: the call is made again at the
+    usual level, and that level is not asked of that model again. A model
+    that has no thinking setting at all answers 400 to the usual level too:
+    ask again without, and stop sending it to that model."""
+    usual = thinking()
+    want = level if (usual and level in THINKING_LEVELS and (model_name(), level) not in _refused) else usual
+    _this.level = want
+    resp = _send(url, headers, _body(system, user, max_tokens, temperature, want), timeout, again)
+    if resp.status_code == 400 and want and want != usual:
+        again_usual = _send(url, headers, _body(system, user, max_tokens, temperature, usual), timeout, again)
+        if again_usual.status_code == 200:
+            _refused.add((model_name(), want))
+        resp, want = again_usual, usual
+        _this.level = want
+    if resp.status_code == 400 and want:
         plain = _send(url, headers, _body(system, user, max_tokens, temperature), timeout, again)
         if plain.status_code == 200:
             _no_thinking.add(model_name())
+            _this.level = None
         return plain
     return resp
 
@@ -301,7 +328,7 @@ def vertex_url(proj, loc, model):
             f"/publishers/google/models/{model}:generateContent")
 
 
-def _vertex(system, user, max_tokens, temperature, timeout=60, again=False):
+def _vertex(system, user, max_tokens, temperature, timeout=60, again=False, level=None):
     proj = project()
     if not proj:
         raise ModelError("No Google Cloud project found. Set GOOGLE_CLOUD_PROJECT.")
@@ -310,7 +337,7 @@ def _vertex(system, user, max_tokens, temperature, timeout=60, again=False):
         raise ModelError("No Google Cloud credentials found for this service.")
     resp = _post(vertex_url(proj, location(), model_name()),
                  {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                 system, user, max_tokens, temperature, timeout, again)
+                 system, user, max_tokens, temperature, timeout, again, level)
     if resp.status_code != 200:
         if resp.status_code in (401, 403):
             _cache["token"] = None
@@ -323,14 +350,14 @@ def _vertex(system, user, max_tokens, temperature, timeout=60, again=False):
     return text
 
 
-def _ai_studio(system, user, max_tokens, temperature, timeout=60, again=False):
+def _ai_studio(system, user, max_tokens, temperature, timeout=60, again=False, level=None):
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not key:
         return None
     base = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
     resp = _post(f"{base}/models/{model_name()}:generateContent",
                  {"x-goog-api-key": key, "Content-Type": "application/json"},
-                 system, user, max_tokens, temperature, timeout, again)
+                 system, user, max_tokens, temperature, timeout, again, level)
     if resp.status_code != 200:
         raise ModelError(_error_text(resp))
     data = resp.json()
@@ -372,6 +399,11 @@ def _record(provider, ok, error, started):
     STATUS.update(provider=provider, model=model_name(), ok=ok, error=error,
                   at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                   seconds=round(time.time() - started, 2))
+    used = getattr(_this, "used", None) if ok else None
+    CALLS.append({"at": STATUS["at"], "seconds": STATUS["seconds"], "ok": bool(ok),
+                  "in": used[0] if used else None, "out": used[1] if used else None,
+                  "thinking": used[2] if used else None, "level": getattr(_this, "level", None)})
+    _this.used = None
     STATUS["calls"] += 1
     if not ok:
         STATUS["failures"] += 1
@@ -382,7 +414,8 @@ def _record(provider, ok, error, started):
 _FAILS = (ModelError, requests.RequestException, ValueError, KeyError, IndexError, TypeError, AttributeError)
 
 
-def generate_prose(system, user, max_tokens=4096, temperature=0.2, timeout=60, again_on_timeout=False):
+def generate_prose(system, user, max_tokens=4096, temperature=0.2, timeout=60, again_on_timeout=False,
+                   thinking_level=None):
     """(text, provider). provider is 'own', 'vertex', 'aistudio' or None.
     Never raises.
 
@@ -392,6 +425,7 @@ def generate_prose(system, user, max_tokens=4096, temperature=0.2, timeout=60, a
     the AI Studio API when Vertex AI is slow, because that is a different
     service with different terms. The AI Studio key is used only on a
     deployment that has no Vertex AI at all, a laptop."""
+    _this.level = _this.used = None
     if own_base():
         started = time.time()
         try:
@@ -404,7 +438,7 @@ def generate_prose(system, user, max_tokens=4096, temperature=0.2, timeout=60, a
     if vertex_enabled():
         started = time.time()
         try:
-            text = _vertex(system, user, max_tokens, temperature, timeout, again_on_timeout)
+            text = _vertex(system, user, max_tokens, temperature, timeout, again_on_timeout, thinking_level)
             _record("vertex", True, None, started)
             return text, "vertex"
         except _FAILS as e:
@@ -412,7 +446,7 @@ def generate_prose(system, user, max_tokens=4096, temperature=0.2, timeout=60, a
             return None, None
     started = time.time()
     try:
-        text = _ai_studio(system, user, max_tokens, temperature, timeout, again_on_timeout)
+        text = _ai_studio(system, user, max_tokens, temperature, timeout, again_on_timeout, thinking_level)
         if text:
             _record("aistudio", True, None, started)
             return text, "aistudio"
@@ -451,7 +485,7 @@ def status():
         "thinking": None if own_base() else thinking(),
         "location": location() if vertex_enabled() else None,
         "project": project() if vertex_enabled() else None,
-        "last": dict(STATUS), "usage": usage(),
+        "last": dict(STATUS), "usage": usage(), "calls": list(CALLS),
     }
 
 

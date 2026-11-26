@@ -163,6 +163,36 @@ def test_a_model_without_that_setting_is_asked_again_without_it_and_then_left_al
     assert len(cloud_run["posts"]) == 3, "the next call does not try the setting again"
 
 
+def test_one_call_can_ask_for_less_thinking_and_falls_back_if_the_model_has_no_such_level(cloud_run, monkeypatch):
+    """Choosing the next check is a small choice, so the investigator asks for
+    the least thinking on those calls. A model that does not offer that level
+    is asked again at the usual one, and is not asked for it a second time."""
+    genai.generate_prose("s", "u", thinking_level="minimal")
+    assert cloud_run["posts"][0]["json"]["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "MINIMAL"}
+    assert genai.status()["calls"][-1]["level"] == "minimal" and genai.status()["calls"][-1]["ok"] is True
+    genai.generate_prose("s", "u")
+    assert cloud_run["posts"][1]["json"]["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "LOW"}
+    cloud_run["posts"].clear()
+    refused = FakeResp(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT", "message": "MINIMAL is not supported"}})
+
+    def post(url, headers=None, json=None, timeout=None):
+        cloud_run["posts"].append(json["generationConfig"].get("thinkingConfig"))
+        return refused if json["generationConfig"].get("thinkingConfig") == {"thinkingLevel": "MINIMAL"} else model_reply("at the usual level")
+
+    monkeypatch.setattr(genai.requests, "post", post)
+    genai._refused.clear()
+    assert genai.generate_prose("s", "u", thinking_level="minimal") == ("at the usual level", "vertex")
+    assert cloud_run["posts"] == [{"thinkingLevel": "MINIMAL"}, {"thinkingLevel": "LOW"}]
+    assert genai.generate_prose("s", "u", thinking_level="minimal") == ("at the usual level", "vertex")
+    assert cloud_run["posts"][2:] == [{"thinkingLevel": "LOW"}], "it is not asked for that level again"
+    assert genai.status()["thinking"] == "low", "and the usual setting is not blamed"
+    genai._refused.clear()
+    # an operator who said to leave the model's own setting alone is obeyed on these calls too
+    monkeypatch.setenv("TRIAGLE_THINKING", "default")
+    genai.generate_prose("s", "u", thinking_level="minimal")
+    assert cloud_run["posts"][-1] is None
+
+
 def test_a_call_refused_for_another_reason_is_still_reported(cloud_run):
     cloud_run["reply"] = FakeResp(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT",
                                                   "message": "The prompt is too long"}})
