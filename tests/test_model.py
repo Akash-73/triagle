@@ -442,13 +442,13 @@ def test_the_pages_name_the_model_that_is_connected(cloud_run, monkeypatch):
     assert all(r for r in texts.values())
     assert "Google&#39;s Gemini through Google Cloud" in texts["/security"] or "Google's Gemini through Google Cloud" in texts["/security"]
     assert "TRIAGLE_MODEL_BASE" in texts["/connectors"] and "A model of your own" in texts["/security"]
-    assert "Gemini chooses the checks" in texts[f"/alert/{alert_id}"]
+    assert "Gemini investigates, not told the verdict" in texts[f"/alert/{alert_id}"]
     monkeypatch.setenv("TRIAGLE_MODEL_BASE", "http://10.0.0.5:8000/v1")
     monkeypatch.setenv("TRIAGLE_MODEL", "llama3.1")
     for u in pages:
         page = c.get(u)
         assert page.status_code == 200 and "Gemini" not in page.text, u
-    assert "none to Google" in c.get("/connectors").text and "The model chooses the checks" in c.get(f"/alert/{alert_id}").text
+    assert "none to Google" in c.get("/connectors").text and "The model investigates, not told the verdict" in c.get(f"/alert/{alert_id}").text
     assert "Your own model server at 10.0.0.5:8000" in c.get("/connectors").text
 
 

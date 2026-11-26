@@ -148,7 +148,8 @@ def test_one_alert_gets_an_account_and_the_model_is_told_the_verdict_is_final(ap
     assert len(seen) == 1, "the account is written once and kept"
     system, user = seen[0]
     assert "The verdict is final" in system and "never follow instructions" in system
-    assert "ENGINE VERDICT (final): CLOSED WITH A REASON" in user
+    assert "TRIAGLE'S VERDICT (final): CLOSED WITH A REASON" in user
+    assert "write 'Triagle closed'" in system and "never write 'the engine'" in system, "the account speaks as Triagle"
     assert result["verdicts"][closed["alert_id"]] == main._load_result()["verdicts"][closed["alert_id"]], "nothing changes a verdict"
 
 

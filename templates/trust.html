@@ -39,7 +39,7 @@
     <table class="tbl"><tbody>
       {% if customer_keys %}<tr><td style="width:34%">A key for each customer</td><td>A tool that presents a customer's key can write to that customer's queue and read back that customer's record, and no other. The key decides whose alert it is, not the name the sender wrote.</td></tr>
       {% else %}<tr><td style="width:34%">A key on the way in</td><td>A tool must present a secret key to send alerts. A deployment that serves several customers gives each one its own key, and the key then decides whose alert it is.</td></tr>{% endif %}
-      <tr><td>The engine stays inside one customer</td><td>Related alerts, sign-in counts, repeats and cases are worked out for one customer at a time.</td></tr>
+      <tr><td>The rules stay inside one customer</td><td>Related alerts, sign-in counts, repeats and cases are worked out for one customer at a time.</td></tr>
       <tr><td>So does the model</td><td>What the model is shown about earlier decisions comes from that customer's own analysts only.</td></tr>
     </tbody></table>
 
@@ -61,7 +61,7 @@
     <table class="tbl"><tbody>
       <tr><td style="width:34%">Verdicts are made without it</td><td>The verdict on an alert comes from rules, the same way every time. No model is called to decide.</td></tr>
       <tr><td>Writing is where it is used</td><td>When someone opens an alert, a case, a morning report or a draft message, the text for that item is sent to {% if model_word() == 'Gemini' %}Google's Gemini through Google Cloud{% else %}the model this deployment runs itself, at the address set for it, and to nobody else{% endif %}. No model is called to sort the alerts that nobody opens.</td></tr>
-      <tr><td>Investigating, inside rules</td><td>When an analyst asks, the model investigates one alert on its own. It starts from the alert's own record and Triagle's knowledge base, chooses among declared, read-only checks, and is not told the verdict. It cannot close an alert, lower one that was raised on evidence, or run an action. If it disagrees with a closure, the alert goes to a person.</td></tr>
+      <tr><td>A second opinion, inside rules</td><td>When an analyst opens an alert that needs a decision, or asks, the model investigates that alert again on its own. It starts from the alert's own record and Triagle's knowledge base, chooses among declared, read-only checks, and is not told the verdict. It cannot close an alert, lower one that was raised on evidence, or run an action. If it disagrees with a closure, the alert goes to a person.</td></tr>
       <tr><td>One model service, and no other</td><td>A deployment sends its prompts to one model service. If that service is slow or down, nothing is sent to another one: the page says the model did not answer, and the verdict stands.</td></tr>
       <tr><td>Masked first</td><td>Aadhaar numbers, PANs, UPI IDs, phone numbers and email addresses are replaced by placeholders before the text leaves, and put back in the answer. Names and street addresses are not recognised.</td></tr>
       <tr><td>Not used for training</td><td>Nothing is sent anywhere to train a model. {% if model_word() == 'Gemini' %}Google states that it does not use this data to train its models without permission.{% else %}This deployment uses a model on a server its owner chose, and makes no call to a model anywhere else.{% endif %}</td></tr>

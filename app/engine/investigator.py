@@ -509,6 +509,10 @@ def settle(engine_escalated, on_evidence, view, usable=True, addressed=""):
     One direction only: the investigator can send an alert to a person, and
     can never close one. Returns {"effect", "agrees", "words"}.
 
+    The words are what the page shows, and the page speaks as one product:
+    the engine's verdict is "the verdict", and the investigator's reading is
+    Triagle's "second opinion".
+
     effect: none | raise (a closed alert goes to a person) | look (a closed
     alert is listed first in the spot checks) | recommend (a person may close
     it on the investigator's advice) | overruled (the investigator's reading
@@ -523,31 +527,31 @@ def settle(engine_escalated, on_evidence, view, usable=True, addressed=""):
                          "it, so the alert goes to a person whatever the reading says."}
     if not usable:
         return {"effect": "none", "agrees": None,
-                "words": "The investigator did not reach a reading it could stand behind. The engine's verdict stands."}
+                "words": "The second opinion did not reach a reading it could stand behind. The verdict stands."}
     if view == "unsure":
         if engine_escalated:
             return {"effect": "none", "agrees": None,
-                    "words": "The investigator could not settle it either. The alert stays with a person."}
+                    "words": "The second opinion could not reach an answer either. The alert stays with a person."}
         return {"effect": "look", "agrees": None,
-                "words": "The investigator could not settle it. The engine's closure stands, and this alert is listed "
-                         "first in the spot checks for a person to look at."}
+                "words": "The second opinion could not reach an answer. The closure stands, and a person should "
+                         "look at this alert first."}
     if _kind(view) == "worth":
         if engine_escalated:
             return {"effect": "none", "agrees": True,
-                    "words": "The engine and the investigator agree, each by its own route: a person must look at this."}
+                    "words": "Reached separately, the verdict and the second opinion both say a person must look at this."}
         return {"effect": "raise", "agrees": False,
-                "words": "The engine closed this alert and the investigator disagrees. When the two differ, a person "
-                         "decides: the alert has been sent to the queue."}
+                "words": "Triagle closed this alert by rule, and its second opinion disagrees. When the two differ, "
+                         "a person decides."}
     # the investigator reads it as harmless
     if not engine_escalated:
         return {"effect": "none", "agrees": True,
-                "words": "The engine and the investigator agree, each by its own route: this is routine. The closure stands."}
+                "words": "Reached separately, the verdict and the second opinion both say this is routine. The closure stands."}
     if on_evidence:
         return {"effect": "overruled", "agrees": False,
-                "words": "The investigator read this as harmless. It is overruled. The engine raised this alert on "
+                "words": "The second opinion read this as harmless. Triagle raised this alert on "
                          "evidence, and no model can lower an alert that was raised on evidence. It stays with a person."}
     return {"effect": "recommend", "agrees": False,
-            "words": "The investigator reads this as harmless. That is advice, not a closure: no model closes an alert "
+            "words": "The second opinion reads this as harmless. That is advice, not a closure: no model closes an alert "
                      "in Triagle. If you agree, close it as expected activity."}
 
 

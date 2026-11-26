@@ -347,8 +347,9 @@ What is in place, with the code and the tests in this repository:
   the server, and a token on every form.
 - **A key for each customer.** A customer's key writes to that customer's
   queue and reads back that customer's record, and no other.
-- **A model that investigates, inside rules.** For an alert a person opens,
-  Gemini leads its own investigation. It starts from the alert's own record
+- **A second opinion from a model, inside rules.** For an alert a person opens,
+  Gemini leads its own investigation. The page calls it "Triagle's second
+  opinion": one product, with the model named as the credit. It starts from the alert's own record
   and Triagle's knowledge base, chooses among declared, read-only checks and
   gives its own reading, without being told the engine's verdict.
   Plain code bounds it. Only declared checks run. The evidence is read twice,
@@ -357,13 +358,13 @@ What is in place, with the code and the tests in this repository:
   the result goes one way only: a model can send a closed alert to a person,
   and can never close one or lower one raised on evidence
   (`app/engine/investigator.py`, `tests/test_investigator.py`).
-- **What Triagle adds to the model, shown.** Beside the investigator, one
+- **What Triagle adds to the model, shown.** Beside the second opinion, one
   button runs the same model on the same alert with only what the SIEM
   recorded: no knowledge base, no reputation, none of the customer's earlier
   decisions, one reading and no guardrails. On the live feed on 26 November
   that bare run read routine Windows housekeeping as an attack and advised
   isolating a healthy laptop. An analyst's comparison is kept as a record,
-  and Spot checks lists each one beside the investigator's reading of the
+  and Spot checks lists each one beside the second opinion on the
   same alert. Nothing from a comparison is ever acted on
   (`investigator.compare`).
 - **Any model, the same rules.** Triagle reaches its model through one
@@ -396,7 +397,7 @@ each client, and an Indian hosting region. To report a problem, see
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 476 tests, no network or key needed
+python -m pytest -q                 # 478 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```

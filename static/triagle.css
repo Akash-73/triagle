@@ -322,6 +322,10 @@ ol.steps .found { display: block; color: var(--text-2); font-size: .95rem; }
 .ask .qa .a { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ask .qa .by { margin-top: 5px; }
 
+/* a list of checks that folds away, so the reading comes first */
+details.work > summary { cursor: pointer; color: var(--text-2); font-size: .93rem; width: fit-content; }
+details.work > summary:hover { color: var(--text); }
+
 details > summary.btn { list-style: none; }
 details > summary.btn::-webkit-details-marker { display: none; }
 

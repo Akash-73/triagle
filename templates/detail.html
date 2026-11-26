@@ -38,10 +38,10 @@
           {% if verdict.tuning_recommendation %}<dt>Fix the noise</dt><dd>{{ verdict.tuning_recommendation }}</dd>{% endif %}
           {% if verdict.instruction %}<dt>Taught rule</dt><dd><a href="/taught#{{ verdict.instruction }}">{{ verdict.instruction }}</a>, under Your rules</dd>{% endif %}
           {% if check and check.ok %}<dt>Checked</dt><dd>{{ check.by }} checked this closure and agreed, {{ check.at|ist_short }}</dd>{% endif %}
-          {% if second and not verdict.escalate %}<dt>Second reading</dt><dd>{{ second.by }} {{ 'would look at this closure again' if second.view == 'look' else 'agrees with the closure' }}. {{ second.why }}</dd>{% endif %}
+          {% if second and not verdict.escalate and not agent %}<dt>Quick read</dt><dd>{{ second.by }} {{ 'would look at this closure again' if second.view == 'look' else 'agrees with the closure' }}. {{ second.why }}</dd>{% endif %}
           <dt>Question to answer</dt><dd>{{ uc.question }}</dd>
         </dl>
-        <p class="by" style="margin-top:12px;">{% if verdict.overruled and verdict.overruled.kind == 'investigator' %}Triagle's engine closed this alert, and Triagle's investigator sent it to a person. A model can raise an alert. It can never close one.{% else %}Decided by Triagle's engine, the same way every time. The account below explains this verdict and cannot change it.{% endif %}</p>
+        <p class="by" style="margin-top:12px;">{% if verdict.overruled and verdict.overruled.kind == 'investigator' %}Triagle closed this alert by rule. Its second opinion disagreed, so the alert is with a person. A model can raise an alert. It can never close one.{% else %}Decided by rule, the same way every time. The account below explains this verdict and cannot change it.{% endif %}</p>
       </div>
     </section>
 
@@ -51,7 +51,7 @@
         {% if not model_on %}<p class="note">No model is connected, so there is no written account. The verdict above stands on its own.</p>
         {% else %}
         <dl class="notes" id="account-notes"><dt></dt><dd class="waiting">Writing the account from the verdict and the evidence…</dd></dl>
-        <p class="by" style="margin-top:10px;">Written from the verdict above, the steps below and what this customer's analysts decided before. The verdict is the engine's: the account explains it and cannot change it. <a href="#ask">Ask a question</a></p>
+        <p class="by" style="margin-top:10px;">Written from the verdict above, the steps below and what this customer's analysts decided before. It explains the verdict and cannot change it. <a href="#ask">Ask a question</a></p>
         {% endif %}
       </div>
     </section>
@@ -59,22 +59,28 @@
     <section class="panel" id="agent" data-alert="{{ alert.alert_id }}" data-keeps="{{ '1' if agent_keeps else '0' }}"
              data-auto="{{ '1' if agent_on and agent_keeps and verdict.escalate and not verdict.resolved and not agent else '0' }}"
              {% if agent %}data-run='{{ agent|tojson }}'{% endif %}>
-      <header><h2>Triagle's investigator</h2><span class="by" id="agent-by" style="margin-left:auto;">{{ model_word()|capitalize }} chooses the checks</span></header>
+      <header><h2>Triagle's second opinion</h2><span class="by" id="agent-by" style="margin-left:auto;">{{ model_word()|capitalize }} investigates, not told the verdict</span></header>
       <div class="body">
-        {% if not agent_on %}<p class="note">No model is connected, so the investigator cannot run. The verdict above stands on its own.</p>
+        {% if not agent_on %}<p class="note">No model is connected, so there is no second opinion. The verdict above stands on its own.</p>
         {% else %}
-        <p class="note" id="agent-intro">The verdict above came from the engine's fixed checks. Here {{ model_word() }} investigates the same alert on its own. It starts from the alert's own record and Triagle's knowledge base, chooses among {{ agent_tools }} more checks, up to {{ agent_steps }} of them, and is not told the verdict. Rules then decide what happens if the two differ, and only one way: a model can send an alert to a person, and can never close one.</p>
-        <ol class="steps" id="agent-steps" style="margin-top:12px;" hidden></ol>
+        <p class="note" id="agent-intro">Triagle has {{ model_word() }} investigate this alert again from the start, without telling it the verdict. If the two differ, a person decides: a model can send an alert to a person and can never close one.</p>
+        <details class="work" id="agent-work" style="margin-top:12px;" hidden>
+          <summary id="agent-work-sum">The checks</summary>
+          <ol class="steps" id="agent-steps" style="margin-top:10px;"></ol>
+        </details>
         <p class="by waiting" id="agent-status" style="margin-top:10px;" hidden></p>
         <dl class="notes" id="agent-reading" style="margin-top:14px;" hidden></dl>
         <div class="callout" id="agent-outcome" style="margin-top:14px;" hidden></div>
         <div class="row" style="margin-top:12px; gap:10px; align-items:center;">
-          <button class="btn small" type="button" id="agent-go">{{ 'Run it again' if agent else 'Investigate this alert' }}</button>
-          <span class="by" id="agent-foot">{% if not agent_keeps %}You are watching as a visitor: the run is shown and nothing is kept.{% endif %}</span>
+          <button class="btn small" type="button" id="agent-go">{{ 'Ask again' if agent else 'Get a second opinion' }}</button>
+          <span class="by" id="agent-foot">{% if not agent_keeps %}You are watching as a visitor: the result is shown and nothing is kept.{% endif %}</span>
         </div>
         <div id="bare" style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);"{% if bare %} data-run='{{ bare|tojson }}'{% endif %}>
-          <p class="note"><b>What does Triagle add to the model?</b> Take it away and look. This runs the same model on the same alert with only what the SIEM recorded: no knowledge base, no reputation, none of this customer's earlier decisions, one reading and no guardrails. It is for comparison. An analyst's run is kept as a record. Nothing from it is ever acted on.</p>
-          <ol class="steps" id="bare-steps" style="margin-top:10px;" hidden></ol>
+          <p class="note"><b>The same model without Triagle.</b> For comparison only: {{ model_word() }} gets what the SIEM recorded and nothing else. No knowledge base, no reputation, none of this customer's earlier decisions, one reading and no guardrails. Nothing from it is ever acted on.</p>
+          <details class="work" id="bare-work" style="margin-top:10px;" hidden>
+            <summary id="bare-work-sum">The checks</summary>
+            <ol class="steps" id="bare-steps" style="margin-top:10px;"></ol>
+          </details>
           <p class="by waiting" id="bare-status" style="margin-top:10px;" hidden></p>
           <dl class="notes" id="bare-reading" style="margin-top:12px;" hidden></dl>
           <div class="row" style="margin-top:12px; gap:10px; align-items:center;">
@@ -227,7 +233,7 @@
     <section class="panel" id="check">
       <header><h2>Was this right?</h2></header>
       <div class="act">
-        <div class="why">Triagle closed this alert on its own. Your answer is counted in the spot checks. If you disagree, the alert goes back to the queue.{% if second %} {{ second.by }}, as a second reader, {{ 'would look at it again' if second.view == 'look' else 'agrees' }}: {{ second.why }}{% endif %}</div>
+        <div class="why">Triagle closed this alert on its own. Your answer is counted in the spot checks. If you disagree, the alert goes back to the queue.{% if second and not agent %} {{ second.by }}, as a second reader, {{ 'would look at it again' if second.view == 'look' else 'agrees' }}: {{ second.why }}{% endif %}</div>
         <form method="post" action="/checks/mark">
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alert_id" value="{{ alert.alert_id }}"><input type="hidden" name="next" value="/alert/{{ alert.alert_id }}">
           <div class="row"><button class="btn" type="submit" name="agree" value="yes">Agree</button><button class="btn" type="submit" name="agree" value="no">Disagree, send it back</button></div>
@@ -290,32 +296,43 @@
   var box = document.getElementById('agent'), go = document.getElementById('agent-go'); if (!box || !go) return;
   var steps = document.getElementById('agent-steps'), status = document.getElementById('agent-status'),
       reading = document.getElementById('agent-reading'), outcome = document.getElementById('agent-outcome'),
+      work = document.getElementById('agent-work'), workSum = document.getElementById('agent-work-sum'),
+      by = document.getElementById('agent-by'), MODEL = {{ model_word()|tojson }},
       foot = document.getElementById('agent-foot'), csrf = {{ csrf|tojson }}, busy = false, stay = false;
+  // What the rules made of the reading, in two or three words. The same words as the tags on Spot checks.
+  var LABEL = { raise: 'Sent to a person. ', overruled: 'Overruled by rule. ', recommend: 'Advice only. ', look: 'Not settled. ' };
   var WORDS = { attack: 'A real attack', suspicious: 'Suspicious', benign: 'Harmless', unsure: 'Not settled' };
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function pair(dt, dd) { reading.appendChild(el('dt', '', dt)); var d = el('dd'); if (typeof dd === 'string') d.textContent = dd; else d.appendChild(dd); reading.appendChild(d); }
   function list(items) { var u = el('div'); items.forEach(function (x) { u.appendChild(el('div', '', x)); }); return u; }
   function step(s) {
     var li = el('li', '', s.did + (s.by_rule ? ' (by rule)' : ''));
-    if (s.why) li.appendChild(el('span', 'found', 'Why: ' + s.why));
+    if (s.why && !s.by_rule) li.appendChild(el('span', 'found', 'Why: ' + s.why));
     var f = el('span', 'found', s.found.length > 520 ? s.found.slice(0, 520) + '…' : s.found); f.style.whiteSpace = 'pre-line'; li.appendChild(f);
-    steps.appendChild(li); steps.hidden = false;
+    steps.appendChild(li); work.hidden = false;
   }
-  function show(r, kept) {
+  // loaded: a kept result shown when the page opens. Its checks stay folded, so the reading comes first.
+  function show(r, kept, loaded) {
     steps.textContent = ''; r.steps.forEach(step);
+    var rule = r.steps.filter(function (s) { return s.by_rule; }).length, chosen = r.steps.length - rule;
+    workSum.textContent = r.steps.length + (r.steps.length === 1 ? ' check: ' : ' checks: ') + rule + ' by rule' + (chosen ? ', ' + chosen + ' chosen by ' + MODEL : '');
+    work.hidden = !r.steps.length; if (loaded) work.open = false;
     reading.textContent = '';
     if (r.usable) {
-      pair('Its reading', WORDS[r.view] + (r.view !== 'unsure' && r.confidence ? ', ' + r.confidence + '% confident' : '') + (r.summary ? '. ' + r.summary : ''));
+      pair('Reading', WORDS[r.view] + (r.view !== 'unsure' && r.confidence ? ', ' + r.confidence + '% confident' : '') + (r.summary ? '. ' + r.summary : ''));
       if (r.reasons && r.reasons.length) pair('Because', list(r.reasons));
-      if (r.next && r.next.length) pair('It would do next', list(r.next));
-    } else { pair('Its reading', 'None.'); }
+      if (r.next && r.next.length) pair('Do next', list(r.next));
+    } else { pair('Reading', 'None.'); }
     if (r.guards && r.guards.length) pair('Guardrails', list(r.guards.map(function (g) { return g.words; })));
     reading.hidden = false;
-    outcome.textContent = ''; outcome.appendChild(el('b', '', 'Against the engine. ')); outcome.appendChild(document.createTextNode(r.outcome));
+    outcome.textContent = ''; // A visitor's result is shown and changes nothing, so it says what would happen, not what did.
+    outcome.appendChild(el('b', '', r.addressed ? 'An attempt to mislead. ' : (!kept && r.effect === 'raise' ? 'Would go to a person. '
+      : (LABEL[r.effect] || (r.agrees === true ? 'Agrees with the verdict. ' : 'Not settled. '))))); outcome.appendChild(document.createTextNode(r.outcome));
     outcome.className = 'callout' + (r.effect === 'raise' || r.effect === 'overruled' ? ' warn' : ''); outcome.hidden = false;
     status.hidden = true;
-    foot.textContent = (kept ? 'Run by ' + r.by + '. ' : 'Shown to you only; nothing was kept. ') + r.steps.length + ' checks, ' + r.calls + ' model calls' + (r.seconds ? ', ' + r.seconds + ' s' : '') + (r.cost_usd ? ', about $' + r.cost_usd.toFixed(3) : '') + '.';
-    go.textContent = 'Run it again';
+    by.textContent = 'Investigated by ' + MODEL + ', not told the verdict';
+    foot.textContent = (kept ? 'Asked by ' + r.by + '. ' : 'Shown to you only; nothing was kept. ') + r.steps.length + ' checks, ' + r.calls + ' model calls' + (r.seconds ? ', ' + r.seconds + ' s' : '') + (r.cost_usd ? ', about $' + r.cost_usd.toFixed(3) : '') + '.';
+    go.textContent = 'Ask again';
   }
   function say(t) { status.textContent = t; status.hidden = false; }
   function run() {
@@ -323,12 +340,13 @@
     // New alerts arrive every minute or two, and each one would refresh this page. A refresh in the middle of a
     // run would cut it off, and after a run that is not kept it would wipe the result while it is being read.
     if (!stay) window.triagleHold(1);
-    steps.textContent = ''; steps.hidden = true; reading.hidden = true; outcome.hidden = true;
+    steps.textContent = ''; work.hidden = true; work.open = true; workSum.textContent = 'The checks, as they are run';
+    reading.hidden = true; outcome.hidden = true;
     say('{{ model_word()|capitalize }} is choosing its first check…');
     fetch('/api/agent/run', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({ alert: box.getAttribute('data-alert'), csrf: csrf }) })
       .then(function (r) {
-        if (!r.ok) return r.json().then(function (j) { throw new Error(j.detail || 'The investigator could not start.'); });
+        if (!r.ok) return r.json().then(function (j) { throw new Error(j.detail || 'The second opinion could not start.'); });
         var reader = r.body.getReader(), dec = new TextDecoder(), buf = '';
         function on(ev) {
           if (ev.type === 'step') { step(ev); say('{{ model_word()|capitalize }} is choosing its next check…'); }
@@ -345,45 +363,49 @@
         }
         return pump();
       })
-      .catch(function (e) { say(e.message || 'The investigator could not finish. The verdict above stands.'); })
+      .catch(function (e) { say(e.message || 'The second opinion could not finish. The verdict above stands.'); })
       .then(function () { busy = false; go.disabled = false; if (!stay) window.triagleHold(-1); });
   }
   go.addEventListener('click', run);
   var kept = box.getAttribute('data-run');
-  if (kept) { try { show(JSON.parse(kept), true); } catch (e) {} }
+  if (kept) { try { show(JSON.parse(kept), true, true); } catch (e) {} }
   else if (box.getAttribute('data-auto') === '1') run();
 })();
 </script>
 <script nonce="{{ csp_nonce() }}">
-/* The same model without Triagle, for comparison. Shown and never kept. */
+/* The same model without Triagle, for comparison. An analyst's is kept as a record; it is never acted on. */
 (function () {
   var box = document.getElementById('agent'), go = document.getElementById('bare-go'); if (!box || !go) return;
   var steps = document.getElementById('bare-steps'), status = document.getElementById('bare-status'),
       reading = document.getElementById('bare-reading'), foot = document.getElementById('bare-foot'),
+      work = document.getElementById('bare-work'), workSum = document.getElementById('bare-work-sum'),
       csrf = {{ csrf|tojson }}, busy = false, held = false;
   var WORDS = { attack: 'A real attack', suspicious: 'Suspicious', benign: 'Harmless', unsure: 'Not settled' };
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function pair(dt, items) { reading.appendChild(el('dt', '', dt)); var d = el('dd'); items.forEach(function (x) { d.appendChild(el('div', '', x)); }); reading.appendChild(d); }
   function say(t) { status.textContent = t; status.hidden = false; }
-  function step(s) { var li = el('li', '', s.did); if (s.why) li.appendChild(el('span', 'found', (s.by_rule ? '' : 'Why: ') + s.why)); steps.appendChild(li); steps.hidden = false; }
-  function show(r, kept) {
+  function step(s) { var li = el('li', '', s.did); if (s.why) li.appendChild(el('span', 'found', (s.by_rule ? '' : 'Why: ') + s.why)); steps.appendChild(li); work.hidden = false; }
+  function show(r, kept, loaded) {
     steps.textContent = ''; r.steps.forEach(step);
+    workSum.textContent = r.steps.length + (r.steps.length === 1 ? ' check' : ' checks') + ', on what the SIEM recorded';
+    work.hidden = !r.steps.length; if (loaded) work.open = false;
     reading.textContent = '';
     if (r.usable) {
-      pair('Its reading', [WORDS[r.view] + (r.view !== 'unsure' && r.confidence ? ', ' + r.confidence + '% confident' : '') + (r.summary ? '. ' + r.summary : '')]);
+      pair('Reading', [WORDS[r.view] + (r.view !== 'unsure' && r.confidence ? ', ' + r.confidence + '% confident' : '') + (r.summary ? '. ' + r.summary : '')]);
       if (r.reasons && r.reasons.length) pair('Because', r.reasons);
       if (r.next && r.next.length) pair('It would do next', r.next);
-    } else { pair('Its reading', ['None. The model did not give an answer that could be read.']); }
+    } else { pair('Reading', ['None. The model did not give an answer that could be read.']); }
     reading.hidden = false; status.hidden = true;
-    foot.textContent = (kept ? 'Run by ' + r.by + '. Kept as a record; it changes nothing. ' : 'Shown to you only; nothing was kept. ') + r.steps.length + ' checks, ' + r.calls + ' model calls' + (r.seconds ? ', ' + r.seconds + ' s' : '') + (r.cost_usd ? ', about $' + r.cost_usd.toFixed(3) : '') + '.';
+    foot.textContent = (kept ? 'Asked by ' + r.by + '. Kept as a record; it changes nothing. ' : 'Shown to you only; nothing was kept. ') + r.steps.length + ' checks, ' + r.calls + ' model calls' + (r.seconds ? ', ' + r.seconds + ' s' : '') + (r.cost_usd ? ', about $' + r.cost_usd.toFixed(3) : '') + '.';
     go.textContent = 'Ask it again';
   }
   var wrap = document.getElementById('bare'), earlier = wrap.getAttribute('data-run');
-  if (earlier) { try { show(JSON.parse(earlier), true); } catch (e) {} }
+  if (earlier) { try { show(JSON.parse(earlier), true, true); } catch (e) {} }
   go.addEventListener('click', function () {
     if (busy) return; busy = true; go.disabled = true;
     if (!held) { held = true; window.triagleHold(1); }           // a refresh in the middle would cut it off
-    steps.textContent = ''; steps.hidden = true; reading.hidden = true; foot.textContent = '';
+    steps.textContent = ''; work.hidden = true; work.open = true; workSum.textContent = 'The checks, as they are run';
+    reading.hidden = true; foot.textContent = '';
     say('{{ model_word()|capitalize }} is reading what the SIEM recorded…');
     fetch('/api/agent/run', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({ alert: box.getAttribute('data-alert'), csrf: csrf, bare: true }) })

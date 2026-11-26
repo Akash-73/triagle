@@ -144,7 +144,7 @@ def test_asking_gemini_to_read_the_sample_orders_it_and_survives_a_restart(app, 
                            for i in range(n)])
     model["reply"] = reply
     page = app.get("/checks").text
-    assert "Ask Gemini to read these" in page and "Not read yet" in page
+    assert "Ask Gemini to read these" in page and "Not asked yet" in page
     r = app.post("/checks/read", data={"csrf": _csrf(page)}, follow_redirects=False)
     assert r.headers["location"] == "/checks?read=ok"
     second = main._CACHE["second"]

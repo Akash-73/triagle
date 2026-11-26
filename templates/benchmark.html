@@ -3,12 +3,12 @@
 {% block heading %}Evaluation{% endblock %}
 {% block content %}
 <section style="margin-bottom:18px;">
-  <p class="handover"><b>{{ summary.all.alerts }}</b> labelled alerts run through the same engine as the live queue.
+  <p class="handover"><b>{{ summary.all.alerts }}</b> labelled alerts run through the same rules as the live queue.
     <b class="{{ 'n-crit' if summary.all.missed else '' }}">{{ summary.all.missed }}</b> of <b>{{ summary.all.threats }}</b> real threats missed.
     <b>{{ summary.all.false_escalations }}</b> of <b>{{ summary.all.benign }}</b> benign alerts sent to a person.</p>
   <p class="note" style="margin-top:10px;">{{ summary.all.benign_closed_pct }}% of benign alerts closed with a code. Holdout cases only: {{ summary.holdout.missed }} of {{ summary.holdout.threats }} missed. Run in {{ ms }} ms.</p>
 </section>
-<div class="callout" style="margin-bottom:16px; max-width:100ch;"><b>Read these numbers carefully.</b> The alerts are simulated and were written by the same person who wrote the engine. Holdout cases were not used to tune it, but they are not independent. This shows the engine does what it claims on known attack shapes. It is not evidence of accuracy in a real environment.</div>
+<div class="callout" style="margin-bottom:16px; max-width:100ch;"><b>Read these numbers carefully.</b> The alerts are simulated and were written by the same person who wrote the rules. Holdout cases were not used to tune them, but they are not independent. This shows Triagle does what it claims on known attack shapes. It is not evidence of accuracy in a real environment.</div>
 <section class="panel">
   <header><h2>Every case</h2><span class="n">{{ rows|length }}</span></header>
   <div class="scroll-x"><table class="tbl">

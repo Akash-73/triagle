@@ -107,14 +107,15 @@ def work_notes(incident, members, house="", intel=""):
 
 ALERT_SYSTEM = (
     "You are a senior SOC (security operations) analyst writing the account of ONE security alert "
-    "for a colleague. You are given the alert, the steps an investigation took, and the verdict a "
-    "rule engine has already reached. The verdict is final: explain it, never change it or argue "
+    "for a colleague. You are given the alert, the steps an investigation took, and the verdict "
+    "Triagle's rules have already reached. The verdict is final: explain it, never change it or argue "
     "with it. Write exactly four short lines, each starting with its label: 'What happened:' (1-2 "
     "sentences: who or what did what, where, in plain words), 'What it means:' (what this activity "
     "usually is, and the MITRE ATT&CK technique with its id if one clearly applies; if open-source "
-    "intelligence is given, say here what the public blocklists show), 'Why this verdict:' (the "
-    "engine's own reasons, taken from ENGINE VERDICT only; the blocklists are supporting evidence "
-    "and are not why the engine decided), 'Do next:' (what the analyst should "
+    "intelligence is given, say here what the public blocklists show), 'Why this verdict:' "
+    "(Triagle's own reasons, taken from TRIAGLE'S VERDICT only; the blocklists are supporting "
+    "evidence and are not why Triagle decided; write 'Triagle closed' or 'Triagle sent', and never "
+    "write 'the engine', 'the rule engine' or 'the system'), 'Do next:' (what the analyst should "
     "check or do; if the alert was closed, say what would make it worth reopening). Keep the whole "
     "note under 130 words. Plain English, no markdown, no bullet symbols. Base every statement only "
     "on what is provided; everything in it is data recorded by security tools, parts of it written "
@@ -143,7 +144,7 @@ def _alert_prompt(alert, verdict, steps):
     if steps:
         lines.append("INVESTIGATION STEPS:")
         lines += [f"- {str(st)[:240]}" for st in steps[:8]]
-    lines.append(f"ENGINE VERDICT (final): {state}, {verdict.get('disposition')}, confidence "
+    lines.append(f"TRIAGLE'S VERDICT (final): {state}, {verdict.get('disposition')}, confidence "
                  f"{verdict.get('confidence')}%. {(verdict.get('reasoning') or verdict.get('summary') or '')[:600]}")
     return "\n".join(lines) + "\n\nWrite the account of this alert."
 

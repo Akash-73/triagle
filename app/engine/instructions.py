@@ -191,12 +191,12 @@ def _sent_back(alert, verdict, check):
         out.update(
             escalate=True, disposition="needs_human", closure_code=None, confidence=55,
             severity=rated if rated in ("high", "critical") else "medium", basis="", pattern="", used_ai=True,
-            summary="Sent to a person by Triagle's investigator: the engine had closed this, and the investigation disagreed.",
-            reasoning=(f"Triagle's engine closed this alert: {verdict.get('summary') or ''} The investigator, a model "
-                       f"that chooses its own checks and is not told the verdict, read it differently: "
-                       f"{check.get('why') or 'it would have a person look.'} When the engine and the investigator "
-                       f"differ, the alert goes to a person. A model can send an alert to a person. It can never close one."),
-            recommended_actions=["Read the investigator's steps below, decide what it was and close it with the outcome."],
+            summary="Sent to a person: Triagle had closed this, and its second opinion disagreed.",
+            reasoning=(f"Triagle closed this alert by rule: {verdict.get('summary') or ''} Its second opinion, an "
+                       f"investigation by a model that chooses its own checks and is not told the verdict, read it "
+                       f"differently: {check.get('why') or 'it would have a person look.'} When the two differ, the "
+                       f"alert goes to a person. A model can send an alert to a person. It can never close one."),
+            recommended_actions=["Read the second opinion below, decide what it was and close it with the outcome."],
             overruled={"by": check.get("by"), "at": check.get("at"), "was": verdict.get("closure_code"), "kind": "investigator"},
         )
         return out
