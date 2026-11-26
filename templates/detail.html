@@ -59,11 +59,11 @@
     <section class="panel" id="agent" data-alert="{{ alert.alert_id }}" data-keeps="{{ '1' if agent_keeps else '0' }}"
              data-auto="{{ '1' if agent_on and agent_keeps and verdict.escalate and not verdict.resolved and not agent else '0' }}"
              {% if agent %}data-run='{{ agent|tojson }}'{% endif %}>
-      <header><h2>Triagle's investigator</h2><span class="by" id="agent-by" style="margin-left:auto;">Gemini chooses the checks</span></header>
+      <header><h2>Triagle's investigator</h2><span class="by" id="agent-by" style="margin-left:auto;">{{ model_word()|capitalize }} chooses the checks</span></header>
       <div class="body">
         {% if not agent_on %}<p class="note">No model is connected, so the investigator cannot run. The verdict above stands on its own.</p>
         {% else %}
-        <p class="note" id="agent-intro">The verdict above came from the engine's fixed checks. Here Gemini investigates the same alert on its own: it chooses among {{ agent_tools }} checks, up to {{ agent_steps }} of them, and it is not told the verdict. Rules then decide what happens if the two differ, and only one way: a model can send an alert to a person, and can never close one.</p>
+        <p class="note" id="agent-intro">The verdict above came from the engine's fixed checks. Here {{ model_word() }} investigates the same alert on its own: it chooses among {{ agent_tools }} checks, up to {{ agent_steps }} of them, and it is not told the verdict. Rules then decide what happens if the two differ, and only one way: a model can send an alert to a person, and can never close one.</p>
         <ol class="steps" id="agent-steps" style="margin-top:12px;" hidden></ol>
         <p class="by waiting" id="agent-status" style="margin-top:10px;" hidden></p>
         <dl class="notes" id="agent-reading" style="margin-top:14px;" hidden></dl>
@@ -302,21 +302,21 @@
     outcome.textContent = ''; outcome.appendChild(el('b', '', 'Against the engine. ')); outcome.appendChild(document.createTextNode(r.outcome));
     outcome.className = 'callout' + (r.effect === 'raise' || r.effect === 'overruled' ? ' warn' : ''); outcome.hidden = false;
     status.hidden = true;
-    foot.textContent = (kept ? 'Run by ' + r.by + '. ' : 'Shown to you only; nothing was kept. ') + r.steps.length + ' checks, ' + r.calls + ' model calls.';
+    foot.textContent = (kept ? 'Run by ' + r.by + '. ' : 'Shown to you only; nothing was kept. ') + r.steps.length + ' checks, ' + r.calls + ' model calls' + (r.seconds ? ', ' + r.seconds + ' s' : '') + (r.cost_usd ? ', about $' + r.cost_usd.toFixed(3) : '') + '.';
     go.textContent = 'Run it again';
   }
   function say(t) { status.textContent = t; status.hidden = false; }
   function run() {
     if (busy) return; busy = true; go.disabled = true;
     steps.textContent = ''; steps.hidden = true; reading.hidden = true; outcome.hidden = true;
-    say('Gemini is choosing its first check…');
+    say('{{ model_word()|capitalize }} is choosing its first check…');
     fetch('/api/agent/run', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({ alert: box.getAttribute('data-alert'), csrf: csrf }) })
       .then(function (r) {
         if (!r.ok) return r.json().then(function (j) { throw new Error(j.detail || 'The investigator could not start.'); });
         var reader = r.body.getReader(), dec = new TextDecoder(), buf = '';
         function on(ev) {
-          if (ev.type === 'step') { step(ev); say('Gemini is choosing its next check…'); }
+          if (ev.type === 'step') { step(ev); say('{{ model_word()|capitalize }} is choosing its next check…'); }
           else if (ev.type === 'reading') { say('The evidence was read twice. Checking the two readings against each other and against the evidence…'); }
           else if (ev.type === 'result') { show(ev.result, ev.kept); if (ev.reload) { say('The alert has been sent to the queue. Reloading…'); setTimeout(function () { location.href = location.pathname + '?notice=agent#agent'; }, 1800); } }
           else if (ev.type === 'error') { say(ev.detail); }

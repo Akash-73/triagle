@@ -44,6 +44,10 @@ def _clean(tmp_path, monkeypatch):
     genai.STATUS.update(provider=None, model=None, ok=None, error=None, at=None, seconds=None, calls=0, failures=0)
     genai._no_thinking.clear()
     monkeypatch.delenv("TRIAGLE_THINKING", raising=False)
+    for k in ("TRIAGLE_MODEL_BASE", "TRIAGLE_MODEL_KEY", "TRIAGLE_PRICE_IN", "TRIAGLE_PRICE_OUT"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(genai, "RETRY_WAIT", 0)
+    genai.STATUS["retries"] = 0
     main._ASK_TIMES.clear()
     main._ASK_ALL.clear()
     auth.load_config({"TRIAGLE_ADMIN_PASSWORD": "pw", "TRIAGLE_SECRET": "s",
@@ -173,6 +177,122 @@ def test_the_model_can_be_changed_by_setting(cloud_run, monkeypatch):
     assert "/models/gemini-9-test:" in cloud_run["posts"][0]["url"]
 
 
+# ---- a busy service is asked once more ------------------------------------------
+
+BUSY = FakeResp(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "Quota"}})
+
+
+def _answers(cloud_run, monkeypatch, replies):
+    replies = list(replies)
+
+    def post(url, headers=None, json=None, timeout=None):
+        cloud_run["posts"].append({"url": url, "json": json, "timeout": timeout})
+        r = replies.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    monkeypatch.setattr(genai.requests, "post", post)
+
+
+def test_a_busy_service_is_asked_once_more(cloud_run, monkeypatch):
+    _answers(cloud_run, monkeypatch, [BUSY, model_reply("second time lucky")])
+    assert genai.generate_prose("s", "u") == ("second time lucky", "vertex")
+    assert len(cloud_run["posts"]) == 2 and genai.STATUS["retries"] == 1 and genai.STATUS["failures"] == 0
+
+
+def test_and_only_once(cloud_run, monkeypatch):
+    _answers(cloud_run, monkeypatch, [BUSY, FakeResp(503, {"error": {"status": "UNAVAILABLE", "message": "Busy"}}),
+                                      model_reply("never reached")])
+    assert genai.generate_prose("s", "u") == (None, None)
+    assert len(cloud_run["posts"]) == 2 and "UNAVAILABLE" in genai.STATUS["error"]
+
+
+def test_a_dropped_connection_is_tried_again_and_a_timeout_is_not(cloud_run, monkeypatch):
+    _answers(cloud_run, monkeypatch, [genai.requests.ConnectionError("reset"), model_reply("after the reset")])
+    assert genai.generate_prose("s", "u") == ("after the reset", "vertex")
+    cloud_run["posts"].clear()
+    _answers(cloud_run, monkeypatch, [genai.requests.ReadTimeout("slow"), model_reply("never reached")])
+    assert genai.generate_prose("s", "u", timeout=7) == (None, None)
+    assert len(cloud_run["posts"]) == 1 and cloud_run["posts"][0]["timeout"] == 7
+
+
+def test_a_refusal_is_not_asked_again(cloud_run, monkeypatch):
+    _answers(cloud_run, monkeypatch, [FakeResp(403, {"error": {"status": "PERMISSION_DENIED", "message": "No"}}),
+                                      model_reply("never reached")])
+    assert genai.generate_prose("s", "u") == (None, None) and len(cloud_run["posts"]) == 1
+
+
+# ---- a model the customer runs ---------------------------------------------------
+
+def chat_reply(text, **usage):
+    return FakeResp(200, {"choices": [{"message": {"role": "assistant", "content": text}}], "usage": usage})
+
+
+def test_a_customers_own_model_is_the_only_one_asked(cloud_run, monkeypatch):
+    """On Cloud Run with Vertex AI available, one setting sends every prompt
+    to the customer's server instead, and nothing goes to Google."""
+    monkeypatch.setenv("TRIAGLE_MODEL_BASE", "http://10.0.0.5:11434/v1/")
+    monkeypatch.setenv("TRIAGLE_MODEL", "llama3.1")
+    monkeypatch.setenv("TRIAGLE_MODEL_KEY", "local-key")
+    cloud_run["reply"] = chat_reply("<think>The rule says so.</think>\nWritten on the bank's own server.",
+                                    prompt_tokens=120, completion_tokens=30)
+    before = dict(genai.USAGE)
+    assert genai.configured() and not genai.vertex_enabled()
+    assert genai.generate_prose("the system part", "the alert", max_tokens=900, temperature=0.0) == \
+        ("Written on the bank's own server.", "own")
+    assert len(cloud_run["posts"]) == 1
+    sent = cloud_run["posts"][0]
+    assert sent["url"] == "http://10.0.0.5:11434/v1/chat/completions" and "google" not in sent["url"]
+    assert sent["headers"]["Authorization"] == "Bearer local-key"
+    assert sent["json"]["model"] == "llama3.1" and sent["json"]["temperature"] == 0.0 and sent["json"]["max_tokens"] == 900
+    assert sent["json"]["messages"] == [{"role": "system", "content": "the system part"},
+                                        {"role": "user", "content": "the alert"}]
+    assert genai.USAGE["input"] - before["input"] == 120 and genai.USAGE["output"] - before["output"] == 30
+    st = genai.status()
+    assert st["own"] and st["transport"] == "Your own model server at 10.0.0.5:11434" and st["thinking"] is None
+    assert st["project"] is None and st["usage"]["price_in"] == 0 and st["usage"]["price_out"] == 0
+    assert genai.PROVIDER_LABEL["own"] == "your own model"
+    genai.load_usage(before)
+
+
+def test_when_the_customers_model_is_down_nothing_is_sent_to_anyone_else(cloud_run, monkeypatch):
+    monkeypatch.setenv("TRIAGLE_MODEL_BASE", "https://someone:hunter2@models.bank.example/v1")
+    monkeypatch.setenv("GEMINI_API_KEY", "a-key-that-must-not-be-used")
+    cloud_run["reply"] = FakeResp(404, {"error": "model 'gemini-3.5-flash' not found"})      # the error is a plain string
+    assert genai.generate_prose("s", "u") == (None, None)                                      # and never raises
+    assert [p["url"] for p in cloud_run["posts"]] == ["https://someone:hunter2@models.bank.example/v1/chat/completions"]
+    last = genai.status()["last"]
+    assert last["ok"] is False and "not found" in last["error"] and last["provider"] == "own"
+    assert genai.status()["transport"] == "Your own model server at models.bank.example", "no name or password is shown"
+
+
+def test_the_investigator_runs_on_a_customers_own_model(cloud_run, monkeypatch):
+    """The whole loop, guardrails included, over the other transport: the
+    rules are code, so they do not change with the model."""
+    from app.engine import investigator
+    monkeypatch.setenv("TRIAGLE_MODEL_BASE", "http://localhost:11434/v1")
+    monkeypatch.setenv("TRIAGLE_MODEL", "qwen2.5")
+    plan = iter(['{"tool": "raw_event", "why": "start with the record"}', '{"tool": "format_the_disk", "why": "x"}',
+                 '{"tool": "related_alerts", "why": "is it alone"}', '{"tool": "conclude", "why": "enough"}'])
+
+    def post(url, headers=None, json=None, timeout=None):
+        cloud_run["posts"].append({"url": url})
+        system = json["messages"][0]["content"]
+        if "Give your own reading" in system:
+            return chat_reply('{"view": "benign", "confidence": 80, "summary": "Routine.", "reasons": ["Nothing hostile."], "next": []}')
+        return chat_reply(next(plan))
+
+    monkeypatch.setattr(genai.requests, "post", post)
+    result = main._load_result()
+    alert = result["alerts"][0]
+    events = list(investigator.run(investigator.Case(alert, result["alerts"])))
+    r = events[-1]["result"]
+    assert [s["tool"] for s in r["steps"]] == ["raw_event", "related_alerts"] and r["view"] == "benign"
+    assert [g["code"] for g in r["guards"]] == ["declared"]
+    assert all(p["url"] == "http://localhost:11434/v1/chat/completions" for p in cloud_run["posts"]) and r["calls"] == 6
+
+
 # ---- questions about a case ----------------------------------------------------
 
 def _case():
@@ -225,6 +345,26 @@ def _analyst():
 def _csrf(c):
     import re
     return re.search(r'name="csrf" value="([0-9a-f]+)"', c.get("/").text).group(1)
+
+
+def test_the_pages_name_the_model_that_is_connected(cloud_run, monkeypatch):
+    """With Gemini connected the pages say Gemini. With a model the customer
+    runs, no page says a prompt went to Google."""
+    c = _analyst()
+    alert_id = main._load_result()["alerts"][0]["alert_id"]
+    pages = ("/security", "/connectors", "/checks", f"/alert/{alert_id}", "/morning", "/pilot")
+    texts = {u: c.get(u).text for u in pages}
+    assert all(r for r in texts.values())
+    assert "Google&#39;s Gemini through Google Cloud" in texts["/security"] or "Google's Gemini through Google Cloud" in texts["/security"]
+    assert "TRIAGLE_MODEL_BASE" in texts["/connectors"] and "A model of your own" in texts["/security"]
+    assert "Gemini chooses the checks" in texts[f"/alert/{alert_id}"]
+    monkeypatch.setenv("TRIAGLE_MODEL_BASE", "http://10.0.0.5:8000/v1")
+    monkeypatch.setenv("TRIAGLE_MODEL", "llama3.1")
+    for u in pages:
+        page = c.get(u)
+        assert page.status_code == 200 and "Gemini" not in page.text, u
+    assert "none to Google" in c.get("/connectors").text and "The model chooses the checks" in c.get(f"/alert/{alert_id}").text
+    assert "Your own model server at 10.0.0.5:8000" in c.get("/connectors").text
 
 
 def test_model_status_needs_a_sign_in_and_reports_the_transport(cloud_run):

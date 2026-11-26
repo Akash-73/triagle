@@ -19,6 +19,8 @@ an alert, lower an alert the engine raised on evidence, or run an action.
 The guardrails, all of them plain code:
 
   declared tools   A reply that names anything but a declared check is not run.
+                   Nor is one that repeats a check, or is not in the form
+                   asked for. Two of those and Triagle stops asking.
   a floor          A reading on fewer than two checks is not accepted: the
                    missing checks are run by rule and the page says so.
   two readings     The same evidence is read twice. If the two readings
@@ -46,6 +48,7 @@ Settings
 import hashlib
 import os
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from app import privacy
@@ -55,6 +58,7 @@ from app.engine.relate import parse_ts
 
 WINDOW_HOURS = 24
 MIN_CHECKS = 2
+CALL_SECONDS = 30          # the longest one answer from the model is waited for
 VIEWS = ("attack", "suspicious", "benign", "unsure")
 VIEW_WORDS = {"attack": "A real attack", "suspicious": "Suspicious", "benign": "Harmless", "unsure": "Not settled"}
 _CAUTION = {"attack": 3, "suspicious": 2, "unsure": 1, "benign": 0}
@@ -359,30 +363,51 @@ def settle(engine_escalated, on_evidence, view, usable=True, addressed=""):
 
 # ---- the run -------------------------------------------------------------------------
 
+# A planning reply that is not run, and what the page says about it. Two of
+# these in one run and Triagle stops asking and goes on with what it has.
+_NOT_RUN = {
+    "undeclared": ("declared", "The model asked for something that is not a declared check. It was not run."),
+    "repeat": ("repeat", "The model asked for a check it had already run. It was not run again."),
+    "unreadable": ("unreadable", "One of the model's replies while choosing a check was not in the form asked for. Nothing was run on it."),
+}
+
+def _one(got):
+    """The model sometimes wraps its one object in a list."""
+    if isinstance(got, list) and len(got) == 1:
+        got = got[0]
+    return got if isinstance(got, dict) else None
+
+
 def _choice(text, left):
-    """(check name | 'conclude' | None, why) from one planning reply."""
+    """(what, why) from one planning reply. `what` is a check name from
+    `left`, 'conclude', or one of three things that are never run:
+    'unreadable' (not an answer in the asked form), 'repeat' (a check that has
+    already been run) and 'undeclared' (anything that is not a declared check)."""
     try:
-        got = parse_json(text or "")
+        got = _one(parse_json(text or ""))
     except ValueError:
-        return None, ""
-    if not isinstance(got, dict):
-        return None, ""
-    tool = str(got.get("tool") or got.get("action") or "").strip().lower().replace(" ", "_")
-    why = _clip(got.get("why") or got.get("rationale") or "", 220)
+        got = None
+    if got is None:
+        return "unreadable", ""
+    tool = re.sub(r"[^a-z_]", "", str(got.get("tool") or got.get("check") or got.get("action") or "")
+                  .strip().lower().replace(" ", "_").replace("-", "_"))
+    why = _clip(got.get("why") or got.get("rationale") or got.get("reason") or "", 220)
     if tool in ("conclude", "done", "finish", "stop"):
         return "conclude", why
-    return (tool if tool in left else None), why
+    if tool in left:
+        return tool, why
+    return ("repeat" if tool in TOOLS else "undeclared"), why
 
 
 def _reading(text):
     """One reading from the model's reply, or None if it cannot be read."""
     try:
-        got = parse_json(text or "")
+        got = _one(parse_json(text or ""))
     except ValueError:
+        got = None
+    if got is None:
         return None
-    if not isinstance(got, dict):
-        return None
-    view = str(got.get("view") or "").strip().lower()
+    view = re.sub(r"[^a-z]", "", str(got.get("view") or "").lower())      # "Benign." is read as benign
     if view not in VIEWS:
         return None
     try:                                              # 85, "85" and "85%" are all read as 85
@@ -409,11 +434,13 @@ def run(case, earlier=None, ask=None):
             return ask(system, user, temperature)
         system_m, mapping = privacy.mask(system, {})         # a mapping of its own for each call
         user_m, mapping = privacy.mask(user, mapping)
-        text, _provider = genai.generate_prose(system_m, user_m, max_tokens=4096, temperature=temperature)
+        text, _provider = genai.generate_prose(system_m, user_m, max_tokens=4096, temperature=temperature,
+                                               timeout=CALL_SECONDS)
         return privacy.unmask(text, mapping) if text else None
 
     alert, facts = case.alert, _facts(case.alert)
     steps, guards, strikes = [], [], 0
+    started, spent = time.time(), (genai.USAGE["input"], genai.USAGE["output"] + genai.USAGE["thinking"])
     system = PLAN_SYSTEM.format(tools="\n".join(f"- {name}: {about}" for name, (_f, about, _d) in TOOLS.items()))
 
     def evidence_text():
@@ -439,10 +466,10 @@ def run(case, earlier=None, ask=None):
             guards.append({"code": "silent", "words": "The model did not answer while choosing a check, so Triagle chose the rest by rule."})
             break
         tool, why = _choice(text, left)
-        if tool is None:
+        if tool in _NOT_RUN:
             strikes += 1
-            if strikes == 1:
-                guards.append({"code": "declared", "words": "The model asked for something that is not a declared check. It was not run."})
+            if not any(g["code"] == _NOT_RUN[tool][0] for g in guards):
+                guards.append({"code": _NOT_RUN[tool][0], "words": _NOT_RUN[tool][1]})
             if strikes >= 2:
                 break
             continue
@@ -487,7 +514,13 @@ def run(case, earlier=None, ask=None):
     if addressed:
         guards.append({"code": "addressed", "words": f"The alert's own text speaks to an AI model (\"{addressed}\")."})
 
+    # what this run took, as the model's own token counts say. Another call made
+    # at the same moment is counted in, so the page says "about".
+    price = genai.usage()
+    cost = ((genai.USAGE["input"] - spent[0]) * price["price_in"]
+            + (genai.USAGE["output"] + genai.USAGE["thinking"] - spent[1]) * price["price_out"]) / 1_000_000
     yield {"type": "result", "result": {
+        "seconds": round(time.time() - started, 1), "cost_usd": round(max(0.0, cost), 4),
         "steps": steps, "readings": readings, "view": view, "usable": usable, "addressed": addressed,
         "confidence": min((r["confidence"] for r in readings), default=0),
         "summary": final["summary"] if final else "", "reasons": final["reasons"] if final else [],

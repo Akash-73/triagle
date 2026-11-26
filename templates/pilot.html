@@ -62,7 +62,7 @@
     </table>
     {% endif %}
     {% else %}<p>No closure has been checked yet. Open <a href="/checks">Spot checks</a>, look at the sample and say whether you agree. The figure appears here.</p>{% endif %}
-    {% if checks.second.read %}<p class="small" style="margin-top:8px;">Gemini has read {{ checks.second.read }} closure{{ '' if checks.second.read == 1 else 's' }} as a second reader and would look again at {{ checks.second.look }}. It changes no verdict. It decides which closures a person sees first.</p>{% endif %}
+    {% if checks.second.read %}<p class="small" style="margin-top:8px;">{{ model_word()|capitalize }} has read {{ checks.second.read }} closure{{ '' if checks.second.read == 1 else 's' }} as a second reader and would look again at {{ checks.second.look }}. It changes no verdict. It decides which closures a person sees first.</p>{% endif %}
 
     <h2>What people decided</h2>
     <table class="tbl">

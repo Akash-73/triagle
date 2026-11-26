@@ -1,7 +1,13 @@
 """
-Triagle — Gemini access layer (Vertex AI first, AI Studio fallback).
+Triagle — the model access layer: Gemini on Vertex AI, or a model you run.
 
-One call, two transports, chosen at runtime:
+One call, three transports, chosen at runtime:
+
+  - YOUR OWN MODEL. Set TRIAGLE_MODEL_BASE to the address of any server that
+    speaks the OpenAI chat format (Ollama, vLLM, LM Studio, a gateway inside
+    a bank's network) and every prompt goes there and nowhere else. No call
+    is made to Google, even when that server is down. The guardrails are
+    plain code and do not change with the model.
 
   - VERTEX AI (the product path). Used automatically when Triagle runs on
     Cloud Run, or when GOOGLE_CLOUD_PROJECT / TRIAGLE_VERTEX=true is set.
@@ -33,8 +39,13 @@ Settings:
   TRIAGLE_THINKING          minimal / low / medium / high, or "default" to leave
                             the model's own setting alone. Default "low".
   GEMINI_API_KEY            AI Studio key, for the fallback transport
+  TRIAGLE_MODEL_BASE        address of your own model server, for example
+                            http://10.0.0.5:11434/v1. Set TRIAGLE_MODEL to the
+                            name that server knows the model by.
+  TRIAGLE_MODEL_KEY         its key, if it asks for one
 """
 import os
+import re
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -48,7 +59,7 @@ _META_HEADERS = {"Metadata-Flavor": "Google"}
 # What happened on the most recent call, for the console. No prompt text is
 # kept here, only how the call went.
 STATUS = {"provider": None, "model": None, "ok": None, "error": None, "at": None, "seconds": None,
-          "calls": 0, "failures": 0}
+          "calls": 0, "failures": 0, "retries": 0}
 
 _cache = {"project": None, "token": None, "token_exp": 0.0}
 
@@ -80,7 +91,9 @@ def _meter(resp_json):
 
 def usage():
     """Calls, tokens and what they cost at the published price."""
-    p_in, p_out = _price("TRIAGLE_PRICE_IN", PRICE_IN_USD), _price("TRIAGLE_PRICE_OUT", PRICE_OUT_USD)
+    own = bool(own_base())                    # a model you run is not billed by the token
+    p_in = _price("TRIAGLE_PRICE_IN", 0.0 if own else PRICE_IN_USD)
+    p_out = _price("TRIAGLE_PRICE_OUT", 0.0 if own else PRICE_OUT_USD)
     cost = (USAGE["input"] * p_in + (USAGE["output"] + USAGE["thinking"]) * p_out) / 1_000_000
     return {**USAGE, "cost_usd": round(cost, 4), "price_in": p_in, "price_out": p_out,
             "per_call_usd": round(cost / USAGE["calls"], 4) if USAGE["calls"] else 0.0}
@@ -112,7 +125,14 @@ def on_cloud_run():
     return bool(os.environ.get("K_SERVICE"))
 
 
+def own_base():
+    """The address of a model the customer runs, or ''."""
+    return (os.environ.get("TRIAGLE_MODEL_BASE") or "").strip().rstrip("/")
+
+
 def vertex_enabled():
+    if own_base():
+        return False                     # a customer who runs its own model sends nothing to Google
     flag = _flag("TRIAGLE_VERTEX")
     if flag in ("0", "false", "no", "off"):
         return False
@@ -208,13 +228,38 @@ def _body(system, user, max_tokens, temperature, level=None):
     }
 
 
-def _post(url, headers, system, user, max_tokens, temperature):
+RETRY_STATUS = (429, 500, 502, 503, 504)
+RETRY_WAIT = 1.5          # seconds before the one second try
+
+
+def _send(url, headers, body, timeout):
+    """One request, and one more if the service says it is busy or the
+    connection drops. A shared quota answers 429 for a moment when it is full,
+    and a second try a moment later nearly always goes through. A call that
+    timed out is not tried again: the wait has already been long."""
+    for attempt in (1, 2):
+        try:
+            resp = requests.post(url, headers=headers, json=body, timeout=timeout)
+        except requests.Timeout:
+            raise
+        except requests.ConnectionError:
+            if attempt == 2:
+                raise
+            resp = None
+        if attempt == 1 and (resp is None or resp.status_code in RETRY_STATUS):
+            STATUS["retries"] = STATUS.get("retries", 0) + 1
+            time.sleep(RETRY_WAIT)
+            continue
+        return resp
+
+
+def _post(url, headers, system, user, max_tokens, temperature, timeout=60):
     """One call to the model. A model that has no thinking setting answers
     HTTP 400 to it: ask again without, and stop sending it to that model."""
     level = thinking()
-    resp = requests.post(url, headers=headers, json=_body(system, user, max_tokens, temperature, level), timeout=60)
+    resp = _send(url, headers, _body(system, user, max_tokens, temperature, level), timeout)
     if resp.status_code == 400 and level:
-        plain = requests.post(url, headers=headers, json=_body(system, user, max_tokens, temperature), timeout=60)
+        plain = _send(url, headers, _body(system, user, max_tokens, temperature), timeout)
         if plain.status_code == 200:
             _no_thinking.add(model_name())
         return plain
@@ -222,14 +267,17 @@ def _post(url, headers, system, user, max_tokens, temperature):
 
 
 def _error_text(resp):
-    """The short reason a call failed, as the API gave it."""
+    """The short reason a call failed, as the API gave it. Google sends
+    {"error": {"message", "status"}}; other servers send {"error": "words"}."""
     try:
         err = resp.json().get("error") or {}
-        msg = err.get("message") or ""
-        status = err.get("status") or ""
-        return f"HTTP {resp.status_code} {status}: {msg}".strip()[:400]
-    except ValueError:
+    except (ValueError, AttributeError):
         return f"HTTP {resp.status_code}: {resp.text[:300]}"
+    if not isinstance(err, dict):
+        return f"HTTP {resp.status_code}: {str(err)[:300]}"
+    msg = err.get("message") or ""
+    status = err.get("status") or err.get("type") or ""
+    return f"HTTP {resp.status_code} {status}: {msg}".strip()[:400]
 
 
 class ModelError(Exception):
@@ -242,7 +290,7 @@ def vertex_url(proj, loc, model):
             f"/publishers/google/models/{model}:generateContent")
 
 
-def _vertex(system, user, max_tokens, temperature):
+def _vertex(system, user, max_tokens, temperature, timeout=60):
     proj = project()
     if not proj:
         raise ModelError("No Google Cloud project found. Set GOOGLE_CLOUD_PROJECT.")
@@ -251,7 +299,7 @@ def _vertex(system, user, max_tokens, temperature):
         raise ModelError("No Google Cloud credentials found for this service.")
     resp = _post(vertex_url(proj, location(), model_name()),
                  {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                 system, user, max_tokens, temperature)
+                 system, user, max_tokens, temperature, timeout)
     if resp.status_code != 200:
         if resp.status_code in (401, 403):
             _cache["token"] = None
@@ -264,19 +312,46 @@ def _vertex(system, user, max_tokens, temperature):
     return text
 
 
-def _ai_studio(system, user, max_tokens, temperature):
+def _ai_studio(system, user, max_tokens, temperature, timeout=60):
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not key:
         return None
     base = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
     resp = _post(f"{base}/models/{model_name()}:generateContent",
                  {"x-goog-api-key": key, "Content-Type": "application/json"},
-                 system, user, max_tokens, temperature)
+                 system, user, max_tokens, temperature, timeout)
     if resp.status_code != 200:
         raise ModelError(_error_text(resp))
     data = resp.json()
     _meter(data)
     text = _extract(data)
+    if not text:
+        raise ModelError("The model returned no text.")
+    return text
+
+
+_THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
+
+
+def _own(system, user, max_tokens, temperature, timeout=60):
+    """A model the customer runs, over the OpenAI chat format. Reasoning
+    models served this way put their working inside <think> tags; that is
+    dropped, the same as Gemini's thought parts."""
+    headers = {"Content-Type": "application/json"}
+    key = os.environ.get("TRIAGLE_MODEL_KEY")
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    resp = _send(f"{own_base()}/chat/completions", headers,
+                 {"model": model_name(), "temperature": temperature, "max_tokens": max_tokens, "stream": False,
+                  "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}, timeout)
+    if resp.status_code != 200:
+        raise ModelError(_error_text(resp))
+    data = resp.json()
+    used = data.get("usage") or {}
+    _meter({"usageMetadata": {"promptTokenCount": used.get("prompt_tokens"),
+                              "candidatesTokenCount": used.get("completion_tokens")}})
+    choice = (data.get("choices") or [{}])[0]
+    text = _THINK.sub("", str((choice.get("message") or {}).get("content") or "")).strip()
     if not text:
         raise ModelError("The model returned no text.")
     return text
@@ -291,26 +366,40 @@ def _record(provider, ok, error, started):
         STATUS["failures"] += 1
 
 
-def generate_prose(system, user, max_tokens=4096, temperature=0.2):
-    """(text, provider). provider is 'vertex', 'aistudio' or None. Tries
-    Vertex AI when enabled, then the AI Studio key. Never raises."""
+_FAILS = (ModelError, requests.RequestException, ValueError, KeyError, IndexError, TypeError, AttributeError)
+
+
+def generate_prose(system, user, max_tokens=4096, temperature=0.2, timeout=60):
+    """(text, provider). provider is 'own', 'vertex', 'aistudio' or None.
+    With TRIAGLE_MODEL_BASE set, the customer's own model is the only one
+    asked. Otherwise Vertex AI when enabled, then the AI Studio key. Never
+    raises."""
+    if own_base():
+        started = time.time()
+        try:
+            text = _own(system, user, max_tokens, temperature, timeout)
+            _record("own", True, None, started)
+            return text, "own"
+        except _FAILS as e:
+            _record("own", False, str(e) or e.__class__.__name__, started)
+            return None, None                    # and nothing is sent to anyone else
     errors = []
     if vertex_enabled():
         started = time.time()
         try:
-            text = _vertex(system, user, max_tokens, temperature)
+            text = _vertex(system, user, max_tokens, temperature, timeout)
             _record("vertex", True, None, started)
             return text, "vertex"
-        except (ModelError, requests.RequestException, ValueError, KeyError, IndexError, TypeError) as e:
+        except _FAILS as e:
             errors.append(str(e) or e.__class__.__name__)
             _record("vertex", False, errors[-1], started)
     started = time.time()
     try:
-        text = _ai_studio(system, user, max_tokens, temperature)
+        text = _ai_studio(system, user, max_tokens, temperature, timeout)
         if text:
             _record("aistudio", True, None, started)
             return text, "aistudio"
-    except (ModelError, requests.RequestException, ValueError, KeyError, IndexError, TypeError) as e:
+    except _FAILS as e:
         errors.append(str(e) or e.__class__.__name__)
         _record("aistudio", False, errors[-1], started)
     if not errors:
@@ -319,20 +408,31 @@ def generate_prose(system, user, max_tokens=4096, temperature=0.2):
     return None, None
 
 
-PROVIDER_LABEL = {"vertex": "Gemini on Vertex AI", "aistudio": "Gemini"}
+PROVIDER_LABEL = {"vertex": "Gemini on Vertex AI", "aistudio": "Gemini", "own": "your own model"}
+
+
+def word():
+    """What a page calls the model in a sentence: Gemini, or "the model" when
+    the customer runs its own."""
+    return "the model" if own_base() else "Gemini"
 
 
 def configured():
     """Is there any transport to try at all?"""
-    return vertex_enabled() or bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+    return bool(own_base()) or vertex_enabled() or bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
 
 
 def status():
     """What the console shows about the model."""
-    transport = "Vertex AI" if vertex_enabled() else (
-        "AI Studio key" if (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")) else None)
+    if own_base():                       # the host only: an address can carry a name and a password
+        host = re.sub(r"^[a-z]+://", "", own_base(), flags=re.I).split("/")[0].split("@")[-1]
+        transport = f"Your own model server at {host}"
+    else:
+        transport = "Vertex AI" if vertex_enabled() else (
+            "AI Studio key" if (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")) else None)
     return {
-        "configured": configured(), "transport": transport, "model": model_name(), "thinking": thinking(),
+        "configured": configured(), "transport": transport, "model": model_name(), "own": bool(own_base()),
+        "thinking": None if own_base() else thinking(),
         "location": location() if vertex_enabled() else None,
         "project": project() if vertex_enabled() else None,
         "last": dict(STATUS), "usage": usage(),

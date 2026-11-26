@@ -356,6 +356,13 @@ What is in place, with the code and the tests in this repository:
   the result goes one way only: a model can send a closed alert to a person,
   and can never close one or lower one raised on evidence
   (`app/engine/investigator.py`, `tests/test_investigator.py`).
+- **Any model, the same rules.** Triagle reaches its model through one
+  function. It runs on Gemini on Vertex AI. Set `TRIAGLE_MODEL_BASE` to a
+  server that speaks the OpenAI chat format, for example a model inside a
+  bank's own network, and every prompt goes there and none to Google, even
+  when that server is down. The rules that bound the model are code, so they
+  do not change with the model. This path has been run against a test server
+  (`tests/test_model.py`), and not yet in a customer's network.
 - **Nothing acts alone.** A response runs only after a named analyst
   approves it, and each approval goes in a hash-chained audit log.
 - **Pages.** A content-security policy under which a script runs only if it
@@ -379,7 +386,7 @@ each client, and an Indian hosting region. To report a problem, see
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 452 tests, no network or key needed
+python -m pytest -q                 # 463 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```

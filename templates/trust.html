@@ -60,10 +60,11 @@
     <h2>What the model sees</h2>
     <table class="tbl"><tbody>
       <tr><td style="width:34%">Verdicts are made without it</td><td>The verdict on an alert comes from rules, the same way every time. No model is called to decide.</td></tr>
-      <tr><td>Writing is where it is used</td><td>When someone opens an alert, a case, a morning report or a draft message, the text for that item is sent to Google's Gemini through Google Cloud. No model is called to sort the alerts that nobody opens.</td></tr>
+      <tr><td>Writing is where it is used</td><td>When someone opens an alert, a case, a morning report or a draft message, the text for that item is sent to {% if model_word() == 'Gemini' %}Google's Gemini through Google Cloud{% else %}the model this deployment runs itself, at the address set for it, and to nobody else{% endif %}. No model is called to sort the alerts that nobody opens.</td></tr>
       <tr><td>Investigating, inside rules</td><td>When an analyst asks, the model investigates one alert on its own, choosing among declared, read-only checks. It cannot close an alert, lower one that was raised on evidence, or run an action. If it disagrees with a closure, the alert goes to a person.</td></tr>
       <tr><td>Masked first</td><td>Aadhaar numbers, PANs, UPI IDs, phone numbers and email addresses are replaced by placeholders before the text leaves, and put back in the answer. Names and street addresses are not recognised.</td></tr>
-      <tr><td>Not used for training</td><td>Nothing is sent anywhere to train a model. Google states that it does not use this data to train its models without permission.</td></tr>
+      <tr><td>Not used for training</td><td>Nothing is sent anywhere to train a model. {% if model_word() == 'Gemini' %}Google states that it does not use this data to train its models without permission.{% else %}This deployment uses a model on a server its owner chose, and makes no call to a model anywhere else.{% endif %}</td></tr>
+      <tr><td>A model of your own</td><td>Triagle reaches its model through one setting. Point it at a model inside your own network, anything that speaks the OpenAI chat format, and no prompt goes to Google. The rules that bound the model are code, so they are the same whichever model is used.</td></tr>
     </tbody></table>
 
     <h2>What Triagle can do</h2>

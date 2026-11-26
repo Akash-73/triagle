@@ -14,13 +14,13 @@
     {% else %}No closure has been checked yet.{% endif %}
     <b>{{ waiting }}</b> more could be checked.
     {% set inv = agent_tally() %}{% if inv.runs %}<br><span style="font-size:.6em; color:var(--text-2);">The investigator has read {{ inv.runs }} alert{{ '' if inv.runs == 1 else 's' }} on its own, not told the verdict: it agreed with the engine on {{ inv.agreed }}, differed on {{ inv.differed }} and could not settle {{ inv.unsettled }}. {{ inv.raised }} closed alert{{ '' if inv.raised == 1 else 's' }} went to a person because of it.</span>{% endif %}
-    {% if second.read %}Gemini has read <b>{{ second.read }}</b> as a second reader and would look again at <b>{{ second.look }}</b>.{% endif %}
+    {% if second.read %}{{ model_word()|capitalize }} has read <b>{{ second.read }}</b> as a second reader and would look again at <b>{{ second.look }}</b>.{% endif %}
   </p>
 </section>
 
 <section class="panel" id="next">
   <header><h2>Check these next</h2><span class="n">{{ rows|length }} of {{ waiting }}</span>
-    {% if can_check and model_on and unread %}<form method="post" action="/checks/read" class="more" style="margin-left:auto;"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn small" type="submit" title="Gemini reads these closures and says which it would look at again. It changes no verdict.">Ask Gemini to read these</button></form>{% endif %}</header>
+    {% if can_check and model_on and unread %}<form method="post" action="/checks/read" class="more" style="margin-left:auto;"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn small" type="submit" title="{{ model_word()|capitalize }} reads these closures and says which it would look at again. It changes no verdict.">Ask {{ model_word() }} to read these</button></form>{% endif %}</header>
   {% if rows %}
   <div class="scroll-x"><table class="tbl">
     <thead><tr><th style="width:26%">Alert</th><th style="width:13%">Asset</th><th>Why Triagle closed it</th><th style="width:24%">Second reading</th>{% if can_check %}<th style="width:190px"></th>{% endif %}</tr></thead>

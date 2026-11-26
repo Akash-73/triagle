@@ -79,7 +79,7 @@
     {% endif %}
   </div>
 
-  <footer>The figures and rows are Triagle's own record. The summary at the top is written from them: by Gemini when a signed-in analyst opens this page, otherwise by rule. Nothing here was sent to anyone; an analyst sends it.</footer>
+  <footer>The figures and rows are Triagle's own record. The summary at the top is written from them: by {{ model_word() }} when a signed-in analyst opens this page, otherwise by rule. Nothing here was sent to anyone; an analyst sends it.</footer>
 </article>
 {% if f %}
 <script nonce="{{ csp_nonce() }}">

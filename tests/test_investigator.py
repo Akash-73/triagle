@@ -122,6 +122,39 @@ def test_a_reply_that_is_not_an_answer_gives_no_reading():
     assert investigator.settle(False, False, r["view"], r["usable"])["effect"] == "none"
 
 
+def test_a_reply_in_the_wrong_form_or_a_repeated_check_is_not_run_and_the_page_says_which():
+    ask = model(["I think the sign-in pattern is the place to start.", {"tool": "raw_event", "why": "w"},
+                 {"tool": "raw_event", "why": "again"}], [SUSPICIOUS])
+    r = last(list(investigator.run(case(), ask=ask)))
+    assert [s["tool"] for s in r["steps"]][0] == "raw_event" and [s["tool"] for s in r["steps"]].count("raw_event") == 1
+    codes = [g["code"] for g in r["guards"]]
+    assert "unreadable" in codes and "repeat" in codes and "declared" not in codes
+    assert len(ask.seen) == 5, "two replies that are not run and Triagle stops asking: three turns, two readings"
+    words = " ".join(g["words"] for g in r["guards"])
+    assert "not in the form asked for" in words and "already run" in words
+
+
+def test_small_differences_in_the_form_of_an_answer_are_read():
+    wrapped = "Here is my choice:\n```json\n[{\"check\": \"Sign-In Pattern\", \"reason\": \"who is being tried\"}]\n```"
+    loud = json.dumps([dict(SUSPICIOUS, view="Suspicious.", confidence="85%")])
+    r = last(list(investigator.run(case(), ask=model([wrapped, {"tool": "reputation"}], [loud]))))
+    assert [s["tool"] for s in r["steps"]] == ["sign_in_pattern", "reputation"] and r["steps"][0]["why"] == "who is being tried"
+    assert r["view"] == "suspicious" and r["confidence"] == 85 and not r["guards"]
+
+
+def test_one_slow_answer_cannot_hold_the_page_for_a_minute(monkeypatch):
+    waits = []
+
+    def prose(system, user, max_tokens=4096, temperature=0.2, timeout=60):
+        waits.append(timeout)
+        return None, None
+
+    monkeypatch.setattr(genai, "generate_prose", prose)
+    r = last(list(investigator.run(case())))
+    assert waits and set(waits) == {investigator.CALL_SECONDS} and investigator.CALL_SECONDS <= 30
+    assert not r["usable"] and r["view"] == "unsure"
+
+
 def test_a_second_run_that_differs_on_the_same_evidence_counts_as_not_settled():
     plan = [{"tool": "raw_event"}, {"tool": "timeline"}]
     first = last(list(investigator.run(case(), ask=model(plan, [SUSPICIOUS]))))

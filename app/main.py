@@ -40,7 +40,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.10.0", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.10.1", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -188,9 +188,9 @@ def _model_pill():
     """The one-line model status in the top bar."""
     st = genai.status()
     last = st["last"]
-    name = " ".join(w.capitalize() if not w[0].isdigit() else w for w in st["model"].split("-"))
+    name = " ".join(w.capitalize() if not w[0].isdigit() else w for w in st["model"].split("-") if w) or "The model"
     if not st["configured"]:
-        return {"state": "", "label": "No model connected", "title": "Verdicts are decided by rules. Connect Gemini to add explanations."}
+        return {"state": "", "label": "No model connected", "title": "Verdicts are decided by rules. Connect a model to add the investigator and the written accounts."}
     if last.get("ok") is False:
         return {"state": "warn", "label": f"{name} is not answering", "title": last.get("error") or ""}
     if last.get("ok"):
@@ -1692,7 +1692,8 @@ def checks_page(request: Request, read: str = "", user=Depends(require_user)):
     disagree with, and the figure that comes out of it."""
     result = _load_result()
     return templates.TemplateResponse(request, "checks.html", _ctx(
-        request, user, active="checks", can_check=user["role"] == "analyst", notice=READ_NOTICES.get(read, ""),
+        request, user, active="checks", can_check=user["role"] == "analyst",
+        notice=READ_NOTICES.get(read, "").replace("Gemini", genai.word().capitalize()),
         model_on=genai.configured(), **_checks_view(result)))
 
 
@@ -2687,6 +2688,7 @@ def _agent_tally(skip=()):
 
 
 templates.env.globals["agent_tally"] = lambda: _agent_tally(_test_clients())
+templates.env.globals["model_word"] = genai.word
 
 
 @app.post("/api/agent/run")
@@ -2759,7 +2761,7 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
             audit.record("alert investigated by the model" if keeps else "investigator tried, nothing kept", user["name"],
                          alert_id=alert_id, view=rec["view"], effect=rec["effect"], agrees=rec["agrees"],
                          checks=[s["tool"] for s in rec["steps"]], guards=[g["code"] for g in rec["guards"]],
-                         model_calls=rec["calls"], ip=ip)
+                         model_calls=rec["calls"], seconds=rec.get("seconds"), cost_usd=rec.get("cost_usd"), ip=ip)
             yield json.dumps({"type": "result", "result": rec, "kept": keeps, "reload": reload}) + "\n"
         except Exception as e:                      # the page must always get an ending
             audit.record("investigator stopped", user["name"], alert_id=alert_id, error=f"{type(e).__name__}: {e}"[:200], ip=ip)
