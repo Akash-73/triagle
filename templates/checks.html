@@ -4,7 +4,7 @@
 {% block heading %}Spot checks{% endblock %}
 {% block top_actions %}<a class="btn small" href="/pilot">Pilot report</a>{% endblock %}
 {% block content %}
-<p class="note" style="max-width:86ch; margin-bottom:16px;">Triagle closes most alerts on its own. This page is how you find out whether it should have. It offers a sample of its closures, taken across every reason for closing and every detection rule, and you say whether you agree. If you disagree, the alert goes back to the queue and the disagreement is counted against Triagle.</p>
+<p class="note" style="max-width:86ch; margin-bottom:16px;">Triagle closes most alerts on its own. Here you check a sample of those closures and say whether you agree. A disagreement sends the alert back to the queue and is counted against Triagle.</p>
 
 {% if notice %}<div class="callout" style="margin-bottom:16px;">{{ notice }}</div>{% endif %}
 <section style="margin-bottom:20px;">
@@ -30,7 +30,7 @@
       <td><a class="primary" href="/alert/{{ r.alert.alert_id }}">{{ r.alert.title }}</a><span class="sub">{{ source_name(r.alert.source) }}{% if r.alert.indicators.rule_level %}, rated level {{ r.alert.indicators.rule_level }}{% endif %} · {{ r.alert.timestamp|ist_short }}</span></td>
       <td>{{ r.alert.host or r.alert.entity }}{% if r.alert.user %}<span class="sub">{{ r.alert.user }}</span>{% endif %}</td>
       <td style="color:var(--text-2);">{{ r.verdict.summary }}<span class="sub">{{ closure_words(r.verdict.closure_code) }}</span></td>
-      <td>{% if r.agent %}{{ agent_tag(r.agent) }}<span class="sub" style="white-space:normal;">{{ r.agent.summary or r.agent.outcome }}</span>
+      <td>{% if r.agent %}{{ agent_tag(r.agent) }}<span class="sub" style="white-space:normal;">{{ (r.agent.summary or r.agent.outcome)|nomarks }}</span>
           {% elif r.second %}{% if r.second.view == 'look' %}<span class="tag warn">Look again</span>{% else %}<span class="tag ok">Agrees</span>{% endif %}<span class="sub" style="white-space:normal;">{{ r.second.why }}</span>{% else %}<span class="sub">Not asked yet</span>{% endif %}</td>
       {% if can_check %}<td>
         <form method="post" action="/checks/mark" style="display:flex; gap:6px; justify-content:flex-end;">
@@ -59,7 +59,7 @@
         <span class="sub">{{ r.steps|length }} check{{ '' if r.steps|length == 1 else 's' }}{% if r.guards %}, {{ r.guards|length }} guardrail{{ '' if r.guards|length == 1 else 's' }} applied{% endif %}</span></td>
       <td>{{ agent_tag(r) }}<span class="sub" style="white-space:normal;">{{ r.outcome }}</span></td>
       {% if compared.both %}<td>{% if r.without and r.without.usable %}{% if r.without.view in ('attack', 'suspicious') and r.view == 'benign' %}<span class="tag bad">{{ view_words(r.without.view) }}</span>{% else %}<span class="tag">{{ view_words(r.without.view) }}</span>{% endif %}{% if r.without.view != 'unsure' and r.without.confidence %} <span style="color:var(--text-3)">{{ r.without.confidence }}%</span>{% endif %}
-        <span class="sub" style="white-space:normal;">{{ r.without.summary }}{% if r.without.next %} It would do next: "{{ r.without.next[0] }}"{% endif %}</span>{% elif r.without %}<span class="sub">No reading</span>{% else %}<span class="sub">Not run</span>{% endif %}</td>{% endif %}
+        <span class="sub" style="white-space:normal;">{{ r.without.summary|nomarks }}{% if r.without.next %} It would do next: "{{ r.without.next[0]|nomarks }}"{% endif %}</span>{% elif r.without %}<span class="sub">No reading</span>{% else %}<span class="sub">Not run</span>{% endif %}</td>{% endif %}
       <td>{{ r.by }}<span class="sub">{{ r.at|ist_short }}</span></td></tr>
     {% endfor %}</tbody>
   </table></div>

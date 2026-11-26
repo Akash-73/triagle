@@ -159,6 +159,14 @@ label { color: var(--text-2); font-size: .93rem; }
 .handover .n-crit { color: var(--crit); }
 .handover .n-due { color: var(--med); }
 
+/* the figures a person looks for first, one to a tile */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 10px; }
+.tile { display: block; padding: 13px 15px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text-2); text-decoration: none; min-width: 0; }
+a.tile:hover { border-color: var(--line-strong); text-decoration: none; }
+.tile b { display: block; font-family: var(--figures); font-stretch: 88%; font-size: 1.95rem; line-height: 1.08; font-weight: 650; letter-spacing: -.01em; color: var(--text); white-space: nowrap; }
+.tile span { display: block; margin-top: 5px; font-size: .9rem; line-height: 1.3; }
+.tile.crit b { color: var(--crit); }
+.tile.clock b { color: var(--med); font-size: 1.4rem; line-height: 1.5; white-space: normal; }
 .tbar { margin-top: 18px; }
 .tbar .track { display: flex; height: 14px; border-radius: 3px; overflow: hidden; background: var(--raised); }
 .tbar .seg { min-width: 3px; background: var(--line-strong); border-right: 2px solid var(--bg); }
@@ -247,6 +255,10 @@ a.due:hover { background: var(--raised); }
   .nav nav { grid-auto-flow: column; overflow-x: auto; }
   .nav .group, .nav .foot { display: none; }
   .content { padding: 16px 14px 40px; }
+  /* a wide table keeps its columns and scrolls sideways; squeezed to the screen it loses the column that names the alert */
+  .scroll-x > .tbl.fixed { min-width: 700px; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tile b { font-size: 1.7rem; }
   .topbar { padding: 8px 14px; height: auto; min-height: 48px; flex-wrap: wrap; gap: 6px 12px; position: static; }
   .topbar .right { margin-left: 0; flex-wrap: wrap; white-space: normal; gap: 6px 12px; }
   .topbar .right > span:last-child { display: none; }

@@ -4,17 +4,17 @@
 {% block heading %}Overview{% endblock %}
 {% block content %}
 {% if user.guest %}
-<p class="callout" style="margin-bottom:20px; max-width:92ch;"><b>Triagle works the alert queue of a security operations team.</b> It closes routine alerts with a written reason and brings the rest to a person, with the evidence, a proposed response and any report due to a regulator. You are a guest on a working console: open any alert, or watch them arrive under <a href="/live">Live</a>.</p>
+<p class="callout" style="margin-bottom:16px; max-width:92ch;"><b>Triagle closes routine alerts with a written reason and brings the rest to a person.</b> You are a guest on a working console: open any alert, or watch them arrive under <a href="/live">Live</a>.</p>
 {% endif %}
 <section style="margin-bottom:22px;">
-  <p class="handover">
-    <b>{{ metrics.received }}</b> alert{{ '' if metrics.received == 1 else 's' }} received.
-    <b>{{ metrics.closed_all }}</b> closed, each with a reason.
-    {% if metrics.resolved %}<b>{{ metrics.resolved }}</b> decided by a person.{% endif %}
-    {% if spot.checked %}A person <a href="/checks">checked {{ spot.checked }}</a> of the closures and agreed with <b>{{ spot.agreed }}</b>.{% endif %}
-    {% if metrics.open %}<b class="n-crit">{{ metrics.open }}</b> need{{ 's' if metrics.open == 1 else '' }} a decision.{% else %}None need a decision.{% endif %}
-    {% if dues %}<b class="n-due">{{ dues|length }}</b> report{{ '' if dues|length == 1 else 's' }} due{% if overdue %}, <b class="n-crit">{{ overdue }}</b> overdue{% endif %}; the next goes to {{ dues[0].row.name }} in <b data-due="{{ dues[0].row.due_iso }}">{{ dues[0].row.note }}</b>.{% endif %}
-  </p>
+  <div class="tiles">
+    <a class="tile" href="/alerts?show=all"><b>{{ "{:,}".format(metrics.received) }}</b><span>alert{{ '' if metrics.received == 1 else 's' }} received</span></a>
+    <a class="tile" href="/alerts?show=closed"><b>{{ "{:,}".format(metrics.closed_all) }}</b><span>closed, each with a reason</span></a>
+    <a class="tile{{ ' crit' if metrics.open else '' }}" href="/alerts"><b>{{ "{:,}".format(metrics.open) }}</b><span>need{{ 's' if metrics.open == 1 else '' }} a decision</span></a>
+    {% if metrics.resolved %}<a class="tile" href="/alerts?show=closed"><b>{{ metrics.resolved }}</b><span>decided by a person</span></a>{% endif %}
+    {% if spot.checked %}<a class="tile" href="/checks"><b>{{ spot.agreed }} of {{ spot.checked }}</b><span>closures checked by a person, and agreed</span></a>{% endif %}
+    {% if dues %}<a class="tile clock" href="/clock"><b data-due="{{ dues[0].row.due_iso }}">{{ dues[0].row.note }}</b><span>to the next report, for {{ dues[0].row.name }}. {{ dues|length }} due{% if overdue %}, {{ overdue }} overdue{% endif %}</span></a>{% endif %}
+  </div>
   {% if metrics.received %}
   <div class="tbar" role="img" aria-label="{{ metrics.closed_all }} alerts closed and {{ metrics.open }} waiting for a decision">
     <div class="track">

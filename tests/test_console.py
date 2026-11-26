@@ -79,6 +79,8 @@ def test_static_files_are_served_and_cacheable(app):
 def test_the_overview_reads_as_a_handover(app):
     page = app.get("/").text
     assert "closed, each with a reason" in page and "Needs a decision" in page
+    # the figures a person looks for first are one to a tile, not a paragraph to read
+    assert page.count('class="tile') >= 3 and 'class="handover"' not in page and "received</span>" in page
     assert "Obfuscated PowerShell execution" in page                 # the use case, not the rule title
 
 

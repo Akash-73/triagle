@@ -40,7 +40,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.10.8", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.10.9", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -89,6 +89,9 @@ def _ago(iso, now=None):
 
 
 templates.env.filters["ist_short"] = _ist_short
+# The model marks a reason with the check it rests on, "(CHECK 2)". Beside a list of checks that is a reference;
+# in a table it is noise.
+templates.env.filters["nomarks"] = lambda t: re.sub(r"\s*\((?:CHECKS?\s*\d+(?:\s*(?:,|and|&)\s*(?:CHECKS?\s*)?\d+)*)\)", "", str(t or ""), flags=re.I)
 
 # Each page carries a random value that its own <script> tags repeat. The
 # browser runs only scripts that carry it, so script text that reaches a page

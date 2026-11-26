@@ -601,3 +601,18 @@ def test_a_run_kept_before_the_wording_changed_is_shown_in_todays_words():
     odd = dict(old, effect="raise")
     assert main._reword(dict(odd)) == odd
     assert main._reword({"view": "benign", "outcome": "kept as it is"})["outcome"] == "kept as it is"
+
+
+def test_the_models_marks_are_left_out_of_what_a_person_reads():
+    """The model marks a reason with the check it rests on, "(CHECK 2)". The
+    alert page lists the checks, so there the mark is taken out by the page's
+    script. In the Spot checks table it is taken out before the page is built."""
+    clean = main.templates.env.filters["nomarks"]
+    assert clean("matches documented routine behavior (CHECK 2).") == "matches documented routine behavior."
+    assert clean("no installation occurred (CHECK 1, CHECK 2)") == "no installation occurred"
+    assert clean("keep (this) and CVE-2026-1234") == "keep (this) and CVE-2026-1234"
+    assert clean(None) == ""
+    c, a = signed_in(), pick("closed")
+    page = c.get(f"/alert/{a['alert_id']}").text
+    assert "function plain(t)" in page and "Question to answer" not in read_by_a_person(page), "a closed alert asks nothing of a person"
+    assert "Question to answer" in read_by_a_person(c.get(f"/alert/{pick('evidence')['alert_id']}").text)
