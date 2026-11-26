@@ -795,8 +795,8 @@ def run(case, earlier=None, ask=None):
 # the investigator itself ran on until the live feed showed what was missing,
 # so the comparison is with a careful prompt, not with a careless one.
 #
-# Its result is shown beside the investigator's and is never kept, never
-# settled against the engine and never acted on.
+# Its result is shown beside the investigator's. An analyst's is kept as a
+# record. It is never settled against the engine and never acted on.
 
 BARE = ("raw_event", "related_alerts", "timeline", "asset_history", "sign_in_pattern")
 

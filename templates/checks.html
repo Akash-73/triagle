@@ -48,15 +48,18 @@
 {% if agent_runs %}
 <section class="panel" style="margin-top:18px;" id="investigated">
   <header><h2>Investigated by the model on its own</h2><span class="n">{{ agent_runs|length }}{% if agent_run_count > agent_runs|length %} of {{ agent_run_count }}{% endif %}</span></header>
-  <div class="body note" style="padding-bottom:0;">For each of these, {{ model_word() }} chose its own checks and gave a reading without being told the engine's verdict. Rules then settled any difference, one way only: a model can send an alert to a person and can never close one.</div>
+  <div class="body note" style="padding-bottom:0;">For each of these, {{ model_word() }} chose its own checks and gave a reading without being told the engine's verdict. Rules then settled any difference, one way only: a model can send an alert to a person and can never close one.
+    {% if compared.both %}<br><b>The same model without Triagle.</b> On {{ compared.both }} of these it was also run with only what the SIEM recorded. It read <b>{{ compared.alarm }}</b> as an attack or suspicious where the investigator read {{ 'it' if compared.alarm == 1 else 'them' }} as routine, and agreed with the investigator on {{ compared.same }}.{% endif %}</div>
   <div class="scroll-x"><table class="tbl">
-    <thead><tr><th style="width:30%">Alert</th><th style="width:15%">The engine had</th><th style="width:17%">The investigator read it as</th><th>What happened</th><th style="width:150px">Run</th></tr></thead>
+    <thead><tr><th style="width:24%">Alert</th><th style="width:11%">The engine had</th><th style="width:15%">The investigator read it as</th><th>What happened</th>{% if compared.both %}<th style="width:24%">The same model without Triagle</th>{% endif %}<th style="width:120px">Run</th></tr></thead>
     <tbody>{% for r in agent_runs %}
-    <tr><td><a class="primary" href="/alert/{{ r.id }}#agent">{{ r.title }}</a><span class="sub">{{ r.host }}</span></td>
+    <tr><td>{% if r.listed %}<a class="primary" href="/alert/{{ r.id }}#agent">{{ r.title }}</a>{% else %}<span class="primary" title="No longer in the queue">{{ r.title }}</span>{% endif %}<span class="sub">{{ r.host }}</span></td>
       <td>{{ 'Sent it to a person' if r.engine.escalated else 'Closed it' }}</td>
       <td>{{ view_words(r.view) if r.usable else 'No reading' }}{% if r.usable and r.view != 'unsure' and r.confidence %} <span style="color:var(--text-3)">{{ r.confidence }}%</span>{% endif %}
         <span class="sub">{{ r.steps|length }} check{{ '' if r.steps|length == 1 else 's' }}{% if r.guards %}, {{ r.guards|length }} guardrail{{ '' if r.guards|length == 1 else 's' }} applied{% endif %}</span></td>
       <td>{{ agent_tag(r) }}<span class="sub" style="white-space:normal;">{{ r.outcome }}</span></td>
+      {% if compared.both %}<td>{% if r.without and r.without.usable %}{% if r.without.view in ('attack', 'suspicious') and r.view == 'benign' %}<span class="tag bad">{{ view_words(r.without.view) }}</span>{% else %}<span class="tag">{{ view_words(r.without.view) }}</span>{% endif %}{% if r.without.view != 'unsure' and r.without.confidence %} <span style="color:var(--text-3)">{{ r.without.confidence }}%</span>{% endif %}
+        <span class="sub" style="white-space:normal;">{{ r.without.summary }}{% if r.without.next %} It would do next: "{{ r.without.next[0] }}"{% endif %}</span>{% elif r.without %}<span class="sub">No reading</span>{% else %}<span class="sub">Not run</span>{% endif %}</td>{% endif %}
       <td>{{ r.by }}<span class="sub">{{ r.at|ist_short }}</span></td></tr>
     {% endfor %}</tbody>
   </table></div>

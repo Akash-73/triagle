@@ -103,6 +103,35 @@ def test_a_decision_and_a_filed_report_survive_a_restart(site):
     assert "CERT-IN-REF-1" in site.get("/clock").text
 
 
+def test_what_the_model_made_of_an_alert_survives_a_restart(site, monkeypatch):
+    """The investigator's run, and the same model's reading without Triagle
+    kept beside it, are records. A restart does not lose them."""
+    import json as js
+    from app.engine import genai
+    read = {"view": "benign", "confidence": 90, "summary": "Routine.", "reasons": ["Nothing hostile."], "next": []}
+    alarm = {"view": "attack", "confidence": 95, "summary": "Compromised.", "reasons": ["Unexplained."], "next": ["Isolate it."]}
+    reply = {"now": read}
+
+    def prose(system, user, **kw):
+        return (js.dumps({"tool": "conclude"}) if "choose your own checks" in system.lower() else js.dumps(reply["now"])), "vertex"
+
+    monkeypatch.setattr(genai, "configured", lambda: True)
+    monkeypatch.setattr(genai, "generate_prose", prose)
+    assert _ingest(site, PROBE)["accepted"] == 1
+    aid = main._load_result()["alerts"][-1]["alert_id"]
+    token = site.get(f"/alert/{aid}").text.split('csrf = "')[1].split('"')[0]
+    assert site.post("/api/agent/run", json={"alert": aid, "csrf": token}).status_code == 200
+    reply["now"] = alarm
+    assert site.post("/api/agent/run", json={"alert": aid, "csrf": token, "bare": True}).status_code == 200
+    assert main._CACHE["agent"][aid]["view"] == "benign" and main._CACHE["bare"][aid]["view"] == "attack"
+
+    _restart()
+    main._load_result()
+    assert main._CACHE["agent"][aid]["view"] == "benign" and main._CACHE["bare"][aid]["next"] == ["Isolate it."]
+    page = site.get("/checks").text
+    assert "The same model without Triagle" in page and "Isolate it." in page
+
+
 def test_clearing_the_test_alerts_is_saved_and_leaves_a_real_feed_alone(site):
     _ingest(site, ENCODED, DISCOVERY)                      # a connected tool's alerts
     token = _csrf(site.get("/").text)

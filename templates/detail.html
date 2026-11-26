@@ -72,13 +72,13 @@
           <button class="btn small" type="button" id="agent-go">{{ 'Run it again' if agent else 'Investigate this alert' }}</button>
           <span class="by" id="agent-foot">{% if not agent_keeps %}You are watching as a visitor: the run is shown and nothing is kept.{% endif %}</span>
         </div>
-        <div id="bare" style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
-          <p class="note"><b>What does Triagle add to the model?</b> Take it away and look. This runs the same model on the same alert with only what the SIEM recorded: no knowledge base, no reputation, none of this customer's earlier decisions, one reading and no guardrails. It is for comparison. Nothing from it is kept or acted on.</p>
+        <div id="bare" style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);"{% if bare %} data-run='{{ bare|tojson }}'{% endif %}>
+          <p class="note"><b>What does Triagle add to the model?</b> Take it away and look. This runs the same model on the same alert with only what the SIEM recorded: no knowledge base, no reputation, none of this customer's earlier decisions, one reading and no guardrails. It is for comparison. An analyst's run is kept as a record. Nothing from it is ever acted on.</p>
           <ol class="steps" id="bare-steps" style="margin-top:10px;" hidden></ol>
           <p class="by waiting" id="bare-status" style="margin-top:10px;" hidden></p>
           <dl class="notes" id="bare-reading" style="margin-top:12px;" hidden></dl>
           <div class="row" style="margin-top:12px; gap:10px; align-items:center;">
-            <button class="btn small quiet" type="button" id="bare-go">Ask {{ model_word() }} without Triagle</button>
+            <button class="btn small quiet" type="button" id="bare-go">{{ 'Ask it again' if bare else 'Ask ' ~ model_word() ~ ' without Triagle' }}</button>
             <span class="by" id="bare-foot"></span>
           </div>
         </div>
@@ -366,7 +366,8 @@
   function pair(dt, items) { reading.appendChild(el('dt', '', dt)); var d = el('dd'); items.forEach(function (x) { d.appendChild(el('div', '', x)); }); reading.appendChild(d); }
   function say(t) { status.textContent = t; status.hidden = false; }
   function step(s) { var li = el('li', '', s.did); if (s.why) li.appendChild(el('span', 'found', (s.by_rule ? '' : 'Why: ') + s.why)); steps.appendChild(li); steps.hidden = false; }
-  function show(r) {
+  function show(r, kept) {
+    steps.textContent = ''; r.steps.forEach(step);
     reading.textContent = '';
     if (r.usable) {
       pair('Its reading', [WORDS[r.view] + (r.view !== 'unsure' && r.confidence ? ', ' + r.confidence + '% confident' : '') + (r.summary ? '. ' + r.summary : '')]);
@@ -374,12 +375,14 @@
       if (r.next && r.next.length) pair('It would do next', r.next);
     } else { pair('Its reading', ['None. The model did not give an answer that could be read.']); }
     reading.hidden = false; status.hidden = true;
-    foot.textContent = 'Shown to you only; nothing was kept. ' + r.steps.length + ' checks, ' + r.calls + ' model calls' + (r.seconds ? ', ' + r.seconds + ' s' : '') + (r.cost_usd ? ', about $' + r.cost_usd.toFixed(3) : '') + '.';
+    foot.textContent = (kept ? 'Run by ' + r.by + '. Kept as a record; it changes nothing. ' : 'Shown to you only; nothing was kept. ') + r.steps.length + ' checks, ' + r.calls + ' model calls' + (r.seconds ? ', ' + r.seconds + ' s' : '') + (r.cost_usd ? ', about $' + r.cost_usd.toFixed(3) : '') + '.';
     go.textContent = 'Ask it again';
   }
+  var wrap = document.getElementById('bare'), earlier = wrap.getAttribute('data-run');
+  if (earlier) { try { show(JSON.parse(earlier), true); } catch (e) {} }
   go.addEventListener('click', function () {
     if (busy) return; busy = true; go.disabled = true;
-    if (!held) { held = true; window.triagleHold(1); }           // the result is not kept, so the page stays as it is
+    if (!held) { held = true; window.triagleHold(1); }           // a refresh in the middle would cut it off
     steps.textContent = ''; steps.hidden = true; reading.hidden = true; foot.textContent = '';
     say('{{ model_word()|capitalize }} is reading what the SIEM recorded…');
     fetch('/api/agent/run', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
@@ -389,7 +392,7 @@
         var reader = r.body.getReader(), dec = new TextDecoder(), buf = '';
         function on(ev) {
           if (ev.type === 'step') { step(ev); say('{{ model_word()|capitalize }} is choosing its next check…'); }
-          else if (ev.type === 'result') show(ev.result);
+          else if (ev.type === 'result') { show(ev.result, ev.kept); if (ev.kept && held) { held = false; window.triagleHold(-1); } }   // kept: a refresh shows it again
           else if (ev.type === 'error') say(ev.detail);
         }
         function pump() {

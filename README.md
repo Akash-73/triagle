@@ -362,8 +362,10 @@ What is in place, with the code and the tests in this repository:
   recorded: no knowledge base, no reputation, none of the customer's earlier
   decisions, one reading and no guardrails. On the live feed on 26 November
   that bare run read routine Windows housekeeping as an attack and advised
-  isolating a healthy laptop. The comparison is never kept and changes
-  nothing (`investigator.compare`).
+  isolating a healthy laptop. An analyst's comparison is kept as a record,
+  and Spot checks lists each one beside the investigator's reading of the
+  same alert. Nothing from a comparison is ever acted on
+  (`investigator.compare`).
 - **Any model, the same rules.** Triagle reaches its model through one
   function. It runs on Gemini on Vertex AI. Set `TRIAGLE_MODEL_BASE` to a
   server that speaks the OpenAI chat format, for example a model inside a
@@ -394,7 +396,7 @@ each client, and an Indian hosting region. To report a problem, see
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 473 tests, no network or key needed
+python -m pytest -q                 # 474 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```

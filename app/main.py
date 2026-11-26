@@ -40,7 +40,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.10.5", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.10.6", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -423,6 +423,7 @@ def _ensure_state():
     _CACHE["checks"] = {}                            # alert id -> a person's check of that closure
     _CACHE["second"] = {}                            # alert id -> the model's second reading of that closure
     _CACHE["agent"] = {}                             # alert id -> the investigator's own run on that alert
+    _CACHE["bare"] = {}                              # alert id -> the same model's reading without Triagle, kept for comparison
     _CACHE.pop("result", None)
     _restore()
 
@@ -437,7 +438,7 @@ def _snapshot():
             "resolutions": _CACHE["resolutions"], "outbox": _CACHE.get("outbox"),
             "arrived_at": _CACHE.get("arrived_at", {}),
             "taught": _CACHE.get("taught", []), "checks": _CACHE.get("checks", {}),
-            "second": _CACHE.get("second", {}), "agent": _CACHE.get("agent", {}),
+            "second": _CACHE.get("second", {}), "agent": _CACHE.get("agent", {}), "bare": _CACHE.get("bare", {}),
             "model_use": {k: genai.USAGE[k] for k in ("calls", "input", "output", "thinking", "since")}}
 
 
@@ -487,6 +488,8 @@ def _restore():
                         if isinstance(v, dict) and v.get("view") in ("agree", "look")}
     _CACHE["agent"] = {str(k): v for k, v in (state.get("agent") or {}).items()
                        if isinstance(v, dict) and v.get("view") in investigator.VIEWS and isinstance(v.get("steps"), list)}
+    _CACHE["bare"] = {str(k): v for k, v in (state.get("bare") or {}).items()
+                      if isinstance(v, dict) and v.get("bare") is True and v.get("view") in investigator.VIEWS}
     genai.load_usage(state.get("model_use"))
     _CACHE["model_calls_saved"] = genai.USAGE["calls"]
     _CACHE["restored"] = {"alerts": len(live), "saved_at": state.get("saved_at")}
@@ -1140,7 +1143,7 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
         report_key=report_key, just_decided=just_decided, resolutions=RESOLUTIONS,
         teachable=instructions.teachable(alert, verdict), teach_days=instructions.DAYS,
         check=_CACHE.get("checks", {}).get(alert_id), second=_CACHE.get("second", {}).get(alert_id),
-        agent=_CACHE.get("agent", {}).get(alert_id), agent_on=investigator.enabled(),
+        agent=_CACHE.get("agent", {}).get(alert_id), bare=_CACHE.get("bare", {}).get(alert_id), agent_on=investigator.enabled(),
         agent_keeps=_keeps(user), agent_tools=len(investigator.TOOLS) - len(investigator.BASE), agent_steps=investigator.max_steps(),
         not_needed=_not_needed(verdict),
         model_on=genai.configured(),
@@ -1673,11 +1676,20 @@ def _checks_view(result):
     done = sorted(({"id": k, **v} for k, v in checks.items() if v.get("client") not in skip),
                   key=lambda c: c.get("at") or "", reverse=True)
     titles = {a["alert_id"]: a for a in result["alerts"]}
+    without = _CACHE.get("bare", {})
     runs = sorted(({"id": k, **v, "title": v.get("title") or (titles.get(k) or {}).get("title") or k,
-                    "host": v.get("host") or (titles.get(k) or {}).get("host") or ""}
+                    "host": v.get("host") or (titles.get(k) or {}).get("host") or "",
+                    "listed": k in titles, "without": without.get(k)}
                    for k, v in _CACHE.get("agent", {}).items() if v.get("client") not in skip),
                   key=lambda r: r.get("at") or "", reverse=True)
+    worth = lambda r: bool(r and r.get("usable") and r.get("view") in ("attack", "suspicious"))
+    both = [r for r in runs if r["without"] and r["without"].get("usable") and r.get("usable")]
+    compared = {"both": len(both),
+                # the investigator read it as routine, and the same model without Triagle called it hostile
+                "alarm": sum(1 for r in both if r.get("view") == "benign" and worth(r["without"])),
+                "same": sum(1 for r in both if worth(r) == worth(r["without"]))}
     return {"rows": rows, "tally": spotcheck.tally(checks, skip), "agent_runs": runs[:15], "agent_run_count": len(runs),
+            "compared": compared,
             "waiting": len(spotcheck.waiting(result["alerts"], result["verdicts"], checks, skip)),
             "recent": done[:12], "disagreed": [c for c in done if c.get("ok") is False],
             "unread": sum(1 for r in rows if not r["second"]),
@@ -2713,7 +2725,8 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
     if not investigator.enabled():
         raise HTTPException(status_code=503, detail="No model is connected, so the investigator cannot run.")
     # "bare": the same model on the same alert without what Triagle knows, shown for
-    # comparison. It is never kept and changes nothing, whoever asks for it.
+    # comparison. An analyst's is kept as a record beside the investigator's run.
+    # It settles nothing and changes no alert, whoever asks for it.
     bare = bool(body.get("bare"))
     alert_id, keeps, ip = str(body.get("alert", "")), _keeps(user) and not bare, _client_ip(request)
     with _LOCK:
@@ -2748,11 +2761,24 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
                     final = event["result"]
                 else:
                     yield json.dumps({**event, "found": event["found"][:700]}) + "\n"
-            final = {**final, "steps": [{**s, "found": s["found"][:700]} for s in final["steps"]]}
-            audit.record("model compared without Triagle, nothing kept", user["name"], alert_id=alert_id, view=final["view"],
-                         checks=[s["tool"] for s in final["steps"]], model_calls=final["calls"],
-                         seconds=final["seconds"], cost_usd=final["cost_usd"], ip=ip)
-            yield json.dumps({"type": "result", "result": final, "kept": False, "reload": False}) + "\n"
+            final = {**final, "steps": [{**s, "found": s["found"][:400]} for s in final["steps"]],
+                     "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), "by": user["name"],
+                     "client": alert.get("client") or "", "title": alert.get("title") or "",
+                     "host": alert.get("host") or alert.get("entity") or ""}
+            kept = _keeps(user)
+            if kept:                                # a record, and nothing else: no verdict, no queue, no action
+                with _LOCK:
+                    _ensure_state()
+                    store_ = _CACHE.setdefault("bare", {})
+                    store_[alert_id] = final
+                    for old in sorted(store_, key=lambda k: store_[k].get("at") or "")[:-AGENT_KEEP]:
+                        store_.pop(old, None)
+                    _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+                    _changed(now=True)
+            audit.record("model compared without Triagle" + ("" if kept else ", nothing kept"), user["name"],
+                         alert_id=alert_id, view=final["view"], checks=[s["tool"] for s in final["steps"]],
+                         model_calls=final["calls"], seconds=final["seconds"], cost_usd=final["cost_usd"], ip=ip)
+            yield json.dumps({"type": "result", "result": final, "kept": kept, "reload": False}) + "\n"
         except Exception as e:
             audit.record("investigator stopped", user["name"], alert_id=alert_id, error=f"{type(e).__name__}: {e}"[:200], ip=ip)
             yield json.dumps({"type": "error", "detail": "The comparison stopped before it finished."}) + "\n"
