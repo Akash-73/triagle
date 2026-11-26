@@ -395,12 +395,27 @@ def _own(system, user, max_tokens, temperature, timeout=60, again=False):
     return text
 
 
+_answered = [0.0]          # when the model last answered, by the clock
+
+
 def _record(provider, ok, error, started):
-    STATUS.update(provider=provider, model=model_name(), ok=ok, error=error,
-                  at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                  seconds=round(time.time() - started, 2))
+    """Count one call, and say what the console shows about the model.
+
+    A slow answer is asked for a second time beside the first, so two calls
+    can be out at once. The slow one may fail long after the other has
+    answered. That is a straggler, not a model that is down: it is counted
+    and listed, and it does not change what the top bar says. A failure
+    changes that only when nothing has answered since the call began."""
+    now = time.time()
+    at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    seconds = round(now - started, 2)
+    straggler = (not ok) and _answered[0] > started
+    if ok:
+        _answered[0] = now
+    if not straggler:
+        STATUS.update(provider=provider, model=model_name(), ok=ok, error=error, at=at, seconds=seconds)
     used = getattr(_this, "used", None) if ok else None
-    CALLS.append({"at": STATUS["at"], "seconds": STATUS["seconds"], "ok": bool(ok),
+    CALLS.append({"at": at, "seconds": seconds, "ok": bool(ok),
                   "in": used[0] if used else None, "out": used[1] if used else None,
                   "thinking": used[2] if used else None, "level": getattr(_this, "level", None)})
     _this.used = None
@@ -408,7 +423,7 @@ def _record(provider, ok, error, started):
     if not ok:
         STATUS["failures"] += 1
         STATUS["recent"] = (STATUS.get("recent") or [])[-5:] + [
-            {"at": STATUS["at"], "provider": provider, "seconds": STATUS["seconds"], "error": str(error)[:200]}]
+            {"at": at, "provider": provider, "seconds": seconds, "error": str(error)[:200]}]
 
 
 _FAILS = (ModelError, requests.RequestException, ValueError, KeyError, IndexError, TypeError, AttributeError)

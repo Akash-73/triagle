@@ -113,7 +113,7 @@
   <div class="body">
     <div class="suggest">{% for q in suggested %}<button class="btn small" type="button" data-q="{{ q }}">{{ q }}</button>{% endfor %}</div>
     <form><input type="text" maxlength="500" placeholder="Ask a question" aria-label="Your question"><button class="btn primary" type="submit">Ask</button></form>
-    <p class="by" style="margin-top:9px;">{% if model.label == 'No model connected' %}No model is connected, so questions cannot be answered yet.{% else %}{{ model.label }} answers from the evidence on this page. It cannot change a verdict or run an action.{% endif %}</p>
+    <p class="by" style="margin-top:9px;">{% if model.label == 'No model connected' %}No model is connected, so questions cannot be answered yet.{% else %}{{ model.name or model.label }} answers from the evidence on this page. It cannot change a verdict or run an action.{% endif %}</p>
   </div>
   <div class="answers"></div>
 </section>

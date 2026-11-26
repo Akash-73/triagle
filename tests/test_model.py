@@ -260,6 +260,30 @@ def test_a_slow_answer_is_asked_for_again_only_when_the_wait_was_short(cloud_run
     assert len(cloud_run["posts"]) == 2, "once more, and no more"
 
 
+def test_a_slow_answer_that_gives_up_after_the_other_has_answered_does_not_say_the_model_is_down(cloud_run):
+    """Found on the live site on 26 November. A slow answer is asked for a
+    second time beside the first. The second answered and the run finished.
+    Twenty seconds later the first timed out, and the top bar said "Gemini is
+    not answering" on every page until the next call. A failure now changes
+    the top bar only when nothing has answered since that call began."""
+    import time
+    slow_began = time.time() - 20                                    # the first asking, still out
+    assert genai.generate_prose("s", "u") == ("connected", "vertex")  # the second asking answers
+    assert main._model_pill()["state"] == "ok"
+    genai._record("vertex", False, "Read timed out. (read timeout=20)", slow_began)   # the first gives up
+    assert genai.STATUS["ok"] is True and main._model_pill()["state"] == "ok"
+    assert genai.STATUS["failures"] == 1 and genai.STATUS["recent"][-1]["error"].startswith("Read timed out")
+    assert [c["ok"] for c in genai.status()["calls"]][-2:] == [True, False], "it is still counted and listed"
+
+    # a call that began after the last answer, and failed, does say so
+    cloud_run["reply"] = FakeResp(503, {"error": {"status": "UNAVAILABLE", "message": "Busy"}})
+    assert genai.generate_prose("s", "u") == (None, None)
+    assert genai.STATUS["ok"] is False and main._model_pill()["label"].endswith("is not answering")
+    # and the next answer clears it
+    cloud_run["reply"] = None
+    assert genai.generate_prose("s", "u") == ("connected", "vertex") and main._model_pill()["state"] == "ok"
+
+
 def test_a_prompt_promised_to_vertex_ai_goes_nowhere_else(cloud_run, monkeypatch):
     """Found on the live site on 26 November: when Vertex AI was slow, the
     prompt was sent on to the AI Studio API with an old key. That is another
@@ -426,6 +450,18 @@ def test_the_pages_name_the_model_that_is_connected(cloud_run, monkeypatch):
         assert page.status_code == 200 and "Gemini" not in page.text, u
     assert "none to Google" in c.get("/connectors").text and "The model chooses the checks" in c.get(f"/alert/{alert_id}").text
     assert "Your own model server at 10.0.0.5:8000" in c.get("/connectors").text
+
+
+def test_the_ask_box_names_the_model_even_when_it_is_not_answering(cloud_run):
+    """The top bar may say the model is not answering. The sentence under the
+    question box is about which model answers, so it uses the model's name."""
+    c = _analyst()
+    alert_id = main._load_result()["alerts"][0]["alert_id"]
+    cloud_run["reply"] = FakeResp(503, {"error": {"status": "UNAVAILABLE", "message": "Busy"}})
+    assert genai.generate_prose("s", "u") == (None, None)
+    page = c.get(f"/alert/{alert_id}").text
+    assert "Gemini 3.5 Flash is not answering</a>" in page, "the top bar says so"
+    assert "is not answering answers" not in page and "Gemini 3.5 Flash answers from the evidence on this page" in page
 
 
 def test_model_status_needs_a_sign_in_and_reports_the_transport(cloud_run):

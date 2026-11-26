@@ -40,7 +40,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.10.6", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.10.7", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -190,12 +190,14 @@ def _model_pill():
     last = st["last"]
     name = " ".join(w.capitalize() if not w[0].isdigit() else w for w in st["model"].split("-") if w) or "The model"
     if not st["configured"]:
-        return {"state": "", "label": "No model connected", "title": "Verdicts are decided by rules. Connect a model to add the investigator and the written accounts."}
+        return {"state": "", "label": "No model connected", "name": "",
+                "title": "Verdicts are decided by rules. Connect a model to add the investigator and the written accounts."}
     if last.get("ok") is False:
-        return {"state": "warn", "label": f"{name} is not answering", "title": last.get("error") or ""}
+        return {"state": "warn", "label": f"{name} is not answering", "name": name, "title": last.get("error") or ""}
     if last.get("ok"):
-        return {"state": "ok", "label": name, "title": f"Answered in {last.get('seconds')} s through {st['transport']}."}
-    return {"state": "", "label": name, "title": f"Set up through {st['transport']}. Not called yet."}
+        return {"state": "ok", "label": name, "name": name,
+                "title": f"Answered in {last.get('seconds')} s through {st['transport']}."}
+    return {"state": "", "label": name, "name": name, "title": f"Set up through {st['transport']}. Not called yet."}
 
 
 def _nav(result):
