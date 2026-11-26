@@ -40,7 +40,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.9.0", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.9.1", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -1232,11 +1232,13 @@ NOTES_RETRY_SECONDS = 60
 
 
 @app.get("/api/notes")
-def api_notes(request: Request, case: str = "", user=Depends(require_user)):
-    """The written account of a case. Gemini writes it from the evidence; if
-    the model does not answer, a summary built from the same evidence is
-    returned and labelled as that. Cached per case."""
+def api_notes(request: Request, case: str = "", alert: str = "", user=Depends(require_user)):
+    """The written account of a case, or of one alert. Gemini writes it from
+    the evidence; if the model does not answer, a summary built from the same
+    evidence is returned and labelled as that. Cached per case or alert."""
     result = _load_result()
+    if alert:
+        return _alert_account(request, result, alert, user)
     incident = _find_incident(result, case)
     if not incident:
         raise HTTPException(status_code=404, detail="No such case.")
@@ -1254,6 +1256,34 @@ def api_notes(request: Request, case: str = "", user=Depends(require_user)):
                 _WORKNOTES[key] = worknotes.work_notes(incident, members,
                                                        house=_house(result, incident.get("client")))
                 _NOTES_AT[key] = time.time()
+        text, by_model, provider = _WORKNOTES[key]
+    return {"text": text, "by_model": by_model, "provider": provider,
+            "error": None if by_model else genai.STATUS.get("error")}
+
+
+def _alert_account(request, result, alert_id, user):
+    """Gemini's account of one alert. The engine's verdict goes to the model as
+    final: the model explains the alert, it does not judge it. Written once
+    for each alert and verdict, then kept."""
+    alert = next((a for a in result["alerts"] if a["alert_id"] == alert_id), None)
+    if alert is None:
+        raise HTTPException(status_code=404, detail="No such alert.")
+    verdict = result["verdicts"].get(alert_id) or {}
+    key = ("alert", alert_id, bool(verdict.get("escalate")), verdict.get("closure_code") or verdict.get("disposition"))
+    with _notes_lock(key):
+        cached = _WORKNOTES.get(key)
+        stale = cached and not cached[1] and time.time() - _NOTES_AT.get(key, 0) > NOTES_RETRY_SECONDS
+        if not cached or stale:
+            if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
+                if not cached:
+                    raise HTTPException(status_code=429, detail="Too many requests to the model. Wait a minute.")
+            else:
+                steps = [f"{st.get('tool')}: {st.get('result_summary')}" for st in result.get("trails", {}).get(alert_id, [])]
+                _WORKNOTES[key] = worknotes.alert_notes(alert, verdict, steps, house=_house(result, alert.get("client")))
+                _NOTES_AT[key] = time.time()
+                if len(_WORKNOTES) > 4000:                  # a long-running console: keep the newest
+                    for old in list(_WORKNOTES)[:1000]:
+                        _WORKNOTES.pop(old, None)
         text, by_model, provider = _WORKNOTES[key]
     return {"text": text, "by_model": by_model, "provider": provider,
             "error": None if by_model else genai.STATUS.get("error")}

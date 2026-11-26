@@ -45,6 +45,19 @@
       </div>
     </section>
 
+    <section class="panel" id="account" data-alert="{{ alert.alert_id }}" data-auto="{{ '1' if verdict.escalate and model_on else '0' }}">
+      <header><h2>Gemini's account</h2><span class="by" id="account-by" style="margin-left:auto;"></span></header>
+      <div class="body">
+        {% if not model_on %}<p class="note">No model is connected, so there is no written account. The verdict above stands on its own.</p>
+        {% else %}
+        <dl class="notes" id="account-notes"{% if not verdict.escalate %} hidden{% endif %}><dt></dt><dd class="waiting">Writing the account from the evidence…</dd></dl>
+        {% if not verdict.escalate %}<div id="account-ask"><p class="note">Triagle closed this alert by rule, so no model was called for it. Gemini can still write it up.</p>
+          <button class="btn small" type="button" id="account-go" style="margin-top:9px;">Have Gemini write the account</button></div>{% endif %}
+        <p class="by" style="margin-top:10px;">Gemini is given the verdict above as final. It explains the alert; it cannot change the verdict. <a href="#ask">Ask it a question</a></p>
+        {% endif %}
+      </div>
+    </section>
+
     <section class="panel">
       <header><h2>What Triagle checked</h2><span class="n">{{ steps|length }} steps</span></header>
       <div class="body">
@@ -212,8 +225,37 @@
     </section>
     {% endif %}
 
-    {{ parts.ask_box(alert.alert_id, ask_suggested, model) }}
+    {{ parts.ask_box(alert.alert_id, ask_suggested, model, 'alert') }}
   </div>
 </div>
 {% endblock %}
-{% block scripts %}{{ parts.ask_script(csrf) }}{% endblock %}
+{% block scripts %}{{ parts.ask_script(csrf) }}
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  var box = document.getElementById('account'), dl = document.getElementById('account-notes'); if (!box || !dl) return;
+  var by = document.getElementById('account-by'), ask = document.getElementById('account-ask'), go = document.getElementById('account-go');
+  function say(text) { dl.textContent = ''; var dd = document.createElement('dd'); dd.textContent = text; dl.appendChild(document.createElement('dt')); dl.appendChild(dd); }
+  function load() {
+    if (ask) ask.hidden = true;
+    dl.hidden = false;
+    fetch('/api/notes?alert=' + encodeURIComponent(box.getAttribute('data-alert')), { credentials: 'same-origin' })
+      .then(function (r) { if (r.status === 429) return Promise.reject('busy'); return r.ok ? r.json() : Promise.reject('failed'); })
+      .then(function (j) {
+        dl.textContent = '';
+        j.text.split('\n').forEach(function (line) {
+          line = line.trim(); if (!line) return;
+          var i = line.indexOf(':'), dt = document.createElement('dt'), dd = document.createElement('dd');
+          if (i > 0 && i < 28) { dt.textContent = line.slice(0, i); dd.textContent = line.slice(i + 1).trim(); }
+          else { dd.textContent = line; }
+          dl.appendChild(dt); dl.appendChild(dd);
+        });
+        by.textContent = j.by_model ? 'Written by ' + j.provider : 'Summary built by rules. The model did not answer.';
+        if (!j.by_model && j.error) by.title = j.error;
+      })
+      .catch(function (why) { say(why === 'busy' ? 'Too many requests to the model. Wait a minute and reload.' : 'The account could not be loaded. The verdict above is the decision.'); });
+  }
+  if (go) go.addEventListener('click', load);
+  if (box.getAttribute('data-auto') === '1') load();
+})();
+</script>
+{% endblock %}
