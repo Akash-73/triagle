@@ -22,7 +22,7 @@ import threading
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request, Form, HTTPException, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 
@@ -34,13 +34,13 @@ from app.engine import certin, regclock
 from app.agent import backend
 from app import auth, audit, sso
 from app.engine import sources_meta, worknotes, reputation, analyst, genai, usecases, siem_link, tuning
-from app.engine import instructions, spotcheck, nightshift, osint
+from app.engine import instructions, spotcheck, nightshift, osint, investigator
 from app.engine.correlate import GENERIC_ENTITIES
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.9.3", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.10.0", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -422,6 +422,7 @@ def _ensure_state():
     _CACHE["taught"] = []                            # rules analysts have taught Triagle
     _CACHE["checks"] = {}                            # alert id -> a person's check of that closure
     _CACHE["second"] = {}                            # alert id -> the model's second reading of that closure
+    _CACHE["agent"] = {}                             # alert id -> the investigator's own run on that alert
     _CACHE.pop("result", None)
     _restore()
 
@@ -436,7 +437,7 @@ def _snapshot():
             "resolutions": _CACHE["resolutions"], "outbox": _CACHE.get("outbox"),
             "arrived_at": _CACHE.get("arrived_at", {}),
             "taught": _CACHE.get("taught", []), "checks": _CACHE.get("checks", {}),
-            "second": _CACHE.get("second", {}),
+            "second": _CACHE.get("second", {}), "agent": _CACHE.get("agent", {}),
             "model_use": {k: genai.USAGE[k] for k in ("calls", "input", "output", "thinking", "since")}}
 
 
@@ -484,6 +485,8 @@ def _restore():
                         if isinstance(v, dict) and isinstance(v.get("ok"), bool)}
     _CACHE["second"] = {str(k): v for k, v in (state.get("second") or {}).items()
                         if isinstance(v, dict) and v.get("view") in ("agree", "look")}
+    _CACHE["agent"] = {str(k): v for k, v in (state.get("agent") or {}).items()
+                       if isinstance(v, dict) and v.get("view") in investigator.VIEWS and isinstance(v.get("steps"), list)}
     genai.load_usage(state.get("model_use"))
     _CACHE["model_calls_saved"] = genai.USAGE["calls"]
     _CACHE["restored"] = {"alerts": len(live), "saved_at": state.get("saved_at")}
@@ -602,8 +605,13 @@ def _reprocess():
     raw = _CACHE["seed"] + _CACHE["live"]
     _CACHE["raw"] = raw
     t0 = time.perf_counter()
-    result = process_batch(raw, decided=_CACHE["decisions"], taught=_CACHE.get("taught"),
-                           overruled={aid: c for aid, c in _CACHE.get("checks", {}).items() if c.get("ok") is False})
+    # closures that go back to a person: those the investigator disagreed with,
+    # then those a person disagreed with (a person's word comes last, so it wins)
+    overruled = {aid: {"by": "Triagle's investigator", "at": r.get("at"), "ok": False, "kind": "investigator",
+                       "view": r.get("view"), "why": r.get("summary") or r.get("outcome") or ""}
+                 for aid, r in _CACHE.get("agent", {}).items() if r.get("raised")}
+    overruled.update({aid: c for aid, c in _CACHE.get("checks", {}).items() if c.get("ok") is False})
+    result = process_batch(raw, decided=_CACHE["decisions"], taught=_CACHE.get("taught"), overruled=overruled)
     m = result["metrics"]
     m["demo_clock"] = os.environ.get("TRIAGLE_DEMO_CLOCK", "false").lower() == "true"
     m["processing_ms"] = round((time.perf_counter() - t0) * 1000, 1)
@@ -1132,6 +1140,8 @@ def alert_detail(request: Request, alert_id: str, notice: str = "", user=Depends
         report_key=report_key, just_decided=just_decided, resolutions=RESOLUTIONS,
         teachable=instructions.teachable(alert, verdict), teach_days=instructions.DAYS,
         check=_CACHE.get("checks", {}).get(alert_id), second=_CACHE.get("second", {}).get(alert_id),
+        agent=_CACHE.get("agent", {}).get(alert_id), agent_on=investigator.enabled(),
+        agent_keeps=_keeps(user), agent_tools=len(investigator.TOOLS), agent_steps=investigator.max_steps(),
         not_needed=_not_needed(verdict),
         model_on=genai.configured(),
         checkable=spotcheck.eligible(alert, verdict, _test_clients()),
@@ -1377,6 +1387,7 @@ NOTICES = {
     "notlifted": "The block was not lifted. The reason is shown on the action below.",
     "sentback": "You disagreed with Triagle's closure, so this alert is back in the queue. Decide what it was below.",
     "taught": "Closed, and Triagle will close the same alert on this machine from now on. See Your rules.",
+    "agent": "The investigator disagreed with the engine's closure, so this alert is now in the queue. Decide what it was.",
 }
 
 
@@ -2638,6 +2649,128 @@ async def api_firewall_lift(request: Request, user=Depends(require_analyst)):
     return res
 
 
+# ---- the investigator: a model that leads its own investigation, inside rules ---------
+
+AGENT_KEEP = 500              # the newest runs kept
+AGENT_VISITOR_RUNS = 10       # an hour, for all visitors together. Their runs are shown and not kept.
+_AGENT_VISITOR_TIMES = []
+
+
+def _keeps(user):
+    """Is this a person whose run is kept and takes effect? An analyst. A
+    viewer or a guest may watch the investigator work, and nothing is stored."""
+    return bool(user and user.get("role") == "analyst" and not user.get("guest"))
+
+
+def _agent_record(res, alert, verdict, by, earlier):
+    """One run, with what the rules made of it (investigator.settle)."""
+    engine_escalated = bool(verdict.get("escalate")) and not verdict.get("overruled")
+    on_evidence = engine_escalated and not instructions._may_close(alert, verdict)
+    out = investigator.settle(engine_escalated, on_evidence, res["view"], res["usable"], res["addressed"])
+    words = out["words"]
+    raised = bool((earlier or {}).get("raised")) or out["effect"] == "raise"
+    if (earlier or {}).get("raised") and out["effect"] != "raise":
+        words += " An earlier run sent this alert to a person, and it stays there until a person closes it."
+    res = {**res, "steps": [{**s, "found": s["found"][:700]} for s in res["steps"]]}       # what is kept stays small
+    return {**res, "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), "by": by,
+            "client": alert.get("client") or "", "effect": out["effect"], "agrees": out["agrees"], "outcome": words,
+            "raised": raised, "engine": {"escalated": engine_escalated, "on_evidence": on_evidence}}
+
+
+def _agent_tally(skip=()):
+    runs = [r for r in _CACHE.get("agent", {}).values() if r.get("client") not in skip]
+    return {"runs": len(runs), "agreed": sum(1 for r in runs if r.get("agrees") is True),
+            "differed": sum(1 for r in runs if r.get("agrees") is False),
+            "unsettled": sum(1 for r in runs if r.get("agrees") is None),
+            "raised": sum(1 for r in runs if r.get("raised")),
+            "overruled": sum(1 for r in runs if r.get("effect") == "overruled")}
+
+
+templates.env.globals["agent_tally"] = lambda: _agent_tally(_test_clients())
+
+
+@app.post("/api/agent/run")
+async def api_agent_run(request: Request, user=Depends(require_user)):
+    """Run the investigator on one alert and send its steps as they happen,
+    one JSON object a line. An analyst's run is kept and takes effect by the
+    rules in investigator.settle: a closed alert the investigator disagrees
+    with goes to a person, and nothing else changes. A viewer's or a guest's
+    run is shown and not kept, and changes nothing."""
+    body = await _json_body(request)
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    if not investigator.enabled():
+        raise HTTPException(status_code=503, detail="No model is connected, so the investigator cannot run.")
+    alert_id, keeps, ip = str(body.get("alert", "")), _keeps(user), _client_ip(request)
+    with _LOCK:
+        result = _load_result()
+        alert = next((a for a in result["alerts"] if a["alert_id"] == alert_id), None)
+        if alert is None:
+            raise HTTPException(status_code=404, detail="No such alert.")
+        verdict = dict(result["verdicts"].get(alert_id) or {})
+        earlier = _CACHE.get("agent", {}).get(alert_id)
+        case = investigator.Case(alert, result["alerts"], house=_house(result, alert.get("client")))
+    now = time.time()
+    if keeps:
+        if not _ask_allowed(ip, trusted=_trusted(user)):
+            raise HTTPException(status_code=429, detail="Too many requests. Wait a minute.")
+    else:
+        _AGENT_VISITOR_TIMES[:] = [t for t in _AGENT_VISITOR_TIMES if now - t < 3600]
+        if len(_AGENT_VISITOR_TIMES) >= AGENT_VISITOR_RUNS or not _ask_allowed(ip):
+            raise HTTPException(status_code=429, detail="Visitors have used this hour's runs of the investigator. "
+                                                        "A signed-in analyst can still run it.")
+    lock = _notes_lock(("agent", alert_id))
+    if not lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="The investigator is already running on this alert.")
+    if not keeps:
+        _AGENT_VISITOR_TIMES.append(now)
+
+    def stream():
+        try:
+            final = None
+            for event in investigator.run(case, earlier=earlier):
+                if event["type"] == "result":
+                    final = event["result"]
+                else:
+                    yield json.dumps(event) + "\n"
+            rec = _agent_record(final, alert, verdict, user["name"], earlier)
+            reload = False
+            if keeps:
+                with _LOCK:
+                    _ensure_state()
+                    was_raised = bool((earlier or {}).get("raised"))
+                    store_ = _CACHE.setdefault("agent", {})
+                    store_[alert_id] = rec
+                    for old in sorted(store_, key=lambda k: store_[k].get("at") or "")[:-AGENT_KEEP]:
+                        if not store_[old].get("raised"):
+                            store_.pop(old, None)
+                    if rec["effect"] == "look" and alert_id not in _CACHE["second"]:
+                        _CACHE["second"][alert_id] = {"view": "look", "why": "The investigator could not settle it.",
+                                                      "at": rec["at"], "by": "Triagle's investigator"}
+                    if rec["raised"] and not was_raised:
+                        _tell(request, "reopened", "Triagle's investigator", alert_id,
+                              note="The investigator disagreed with the closure")
+                        _CACHE.pop("result", None)
+                        _load_result()
+                        reload = True
+                    else:
+                        _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+                    _changed(now=True)
+            audit.record("alert investigated by the model" if keeps else "investigator tried, nothing kept", user["name"],
+                         alert_id=alert_id, view=rec["view"], effect=rec["effect"], agrees=rec["agrees"],
+                         checks=[s["tool"] for s in rec["steps"]], guards=[g["code"] for g in rec["guards"]],
+                         model_calls=rec["calls"], ip=ip)
+            yield json.dumps({"type": "result", "result": rec, "kept": keeps, "reload": reload}) + "\n"
+        except Exception as e:                      # the page must always get an ending
+            audit.record("investigator stopped", user["name"], alert_id=alert_id, error=f"{type(e).__name__}: {e}"[:200], ip=ip)
+            yield json.dumps({"type": "error", "detail": "The investigator stopped before it finished. The engine's verdict stands."}) + "\n"
+        finally:
+            lock.release()
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
 @app.post("/api/ask")
 async def api_ask(request: Request, user=Depends(require_user)):
     """One question about one case, answered by the model from that case's
@@ -2929,6 +3062,7 @@ def healthz(request: Request):
         out.update(saved_state=store.status(), backend=backend.BACKEND, mask_pii=backend.MASK_PII,
                    runs_as="root" if os.geteuid() == 0 else f"unprivileged user {os.geteuid()}",
                    single_sign_on=sso.configured(), second_factor=auth.any_second_factor(), blocklists=osint.status(),
+                   investigator={"on": investigator.enabled(), **_agent_tally()},
                    customer_keys=len(set(INGEST_KEYS.values())),
                    model_calls=backend.STATS["calls"], identifiers_masked=backend.STATS["masked"],
                    sign_in=auth.enabled(), audit_chain_ok=audit.verify()["ok"])

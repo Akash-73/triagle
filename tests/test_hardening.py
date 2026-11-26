@@ -460,7 +460,8 @@ def test_no_template_has_an_inline_handler_or_a_bare_script():
 
 OPEN_TO_ALL = {"/login", "/logout", "/health", "/healthz", "/auth/start", "/auth/callback", "/security"}
 BY_KEY = {"/ingest", "/api/outbox"}                      # a tool's key, or a signed-in analyst
-READ_ONLY_POSTS = {"/api/ask", "/api/try"}               # a viewer may ask about a case and try an alert; neither stores anything
+# a viewer may ask about a case, try an alert and watch the investigator work; none of these stores anything
+READ_ONLY_POSTS = {"/api/ask", "/api/try", "/api/agent/run"}
 
 
 def _routes(method):

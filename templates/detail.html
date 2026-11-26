@@ -41,7 +41,7 @@
           {% if second and not verdict.escalate %}<dt>Second reading</dt><dd>{{ second.by }} {{ 'would look at this closure again' if second.view == 'look' else 'agrees with the closure' }}. {{ second.why }}</dd>{% endif %}
           <dt>Question to answer</dt><dd>{{ uc.question }}</dd>
         </dl>
-        <p class="by" style="margin-top:12px;">Decided by Triagle's engine, the same way every time. The account below explains this verdict and cannot change it.</p>
+        <p class="by" style="margin-top:12px;">{% if verdict.overruled and verdict.overruled.kind == 'investigator' %}Triagle's engine closed this alert, and Triagle's investigator sent it to a person. A model can raise an alert. It can never close one.{% else %}Decided by Triagle's engine, the same way every time. The account below explains this verdict and cannot change it.{% endif %}</p>
       </div>
     </section>
 
@@ -52,6 +52,26 @@
         {% else %}
         <dl class="notes" id="account-notes"><dt></dt><dd class="waiting">Writing the account from the verdict and the evidence…</dd></dl>
         <p class="by" style="margin-top:10px;">Written from the verdict above, the steps below and what this customer's analysts decided before. The verdict is the engine's: the account explains it and cannot change it. <a href="#ask">Ask a question</a></p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel" id="agent" data-alert="{{ alert.alert_id }}" data-keeps="{{ '1' if agent_keeps else '0' }}"
+             data-auto="{{ '1' if agent_on and agent_keeps and verdict.escalate and not verdict.resolved and not agent else '0' }}"
+             {% if agent %}data-run='{{ agent|tojson }}'{% endif %}>
+      <header><h2>Triagle's investigator</h2><span class="by" id="agent-by" style="margin-left:auto;">Gemini chooses the checks</span></header>
+      <div class="body">
+        {% if not agent_on %}<p class="note">No model is connected, so the investigator cannot run. The verdict above stands on its own.</p>
+        {% else %}
+        <p class="note" id="agent-intro">The verdict above came from the engine's fixed checks. Here Gemini investigates the same alert on its own: it chooses among {{ agent_tools }} checks, up to {{ agent_steps }} of them, and it is not told the verdict. Rules then decide what happens if the two differ, and only one way: a model can send an alert to a person, and can never close one.</p>
+        <ol class="steps" id="agent-steps" style="margin-top:12px;" hidden></ol>
+        <p class="by waiting" id="agent-status" style="margin-top:10px;" hidden></p>
+        <dl class="notes" id="agent-reading" style="margin-top:14px;" hidden></dl>
+        <div class="callout" id="agent-outcome" style="margin-top:14px;" hidden></div>
+        <div class="row" style="margin-top:12px; gap:10px; align-items:center;">
+          <button class="btn small" type="button" id="agent-go">{{ 'Run it again' if agent else 'Investigate this alert' }}</button>
+          <span class="by" id="agent-foot">{% if not agent_keeps %}You are watching as a visitor: the run is shown and nothing is kept.{% endif %}</span>
+        </div>
         {% endif %}
       </div>
     </section>
@@ -251,6 +271,72 @@
       .catch(function () { say('The account could not be loaded. The verdict above is the decision.'); });
   }
   if (box.getAttribute('data-auto') === '1') load();
+})();
+</script>
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  var box = document.getElementById('agent'), go = document.getElementById('agent-go'); if (!box || !go) return;
+  var steps = document.getElementById('agent-steps'), status = document.getElementById('agent-status'),
+      reading = document.getElementById('agent-reading'), outcome = document.getElementById('agent-outcome'),
+      foot = document.getElementById('agent-foot'), csrf = {{ csrf|tojson }}, busy = false;
+  var WORDS = { attack: 'A real attack', suspicious: 'Suspicious', benign: 'Harmless', unsure: 'Not settled' };
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function pair(dt, dd) { reading.appendChild(el('dt', '', dt)); var d = el('dd'); if (typeof dd === 'string') d.textContent = dd; else d.appendChild(dd); reading.appendChild(d); }
+  function list(items) { var u = el('div'); items.forEach(function (x) { u.appendChild(el('div', '', x)); }); return u; }
+  function step(s) {
+    var li = el('li', '', s.did + (s.by_rule ? ' (by rule)' : ''));
+    if (s.why) li.appendChild(el('span', 'found', 'Why: ' + s.why));
+    var f = el('span', 'found', s.found.length > 520 ? s.found.slice(0, 520) + '…' : s.found); f.style.whiteSpace = 'pre-line'; li.appendChild(f);
+    steps.appendChild(li); steps.hidden = false;
+  }
+  function show(r, kept) {
+    steps.textContent = ''; r.steps.forEach(step);
+    reading.textContent = '';
+    if (r.usable) {
+      pair('Its reading', WORDS[r.view] + (r.view !== 'unsure' && r.confidence ? ', ' + r.confidence + '% confident' : '') + (r.summary ? '. ' + r.summary : ''));
+      if (r.reasons && r.reasons.length) pair('Because', list(r.reasons));
+      if (r.next && r.next.length) pair('It would do next', list(r.next));
+    } else { pair('Its reading', 'None.'); }
+    if (r.guards && r.guards.length) pair('Guardrails', list(r.guards.map(function (g) { return g.words; })));
+    reading.hidden = false;
+    outcome.textContent = ''; outcome.appendChild(el('b', '', 'Against the engine. ')); outcome.appendChild(document.createTextNode(r.outcome));
+    outcome.className = 'callout' + (r.effect === 'raise' || r.effect === 'overruled' ? ' warn' : ''); outcome.hidden = false;
+    status.hidden = true;
+    foot.textContent = (kept ? 'Run by ' + r.by + '. ' : 'Shown to you only; nothing was kept. ') + r.steps.length + ' checks, ' + r.calls + ' model calls.';
+    go.textContent = 'Run it again';
+  }
+  function say(t) { status.textContent = t; status.hidden = false; }
+  function run() {
+    if (busy) return; busy = true; go.disabled = true;
+    steps.textContent = ''; steps.hidden = true; reading.hidden = true; outcome.hidden = true;
+    say('Gemini is choosing its first check…');
+    fetch('/api/agent/run', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ alert: box.getAttribute('data-alert'), csrf: csrf }) })
+      .then(function (r) {
+        if (!r.ok) return r.json().then(function (j) { throw new Error(j.detail || 'The investigator could not start.'); });
+        var reader = r.body.getReader(), dec = new TextDecoder(), buf = '';
+        function on(ev) {
+          if (ev.type === 'step') { step(ev); say('Gemini is choosing its next check…'); }
+          else if (ev.type === 'reading') { say('The evidence was read twice. Checking the two readings against each other and against the evidence…'); }
+          else if (ev.type === 'result') { show(ev.result, ev.kept); if (ev.reload) { say('The alert has been sent to the queue. Reloading…'); setTimeout(function () { location.href = location.pathname + '?notice=agent#agent'; }, 1800); } }
+          else if (ev.type === 'error') { say(ev.detail); }
+        }
+        function pump() {
+          return reader.read().then(function (x) {
+            if (x.value) { buf += dec.decode(x.value, { stream: true }); var lines = buf.split('\n'); buf = lines.pop(); lines.forEach(function (l) { if (l.trim()) on(JSON.parse(l)); }); }
+            if (x.done) { if (buf.trim()) on(JSON.parse(buf)); return; }
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function (e) { say(e.message || 'The investigator could not finish. The verdict above stands.'); })
+      .then(function () { busy = false; go.disabled = false; });
+  }
+  go.addEventListener('click', run);
+  var kept = box.getAttribute('data-run');
+  if (kept) { try { show(JSON.parse(kept), true); } catch (e) {} }
+  else if (box.getAttribute('data-auto') === '1') run();
 })();
 </script>
 {% endblock %}

@@ -13,6 +13,7 @@
     Agreement <b>{{ tally.pct }}%</b>.
     {% else %}No closure has been checked yet.{% endif %}
     <b>{{ waiting }}</b> more could be checked.
+    {% set inv = agent_tally() %}{% if inv.runs %}<br><span style="font-size:.6em; color:var(--text-2);">The investigator has read {{ inv.runs }} alert{{ '' if inv.runs == 1 else 's' }} on its own, not told the verdict: it agreed with the engine on {{ inv.agreed }}, differed on {{ inv.differed }} and could not settle {{ inv.unsettled }}. {{ inv.raised }} closed alert{{ '' if inv.raised == 1 else 's' }} went to a person because of it.</span>{% endif %}
     {% if second.read %}Gemini has read <b>{{ second.read }}</b> as a second reader and would look again at <b>{{ second.look }}</b>.{% endif %}
   </p>
 </section>

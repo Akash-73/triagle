@@ -184,6 +184,22 @@ def _closed(verdict, rule):
 def _sent_back(alert, verdict, check):
     out = dict(verdict)
     rated = str(alert.get("raw_severity") or "").lower()
+    if check.get("kind") == "investigator":
+        # The engine closed it; the investigator (a model choosing its own checks,
+        # not told the verdict) read it as hostile or unexplained. When the two
+        # differ a person decides. This is the one thing the model can change.
+        out.update(
+            escalate=True, disposition="needs_human", closure_code=None, confidence=55,
+            severity=rated if rated in ("high", "critical") else "medium", basis="", pattern="", used_ai=True,
+            summary="Sent to a person by Triagle's investigator: the engine had closed this, and the investigation disagreed.",
+            reasoning=(f"Triagle's engine closed this alert: {verdict.get('summary') or ''} The investigator, a model "
+                       f"that chooses its own checks and is not told the verdict, read it differently: "
+                       f"{check.get('why') or 'it would have a person look.'} When the engine and the investigator "
+                       f"differ, the alert goes to a person. A model can send an alert to a person. It can never close one."),
+            recommended_actions=["Read the investigator's steps below, decide what it was and close it with the outcome."],
+            overruled={"by": check.get("by"), "at": check.get("at"), "was": verdict.get("closure_code"), "kind": "investigator"},
+        )
+        return out
     out.update(
         escalate=True, disposition="needs_human", closure_code=None, confidence=55,
         severity=rated if rated in ("high", "critical") else "medium", basis="", pattern="", used_ai=False,
