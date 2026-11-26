@@ -72,6 +72,16 @@
           <button class="btn small" type="button" id="agent-go">{{ 'Run it again' if agent else 'Investigate this alert' }}</button>
           <span class="by" id="agent-foot">{% if not agent_keeps %}You are watching as a visitor: the run is shown and nothing is kept.{% endif %}</span>
         </div>
+        <div id="bare" style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
+          <p class="note"><b>What does Triagle add to the model?</b> Take it away and look. This runs the same model on the same alert with only what the SIEM recorded: no knowledge base, no reputation, none of this customer's earlier decisions, one reading and no guardrails. It is for comparison. Nothing from it is kept or acted on.</p>
+          <ol class="steps" id="bare-steps" style="margin-top:10px;" hidden></ol>
+          <p class="by waiting" id="bare-status" style="margin-top:10px;" hidden></p>
+          <dl class="notes" id="bare-reading" style="margin-top:12px;" hidden></dl>
+          <div class="row" style="margin-top:12px; gap:10px; align-items:center;">
+            <button class="btn small quiet" type="button" id="bare-go">Ask {{ model_word() }} without Triagle</button>
+            <span class="by" id="bare-foot"></span>
+          </div>
+        </div>
         {% endif %}
       </div>
     </section>
@@ -342,6 +352,58 @@
   var kept = box.getAttribute('data-run');
   if (kept) { try { show(JSON.parse(kept), true); } catch (e) {} }
   else if (box.getAttribute('data-auto') === '1') run();
+})();
+</script>
+<script nonce="{{ csp_nonce() }}">
+/* The same model without Triagle, for comparison. Shown and never kept. */
+(function () {
+  var box = document.getElementById('agent'), go = document.getElementById('bare-go'); if (!box || !go) return;
+  var steps = document.getElementById('bare-steps'), status = document.getElementById('bare-status'),
+      reading = document.getElementById('bare-reading'), foot = document.getElementById('bare-foot'),
+      csrf = {{ csrf|tojson }}, busy = false, held = false;
+  var WORDS = { attack: 'A real attack', suspicious: 'Suspicious', benign: 'Harmless', unsure: 'Not settled' };
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function pair(dt, items) { reading.appendChild(el('dt', '', dt)); var d = el('dd'); items.forEach(function (x) { d.appendChild(el('div', '', x)); }); reading.appendChild(d); }
+  function say(t) { status.textContent = t; status.hidden = false; }
+  function step(s) { var li = el('li', '', s.did); if (s.why) li.appendChild(el('span', 'found', (s.by_rule ? '' : 'Why: ') + s.why)); steps.appendChild(li); steps.hidden = false; }
+  function show(r) {
+    reading.textContent = '';
+    if (r.usable) {
+      pair('Its reading', [WORDS[r.view] + (r.view !== 'unsure' && r.confidence ? ', ' + r.confidence + '% confident' : '') + (r.summary ? '. ' + r.summary : '')]);
+      if (r.reasons && r.reasons.length) pair('Because', r.reasons);
+      if (r.next && r.next.length) pair('It would do next', r.next);
+    } else { pair('Its reading', ['None. The model did not give an answer that could be read.']); }
+    reading.hidden = false; status.hidden = true;
+    foot.textContent = 'Shown to you only; nothing was kept. ' + r.steps.length + ' checks, ' + r.calls + ' model calls' + (r.seconds ? ', ' + r.seconds + ' s' : '') + (r.cost_usd ? ', about $' + r.cost_usd.toFixed(3) : '') + '.';
+    go.textContent = 'Ask it again';
+  }
+  go.addEventListener('click', function () {
+    if (busy) return; busy = true; go.disabled = true;
+    if (!held) { held = true; window.triagleHold(1); }           // the result is not kept, so the page stays as it is
+    steps.textContent = ''; steps.hidden = true; reading.hidden = true; foot.textContent = '';
+    say('{{ model_word()|capitalize }} is reading what the SIEM recorded…');
+    fetch('/api/agent/run', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ alert: box.getAttribute('data-alert'), csrf: csrf, bare: true }) })
+      .then(function (r) {
+        if (!r.ok) return r.json().then(function (j) { throw new Error(j.detail || 'The comparison could not start.'); });
+        var reader = r.body.getReader(), dec = new TextDecoder(), buf = '';
+        function on(ev) {
+          if (ev.type === 'step') { step(ev); say('{{ model_word()|capitalize }} is choosing its next check…'); }
+          else if (ev.type === 'result') show(ev.result);
+          else if (ev.type === 'error') say(ev.detail);
+        }
+        function pump() {
+          return reader.read().then(function (x) {
+            if (x.value) { buf += dec.decode(x.value, { stream: true }); var lines = buf.split('\n'); buf = lines.pop(); lines.forEach(function (l) { if (l.trim()) on(JSON.parse(l)); }); }
+            if (x.done) { if (buf.trim()) on(JSON.parse(buf)); return; }
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function (e) { say(e.message || 'The comparison could not finish.'); })
+      .then(function () { busy = false; go.disabled = false; });
+  });
 })();
 </script>
 {% endblock %}

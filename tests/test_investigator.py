@@ -387,6 +387,46 @@ def test_a_page_waiting_on_the_model_is_not_refreshed_from_under_it(monkeypatch)
     assert page.count("window.triagleHold(1)") >= 3, "the written account and a question hold the page too"
 
 
+def test_the_same_model_without_triagle_is_shown_for_comparison_and_never_kept(monkeypatch):
+    """What does Triagle add to the model? Take it away and look. The
+    comparison sees only what the SIEM recorded, gives one reading with no
+    guardrails, and changes nothing, whoever asks for it."""
+    others = [SDBINST] + [dict(PROBE, alert_id=f"p{i}", timestamp=f"2026-11-25T10:1{i}:00Z") for i in range(4)]
+    bare = investigator.Case(LOGON, [LOGON] + others, house="- an analyst said this is expected", bare=True)
+    made_up = dict(SUSPICIOUS, view="attack", confidence=95, summary="The laptop at 9.9.9.9 is compromised.", next=["Isolate laptop-1."])
+    ask = model([{"tool": "timeline"}, {"tool": "known_behaviour"}], [made_up])
+    events = list(investigator.compare(bare, ask=ask))
+    r = last(events)
+    assert r["bare"] and [s["tool"] for s in r["steps"]] == ["raw_event", "timeline"], "the knowledge base is not a check it may run"
+    assert r["view"] == "attack" and r["confidence"] == 95 and "9.9.9.9" in r["summary"], "one reading, shown as given, no guardrails"
+    assert r["calls"] == 3 and "guards" not in r and "fingerprint" not in r
+    seen = " ".join(system + user for system, user, _t in ask.seen)
+    for word in ("knowledge base", "known_behaviour", "house_knowledge", "reputation", "an analyst said", "Triagle"):
+        assert word not in seen, word
+    assert "PowerShell" not in seen or "routine" not in seen
+    with pytest.raises(AssertionError):
+        list(investigator.compare(case(), ask=ask))                # never on a case that carries Triagle's knowledge
+    # on the console: an analyst asks for it, and nothing is kept or changed
+    a_model(monkeypatch, [dict(SUSPICIOUS, view="attack", summary="Compromised.", reasons=["Unexplained."])])
+    c, a = signed_in(), pick("closed")
+    before = json.dumps(main._load_result()["verdicts"], sort_keys=True, default=str)
+    r = c.post("/api/agent/run", json={"alert": a["alert_id"], "csrf": token(c, a["alert_id"]), "bare": True})
+    events = [json.loads(x) for x in r.text.splitlines() if x.strip()]
+    done = events[-1]
+    assert r.status_code == 200 and done["result"]["bare"] and done["result"]["view"] == "attack"
+    assert done["kept"] is False and done["reload"] is False and "effect" not in done["result"]
+    assert main._CACHE.get("agent") == {} and json.dumps(main._load_result()["verdicts"], sort_keys=True, default=str) == before
+    assert audit.read()[0]["event"] == "model compared without Triagle, nothing kept"
+    page = c.get(f"/alert/{a['alert_id']}").text
+    assert "What does Triagle add to the model?" in page and 'id="bare-go"' in page and "bare: true" in page
+    # a visitor's comparison comes out of the same hourly allowance as a visitor's investigation
+    monkeypatch.setenv("TRIAGLE_GUEST", "view")
+    guest = TestClient(main.app)
+    main._AGENT_VISITOR_TIMES[:] = [__import__("time").time()] * main.AGENT_VISITOR_RUNS
+    r = guest.post("/api/agent/run", json={"alert": a["alert_id"], "csrf": token(guest, a["alert_id"]), "bare": True})
+    assert r.status_code == 429
+
+
 def test_no_model_can_lower_an_alert_that_was_raised_on_evidence(monkeypatch):
     a_model(monkeypatch, [BENIGN])
     c, a = signed_in(), pick("evidence")

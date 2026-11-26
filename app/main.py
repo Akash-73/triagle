@@ -40,7 +40,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.10.3", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.10.4", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -2712,7 +2712,10 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
         raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
     if not investigator.enabled():
         raise HTTPException(status_code=503, detail="No model is connected, so the investigator cannot run.")
-    alert_id, keeps, ip = str(body.get("alert", "")), _keeps(user), _client_ip(request)
+    # "bare": the same model on the same alert without what Triagle knows, shown for
+    # comparison. It is never kept and changes nothing, whoever asks for it.
+    bare = bool(body.get("bare"))
+    alert_id, keeps, ip = str(body.get("alert", "")), _keeps(user) and not bare, _client_ip(request)
     with _LOCK:
         result = _load_result()
         alert = next((a for a in result["alerts"] if a["alert_id"] == alert_id), None)
@@ -2720,9 +2723,10 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
             raise HTTPException(status_code=404, detail="No such alert.")
         verdict = dict(result["verdicts"].get(alert_id) or {})
         earlier = _CACHE.get("agent", {}).get(alert_id)
-        case = investigator.Case(alert, result["alerts"], house=_house(result, alert.get("client")))
+        case = investigator.Case(alert, result["alerts"], bare=True) if bare else \
+            investigator.Case(alert, result["alerts"], house=_house(result, alert.get("client")))
     now = time.time()
-    if keeps:
+    if _keeps(user):
         if not _ask_allowed(ip, trusted=_trusted(user)):
             raise HTTPException(status_code=429, detail="Too many requests. Wait a minute.")
     else:
@@ -2730,11 +2734,34 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
         if len(_AGENT_VISITOR_TIMES) >= AGENT_VISITOR_RUNS or not _ask_allowed(ip):
             raise HTTPException(status_code=429, detail="Visitors have used this hour's runs of the investigator. "
                                                         "A signed-in analyst can still run it.")
-    lock = _notes_lock(("agent", alert_id))
+    lock = _notes_lock(("agent-bare" if bare else "agent", alert_id))
     if not lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="The investigator is already running on this alert.")
-    if not keeps:
+    if not _keeps(user):
         _AGENT_VISITOR_TIMES.append(now)
+
+    def stream_bare():
+        try:
+            final = None
+            for event in investigator.compare(case):
+                if event["type"] == "result":
+                    final = event["result"]
+                else:
+                    yield json.dumps({**event, "found": event["found"][:700]}) + "\n"
+            final = {**final, "steps": [{**s, "found": s["found"][:700]} for s in final["steps"]]}
+            audit.record("model compared without Triagle, nothing kept", user["name"], alert_id=alert_id, view=final["view"],
+                         checks=[s["tool"] for s in final["steps"]], model_calls=final["calls"],
+                         seconds=final["seconds"], cost_usd=final["cost_usd"], ip=ip)
+            yield json.dumps({"type": "result", "result": final, "kept": False, "reload": False}) + "\n"
+        except Exception as e:
+            audit.record("investigator stopped", user["name"], alert_id=alert_id, error=f"{type(e).__name__}: {e}"[:200], ip=ip)
+            yield json.dumps({"type": "error", "detail": "The comparison stopped before it finished."}) + "\n"
+        finally:
+            lock.release()
+
+    if bare:
+        return StreamingResponse(stream_bare(), media_type="application/x-ndjson",
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     def stream():
         try:

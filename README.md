@@ -357,6 +357,13 @@ What is in place, with the code and the tests in this repository:
   the result goes one way only: a model can send a closed alert to a person,
   and can never close one or lower one raised on evidence
   (`app/engine/investigator.py`, `tests/test_investigator.py`).
+- **What Triagle adds to the model, shown.** Beside the investigator, one
+  button runs the same model on the same alert with only what the SIEM
+  recorded: no knowledge base, no reputation, none of the customer's earlier
+  decisions, one reading and no guardrails. On the live feed on 26 November
+  that bare run read routine Windows housekeeping as an attack and advised
+  isolating a healthy laptop. The comparison is never kept and changes
+  nothing (`investigator.compare`).
 - **Any model, the same rules.** Triagle reaches its model through one
   function. It runs on Gemini on Vertex AI. Set `TRIAGLE_MODEL_BASE` to a
   server that speaks the OpenAI chat format, for example a model inside a
@@ -387,7 +394,7 @@ each client, and an Indian hosting region. To report a problem, see
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 470 tests, no network or key needed
+python -m pytest -q                 # 471 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```
