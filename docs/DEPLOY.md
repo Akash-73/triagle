@@ -19,6 +19,56 @@ One service, one instance. Everything below is set with flags on
 | `TRIAGLE_DEMO_SCENARIOS` | Which built-in customers the test stream offers, for example `bank`. Unset means all. |
 | `TRIAGLE_THINKING` | How long the model may think before writing: `minimal`, `low` (default), `medium`, `high`, or `default` to leave the model's own setting. |
 
+## The model on every alert
+
+Off unless you switch it on. With it on, the model reads every closure Triagle
+makes on its own and investigates every alert that goes to a person, without
+waiting for anyone to open it. It can send an alert to a person and can never
+close one.
+
+| Setting | What it does |
+|---|---|
+| `TRIAGLE_ARRIVAL=on` | Switches the work on. |
+| `TRIAGLE_ARRIVAL_DAILY_USD` | What this work may spend in a day, India time. Default `1.00`. At the limit it stops until midnight. |
+| `TRIAGLE_WORK_KEY` | A key for `/api/work`, at least 16 characters. The intake key works too; a key of its own means the scheduler does not hold the key that can send alerts in. |
+| `TRIAGLE_ARRIVAL_BATCH` | Closures read in one call. Default `10`. |
+| `TRIAGLE_ARRIVAL_THINKING` | How long the model thinks on a batch of closures: `minimal`, `low` (default), `medium`, `high`. |
+| `TRIAGLE_ARRIVAL_SECONDS` | How long one call to `/api/work` keeps starting new pieces of work. Default `45`. |
+
+Cloud Run gives a service CPU only while it answers a request, so the work is
+done inside a request: a Cloud Scheduler job calls `/api/work` every minute.
+One call works for up to 45 seconds and a second call that arrives meanwhile
+is told the work is already going on.
+
+```bash
+URL=$(gcloud run services describe triagle --region us-central1 --format='value(status.url)')
+WORK_KEY=$(openssl rand -hex 24)
+
+gcloud run services update triagle --region us-central1 \
+  --update-env-vars "TRIAGLE_ARRIVAL=on,TRIAGLE_ARRIVAL_DAILY_USD=1.00,TRIAGLE_WORK_KEY=$WORK_KEY"
+
+gcloud services enable cloudscheduler.googleapis.com
+gcloud scheduler jobs create http triagle-work --location us-central1 \
+  --schedule "* * * * *" --uri "$URL/api/work" --http-method POST \
+  --headers "X-Triagle-Key=$WORK_KEY" --attempt-deadline 180s
+```
+
+The key is made and used in one shell and is never printed. To change it, run
+the two commands again with `jobs update http` and `--update-headers`.
+
+What it costs is on the Overview, counted by job from the token counts the
+API reports. As a guide, a batch of ten closures is one short call and an
+investigation is four to six calls. The first day is the most expensive,
+because every alert already in the queue is read once.
+
+To stop it: `gcloud scheduler jobs pause triagle-work --location us-central1`,
+or set `TRIAGLE_ARRIVAL=off`. What was read and investigated stays.
+
+On a host that does not throttle (a VM, a laptop) no scheduler is needed:
+`TRIAGLE_ARRIVAL_THREAD=on` does the same work from a thread every
+`TRIAGLE_ARRIVAL_EVERY` seconds (default 30). Set `TRIAGLE_PUBLIC_URL` there,
+so that what the work writes back to the SIEM carries a link that opens.
+
 ## Saved state on a bucket
 
 Cloud Run's own disk is wiped at every restart, so the state file goes on a
@@ -65,6 +115,9 @@ never passes it to the service.
 Saved: every live alert still in the queue, the running totals, which tools
 are sending, every approve, decline and lifted block, every report marked as
 filed, and a customer's sector if an analyst changed it.
+
+Also saved: the model's readings and second opinions, the accounts it wrote
+ahead for alerts that need a person, and the record of what that work cost.
 
 Not saved: the model's written account of a case (it is written again when the
 case is opened) and the audit log file. On Cloud Run every audit entry also

@@ -217,6 +217,33 @@ The model's cost is counted from the token figures the API returns with each ans
 the published price of the default model. Set `TRIAGLE_PRICE_IN` and
 `TRIAGLE_PRICE_OUT` if the price list or the model changes.
 
+## The model works on every alert, without being asked
+
+With `TRIAGLE_ARRIVAL=on` the model does not wait for somebody to open an alert.
+
+- **Every closure Triagle makes on its own is read again**, ten to a call, with the
+  customer's house knowledge beside it. The model says "agree" or "look again", with a
+  sentence of why.
+- **Every alert that goes to a person is investigated in full**, and so is every
+  closure the reading would look at again. This is the second opinion: the model
+  chooses its checks and is not told the verdict, and rules settle any difference.
+- **The account is written ahead**, so it is on the page when the analyst opens it.
+
+It can send an alert to a person. It can never close one. A repeat counted under an
+alert already raised is covered by that alert's investigation. A closure a person made,
+by hand or by a rule they taught, is not read again, and test streams are left out.
+
+The Overview shows what was done and what it cost, by job, from the token counts the
+API reports: closures read, alerts investigated, the typical wait after an alert
+arrives, the spend so far and today, and the cost of 1,000 alerts of the feed's own
+mix. The work stops for the day at `TRIAGLE_ARRIVAL_DAILY_USD` (default 1 US dollar)
+and starts again at midnight, India time. If the model does not answer, Triagle waits
+ten minutes; verdicts never wait on it.
+
+On Cloud Run the work is done inside `POST /api/work`, which a Cloud Scheduler job
+calls every minute ([docs/DEPLOY.md](docs/DEPLOY.md)). Nothing here changes how a
+verdict is reached: that is still plain code, the same every time.
+
 ## The night analyst's paperwork
 
 One analyst on a night shift does four jobs: watches the queue, writes the report for
@@ -397,7 +424,7 @@ each client, and an Indian hosting region. To report a problem, see
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 480 tests, no network or key needed
+python -m pytest -q                 # 494 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```

@@ -17,11 +17,13 @@ import datetime
 import hmac
 import re
 import secrets
+import sys
 import threading
 
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request, Form, HTTPException, Depends
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -40,7 +42,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.10.10", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.11.0", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -429,6 +431,7 @@ def _ensure_state():
     _CACHE["second"] = {}                            # alert id -> the model's second reading of that closure
     _CACHE["agent"] = {}                             # alert id -> the investigator's own run on that alert
     _CACHE["bare"] = {}                              # alert id -> the same model's reading without Triagle, kept for comparison
+    _CACHE["arrival"] = {}                           # the work the model did on its own as alerts arrived, and what it cost
     _CACHE.pop("result", None)
     _restore()
 
@@ -444,6 +447,7 @@ def _snapshot():
             "arrived_at": _CACHE.get("arrived_at", {}),
             "taught": _CACHE.get("taught", []), "checks": _CACHE.get("checks", {}),
             "second": _CACHE.get("second", {}), "agent": _CACHE.get("agent", {}), "bare": _CACHE.get("bare", {}),
+            "arrival": _CACHE.get("arrival", {}),
             "model_use": {k: genai.USAGE[k] for k in ("calls", "input", "output", "thinking", "since")}}
 
 
@@ -495,6 +499,7 @@ def _restore():
                        if isinstance(v, dict) and v.get("view") in investigator.VIEWS and isinstance(v.get("steps"), list)}
     _CACHE["bare"] = {str(k): v for k, v in (state.get("bare") or {}).items()
                       if isinstance(v, dict) and v.get("bare") is True and v.get("view") in investigator.VIEWS}
+    _arrival_restore(state.get("arrival"))
     for rec in _CACHE["agent"].values():             # a kept run follows today's wording
         _reword(rec)
     for rec in _CACHE["second"].values():
@@ -557,7 +562,7 @@ def _tell(request, event, by, alert_id="", client="", **fields):
     result = _CACHE.get("result") or {}
     alert = next((a for a in result.get("alerts", []) if a["alert_id"] == alert_id), None) if alert_id else None
     verdict = (result.get("verdicts") or {}).get(alert_id) or {}
-    base = _base_url(request)
+    base = _base_url(request) if request is not None else os.environ.get("TRIAGLE_PUBLIC_URL", "").rstrip("/")
     box = _outbox()
     box["seq"] += 1
     entry = {
@@ -1095,7 +1100,7 @@ def dashboard(request: Request, user=Depends(require_user)):
         request, user, active="overview", need=need[:NEED_SHOWN], need_total=len(need), metrics=m, cases=cases,
         dues=dues, breakdown=breakdown, escalated_pct=round(100 * m.get("open", 0) / total, 2),
         sources=_source_strip(result), overdue=sum(1 for d in dues if d["row"]["status"] == "overdue"),
-        spot=spotcheck.tally(_CACHE.get("checks", {}), _test_clients())))
+        spot=spotcheck.tally(_CACHE.get("checks", {}), _test_clients()), arrival=_arrival_view(result)))
 
 
 NEED_SHOWN = 12        # alerts needing a decision listed on the overview
@@ -1356,9 +1361,12 @@ def _alert_account(request, result, alert_id, user):
     if alert is None:
         raise HTTPException(status_code=404, detail="No such alert.")
     verdict = result["verdicts"].get(alert_id) or {}
-    key = ("alert", alert_id, bool(verdict.get("escalate")), verdict.get("closure_code") or verdict.get("disposition"))
+    key = _account_key(alert_id, verdict)
+    kept = _arrival_note(alert_id, key)              # written when the alert arrived, kept across a restart
     with _notes_lock(key):
         cached = _WORKNOTES.get(key)
+        if kept and not (cached and cached[1]):
+            cached = _WORKNOTES[key] = (kept["text"], True, kept["provider"])
         stale = cached and not cached[1] and time.time() - _NOTES_AT.get(key, 0) > NOTES_RETRY_SECONDS
         if not cached or stale:
             if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
@@ -1375,7 +1383,8 @@ def _alert_account(request, result, alert_id, user):
                         _WORKNOTES.pop(old, None)
         text, by_model, provider = _WORKNOTES[key]
     return {"text": text, "by_model": by_model, "provider": provider,
-            "error": None if by_model else genai.STATUS.get("error")}
+            "error": None if by_model else genai.STATUS.get("error"),
+            "unasked": _ist_short(kept["at"]) if kept and kept["text"] == text else None}
 
 
 _NOTES_AT = {}
@@ -1883,7 +1892,7 @@ def pilot_report(request: Request, user=Depends(require_user)):
         checks=_checks_view(result), taught=_taught_rows(result), rules=rules[:8], rules_total=len(rules),
         minutes_per_alert=MINUTES_PER_ALERT, hours=round(minutes / 60, 1),
         rolled_off=result["metrics"].get("rolled_off", 0), usage=genai.usage(), model=genai.model_name(),
-        now=datetime.datetime.now(_IST).strftime("%d %b %Y, %H:%M IST")))
+        arrival=_arrival_view(result), now=datetime.datetime.now(_IST).strftime("%d %b %Y, %H:%M IST")))
 
 
 # ---- the night analyst's paperwork: the morning report and "was this you?" -----
@@ -2727,6 +2736,34 @@ def _agent_record(res, alert, verdict, by, earlier):
             "raised": raised, "engine": {"escalated": engine_escalated, "on_evidence": on_evidence}}
 
 
+def _keep_run(request, alert_id, rec, earlier):
+    """Keep one run and do what investigator.settle decided: a closure the
+    second opinion disagrees with goes to a person, and nothing else changes.
+    True when the alert went to a person, so the queue is different now."""
+    with _LOCK:
+        _ensure_state()
+        was_raised = bool((earlier or {}).get("raised"))
+        store_ = _CACHE.setdefault("agent", {})
+        store_[alert_id] = rec
+        for old in sorted(store_, key=lambda k: store_[k].get("at") or "")[:-AGENT_KEEP]:
+            if not store_[old].get("raised"):
+                store_.pop(old, None)
+        if rec["effect"] == "look" and alert_id not in _CACHE["second"]:
+            _CACHE["second"][alert_id] = {"view": "look", "why": "It could not settle this alert.",
+                                          "at": rec["at"], "by": "Triagle's second opinion"}
+        reload = False
+        if rec["raised"] and not was_raised:
+            _tell(request, "reopened", "Triagle's second opinion", alert_id,
+                  note="The second opinion disagreed with the closure")
+            _CACHE.pop("result", None)
+            _load_result()
+            reload = True
+        else:
+            _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+        _changed(now=True)
+        return reload
+
+
 def _agent_tally(skip=()):
     runs = [r for r in _CACHE.get("agent", {}).values() if r.get("client") not in skip]
     return {"runs": len(runs), "agreed": sum(1 for r in runs if r.get("agrees") is True),
@@ -2827,28 +2864,7 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
                 else:
                     yield json.dumps(event) + "\n"
             rec = _agent_record(final, alert, verdict, user["name"], earlier)
-            reload = False
-            if keeps:
-                with _LOCK:
-                    _ensure_state()
-                    was_raised = bool((earlier or {}).get("raised"))
-                    store_ = _CACHE.setdefault("agent", {})
-                    store_[alert_id] = rec
-                    for old in sorted(store_, key=lambda k: store_[k].get("at") or "")[:-AGENT_KEEP]:
-                        if not store_[old].get("raised"):
-                            store_.pop(old, None)
-                    if rec["effect"] == "look" and alert_id not in _CACHE["second"]:
-                        _CACHE["second"][alert_id] = {"view": "look", "why": "It could not settle this alert.",
-                                                      "at": rec["at"], "by": "Triagle's second opinion"}
-                    if rec["raised"] and not was_raised:
-                        _tell(request, "reopened", "Triagle's second opinion", alert_id,
-                              note="The second opinion disagreed with the closure")
-                        _CACHE.pop("result", None)
-                        _load_result()
-                        reload = True
-                    else:
-                        _CACHE["rev"] = _CACHE.get("rev", 0) + 1
-                    _changed(now=True)
+            reload = _keep_run(request, alert_id, rec, earlier) if keeps else False
             audit.record("alert investigated by the model" if keeps else "second opinion shown, nothing kept", user["name"],
                          alert_id=alert_id, view=rec["view"], effect=rec["effect"], agrees=rec["agrees"],
                          checks=[s["tool"] for s in rec["steps"]], guards=[g["code"] for g in rec["guards"]],
@@ -2862,6 +2878,513 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
 
     return StreamingResponse(stream(), media_type="application/x-ndjson",
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+# ---- on arrival: the model works on every alert without waiting for a person ----
+#
+# Until 0.11 the model worked when somebody opened an alert. Nobody opens a
+# closed alert at 2 AM, so a wrong closure waited for a spot check. With
+# TRIAGLE_ARRIVAL=on the same jobs are done as alerts arrive, unasked:
+#
+#   read         every closure Triagle made on its own is read again by the
+#                model, ten to a call (nightshift.second_read): would a careful
+#                reviewer look at this closure again?
+#   investigate  every alert that needs a person, and every closure the reading
+#                would look at again, gets the full second opinion
+#                (investigator.run). The model chooses its checks and is not told
+#                the verdict, and investigator.settle decides what follows.
+#   account      for an alert a person will open, the account is written and
+#                kept, so it is there before they open it.
+#
+# One direction only, as everywhere: this work can send an alert to a person and
+# can never close one. A repeat counted under an alert already raised is covered
+# by that alert's investigation. A closure a person made, by hand or by a rule
+# they taught, is not read again. Test streams are left out.
+#
+# What it costs is counted by job from the token counts the API reports, and the
+# work stops for the day at TRIAGLE_ARRIVAL_DAILY_USD. The work is done inside
+# POST /api/work, so it also runs on a host that gives a process CPU only while
+# it answers a request (Cloud Run): a scheduler calls it every minute. On a host
+# that does not throttle, TRIAGLE_ARRIVAL_THREAD=on does the same from a thread.
+#
+# Settings
+#   TRIAGLE_ARRIVAL            on | off (default off)
+#   TRIAGLE_ARRIVAL_DAILY_USD  what this work may spend in a day, India time (default 1.00)
+#   TRIAGLE_ARRIVAL_BATCH      closures read in one call (default 10)
+#   TRIAGLE_ARRIVAL_SECONDS    how long one /api/work call keeps starting new pieces (default 45)
+#   TRIAGLE_ARRIVAL_THINKING   how long the model thinks on a batch read: minimal | low | medium | high (default low)
+#   TRIAGLE_WORK_KEY           a key for /api/work, at least 16 characters. The intake key works too.
+#   TRIAGLE_ARRIVAL_THREAD     on = also work from a thread, every TRIAGLE_ARRIVAL_EVERY seconds (default 30)
+#   TRIAGLE_PUBLIC_URL         this console's address, for links in what the work writes back to the SIEM
+
+ARRIVAL_NAME = "Triagle, on arrival"
+ARRIVAL_TRIES = 2               # answers that could not be used, before an alert is left alone
+ARRIVAL_AGAIN = 3               # closures to a call when a batch is asked about a second time
+ARRIVAL_PAUSE = 600             # seconds to wait after the model did not answer at all
+ARRIVAL_READS_ENOUGH = 20       # closures read before a cost for one is shown
+ARRIVAL_RUNS_ENOUGH = 5         # investigations before a cost for one is shown
+ARRIVAL_NOTES_KEEP = 300        # accounts written on arrival that are kept across a restart
+ARRIVAL_WAITS_KEEP = 200        # recent waits the typical wait is taken from
+WORK_KEY = os.environ.get("TRIAGLE_WORK_KEY", "")
+_ARRIVAL_BUSY = threading.Lock()
+_ARRIVAL_COUNTS = ("reads", "read", "looks", "investigated", "raised", "accounts", "failed")
+_ARRIVAL_MONEY = ("usd_read", "usd_investigate", "usd_account")
+
+
+def _on(name):
+    return os.environ.get(name, "").strip().lower() in ("1", "on", "true", "yes")
+
+
+def _arrival_on():
+    return _on("TRIAGLE_ARRIVAL")
+
+
+def _arrival_num(name, default, low, high):
+    try:
+        return min(high, max(low, float(os.environ.get(name, ""))))
+    except ValueError:
+        return default
+
+
+def _arrival_cap():
+    return _arrival_num("TRIAGLE_ARRIVAL_DAILY_USD", 1.0, 0.0, 100.0)
+
+
+def _arrival_batch():
+    return int(_arrival_num("TRIAGLE_ARRIVAL_BATCH", 10, 2, 20))
+
+
+def _arrival_thinking():
+    v = os.environ.get("TRIAGLE_ARRIVAL_THINKING", "low").strip().lower()
+    return v if v in genai.THINKING_LEVELS else "low"
+
+
+def _arrival():
+    """The running record of the work done on arrival. Kept across a restart."""
+    a = _CACHE.setdefault("arrival", {})
+    for k in _ARRIVAL_COUNTS:
+        a.setdefault(k, 0)
+    for k in _ARRIVAL_MONEY + ("day_usd", "pause_until"):
+        a.setdefault(k, 0.0)
+    a.setdefault("day", "")
+    a.setdefault("tried", {})       # alert id -> answers that could not be used
+    a.setdefault("done", {})        # alert id -> 1, investigated here (a kept run can age out; this does not)
+    a.setdefault("notes", {})       # alert id -> the account written here
+    a.setdefault("waits", [])       # seconds between an alert arriving and the model reading it
+    a.setdefault("since", None)
+    a.setdefault("last", None)
+    return a
+
+
+def _arrival_restore(saved):
+    """Read the record back after a restart. Anything that is not the kind of
+    value it should be starts again from nothing. What it holds about alerts
+    that have since aged out is dropped by the next round of work."""
+    a = _arrival()
+    if not isinstance(saved, dict):
+        return
+    try:
+        counts = {k: max(0, int(saved.get(k) or 0)) for k in _ARRIVAL_COUNTS}
+        money = {k: max(0.0, float(saved.get(k) or 0)) for k in _ARRIVAL_MONEY + ("day_usd",)}
+        tried = {str(k): int(v) for k, v in (saved.get("tried") or {}).items()}
+        done = {str(k): 1 for k in (saved.get("done") or {})}
+        waits = [max(0, int(w)) for w in (saved.get("waits") or [])][-ARRIVAL_WAITS_KEEP:]
+        notes = {str(k): {"k": [bool(v["k"][0]), v["k"][1]], "text": str(v["text"]), "provider": str(v["provider"]),
+                          "at": str(v["at"])}
+                 for k, v in list((saved.get("notes") or {}).items())[-ARRIVAL_NOTES_KEEP:]}
+    except (TypeError, ValueError, AttributeError, KeyError, IndexError):
+        return
+    a.update(counts)
+    a.update(money)
+    a.update(tried=tried, done=done, waits=waits, notes=notes, day=str(saved.get("day") or ""),
+             since=str(saved["since"]) if saved.get("since") else None,
+             last=saved["last"] if isinstance(saved.get("last"), dict) else None)
+
+
+def _arrival_day(a):
+    """What has been spent today. The day starts at midnight in India, and an
+    alert the model could not read yesterday is asked about again today."""
+    day = datetime.datetime.now(_IST).strftime("%Y-%m-%d")
+    if a["day"] != day:
+        a["day"], a["day_usd"], a["tried"] = day, 0.0, {}
+    return a["day_usd"]
+
+
+def _arrival_pending(result):
+    """What is still to do, the alert that arrived last first:
+      need   alerts that need a person and have had no second opinion
+      look   closures the reading would look at again, not yet investigated
+      read   closures Triagle made on its own, not yet read, by customer
+    and how the queue divides, so the page can say what is covered and what a
+    thousand alerts of this mix cost. Where a tool is connected, the mix is
+    that of the alerts it sent; the samples loaded with the product are read
+    and investigated like any other alert, and are not counted in the mix."""
+    a = _arrival()
+    skip, tried, done = _test_clients(), a["tried"], a["done"]
+    second, runs = _CACHE.get("second", {}), _CACHE.get("agent", {})
+    order = {m[0]: i for i, m in enumerate(_CACHE.get("live_meta", []))}
+    need, look, read = [], [], {}
+    mix = {"total": 0, "own": 0, "raised": 0, "repeats": 0, "by_people": 0, "gave_up": 0}
+    for al in sorted(result["alerts"], key=lambda x: order.get(x["alert_id"], -1), reverse=True):
+        aid = al["alert_id"]
+        if al.get("client") in skip:
+            continue
+        v = result["verdicts"].get(aid) or {}
+        n = 1 if (aid in order or not order) else 0   # counted in the mix?
+        mix["total"] += n
+        if v.get("escalate"):
+            mix["raised"] += n
+            if aid in runs or aid in done:
+                continue
+            if v.get("resolved"):
+                mix["by_people"] += n                # a person decided it before the model got there
+            elif tried.get(aid, 0) >= ARRIVAL_TRIES:
+                mix["gave_up"] += n
+            else:
+                need.append(aid)
+            continue
+        if v.get("closure_code") in spotcheck.SKIP_CODES:
+            mix["repeats"] += n
+            continue
+        if not spotcheck.eligible(al, v, skip):
+            mix["by_people"] += n                    # closed on a rule a person taught
+            continue
+        mix["own"] += n
+        if aid in runs or aid in done:
+            continue
+        if tried.get(aid, 0) >= ARRIVAL_TRIES:
+            mix["gave_up"] += n
+        elif (second.get(aid) or {}).get("view") == "look":
+            look.append(aid)
+        elif aid not in second:
+            read.setdefault(al.get("client") or "", []).append(aid)
+    return need, look, read, mix
+
+
+def _arrival_view(result=None):
+    """What the pages and /api/arrival say about the work done on arrival."""
+    with _LOCK:
+        result = result or _load_result()
+        a = _arrival()
+        today, cap = _arrival_day(a), _arrival_cap()
+        need, look, read, mix = _arrival_pending(result)
+        usd = sum(a[k] for k in _ARRIVAL_MONEY)
+        on, model = _arrival_on(), investigator.enabled()
+        paused = None
+        if on and not model:
+            paused = "No model is connected."
+        elif on and today >= cap:
+            paused = "Today's budget is spent. The work starts again at midnight, India time."
+        elif on and time.time() < a["pause_until"]:
+            paused = "The model did not answer. Triagle waits ten minutes before it asks again."
+        # what one closure and one investigation cost, from what was spent on them, failures included
+        one_read = a["usd_read"] / a["read"] if a["read"] >= ARRIVAL_READS_ENOUGH else None
+        one_run = ((a["usd_investigate"] + a["usd_account"]) / a["investigated"]
+                   if a["investigated"] >= ARRIVAL_RUNS_ENOUGH else None)
+        per_1000 = None
+        if one_read is not None and one_run is not None and mix["total"]:
+            # a thousand alerts of this queue's mix: every own closure is read, and every alert that
+            # goes to a person, plus the closures the reading would look at again, is investigated
+            again = a["looks"] / a["read"]
+            per_1000 = 1000 * (mix["own"] * one_read + (mix["raised"] + mix["own"] * again) * one_run) / mix["total"]
+        waits = sorted(a["waits"])
+        return {"on": on, "model": model, "paused": paused, "cap_usd": cap, "today_usd": round(today, 4),
+                **{k: a[k] for k in _ARRIVAL_COUNTS}, **{k: round(a[k], 4) for k in _ARRIVAL_MONEY},
+                "usd": round(usd, 4), "covered": a["read"] + a["investigated"],
+                "usd_one_read": round(one_read, 5) if one_read is not None else None,
+                "usd_one_investigation": round(one_run, 4) if one_run is not None else None,
+                "per_1000_usd": round(per_1000, 2) if per_1000 is not None else None,
+                "typical_wait_s": waits[len(waits) // 2] if len(waits) >= 5 else None,
+                "waiting": {"need": len(need), "look": len(look), "read": sum(len(v) for v in read.values())},
+                "mix": mix, "since": a["since"], "last": a["last"],
+                "last_ago": _ago(a["last"]["at"]) if a["last"] else ""}
+
+
+def _arrival_spent(kind, usd):
+    a = _arrival()
+    _arrival_day(a)
+    a[kind] += usd
+    a["day_usd"] += usd
+    return a
+
+
+def _arrival_waited(a, alert_ids):
+    """Note how long these alerts waited between arriving and being read.
+    Only an alert that arrived after this work began says anything about it.
+    Returns the wait of the last one, in seconds, or None."""
+    arrived, now, wait = _CACHE.get("arrived_at", {}), datetime.datetime.now(datetime.timezone.utc), None
+    for aid in alert_ids:
+        at = arrived.get(aid)
+        if not (at and a["since"] and at >= a["since"]):
+            continue
+        try:
+            then = datetime.datetime.fromisoformat(at.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        wait = max(0, int((now - then).total_seconds()))
+        a["waits"].append(wait)
+    del a["waits"][:-ARRIVAL_WAITS_KEEP]
+    return wait
+
+
+def _arrival_failed(alert_ids):
+    """The model gave nothing usable. If it is not answering at all, wait and
+    try the same alerts again later; if it answered and the answer could not
+    be used, count a try against each alert."""
+    a = _arrival()
+    a["failed"] += 1
+    if genai.STATUS.get("ok") is False:
+        a["pause_until"] = time.time() + ARRIVAL_PAUSE
+    else:
+        for aid in alert_ids:
+            a["tried"][aid] = a["tried"].get(aid, 0) + 1
+
+
+def _account_key(alert_id, verdict):
+    return ("alert", alert_id, bool(verdict.get("escalate")), verdict.get("closure_code") or verdict.get("disposition"))
+
+
+def _arrival_note(alert_id, key):
+    """The account written on arrival for this alert, if it was written for
+    the verdict the alert has now."""
+    note = (_CACHE.get("arrival") or {}).get("notes", {}).get(alert_id)
+    return note if note and note["k"] == [key[2], key[3]] else None
+
+
+def _arrival_account(alert_id):
+    """Write the account of an alert a person will open, so it is there
+    before they do. True if the model wrote it."""
+    with _LOCK:
+        result = _load_result()
+        alert = next((x for x in result["alerts"] if x["alert_id"] == alert_id), None)
+        if alert is None:
+            return False
+        verdict = result["verdicts"].get(alert_id) or {}
+        key = _account_key(alert_id, verdict)
+        steps = [f"{st.get('tool')}: {st.get('result_summary')}" for st in result.get("trails", {}).get(alert_id, [])]
+        house = _house(result, alert.get("client"))
+        if _arrival_note(alert_id, key):
+            return False                             # already written here
+    with _notes_lock(key):
+        if (_WORKNOTES.get(key) or (None, False))[1]:
+            return False                             # a person opened the alert first, and the model wrote it then
+        point = genai.mark()
+        notes = worknotes.alert_notes(alert, verdict, steps, house=house, intel=osint.lines(_addresses([alert])))
+        _WORKNOTES[key] = notes
+        _NOTES_AT[key] = time.time()
+    with _LOCK:
+        a = _arrival_spent("usd_account", genai.cost_since(point)[1])
+        if notes[1]:
+            a["accounts"] += 1
+            a["notes"][alert_id] = {"k": [key[2], key[3]], "text": notes[0], "provider": notes[2], "at": _now_iso()}
+            for old in list(a["notes"])[:-ARRIVAL_NOTES_KEEP]:
+                a["notes"].pop(old, None)
+    return bool(notes[1])
+
+
+def _arrival_investigate(request, alert_id):
+    """The full second opinion on one alert, kept as an analyst's run is."""
+    with _LOCK:
+        result = _load_result()
+        a = _arrival()
+        alert = next((x for x in result["alerts"] if x["alert_id"] == alert_id), None)
+        if alert is None:
+            a["tried"][alert_id] = ARRIVAL_TRIES
+            return {"did": "left an alert that is no longer held", "ok": True}
+        verdict = dict(result["verdicts"].get(alert_id) or {})
+        earlier = _CACHE.get("agent", {}).get(alert_id)
+        case = investigator.Case(alert, result["alerts"], house=_house(result, alert.get("client")))
+    title = alert.get("title") or alert_id
+    lock = _notes_lock(("agent", alert_id))
+    if not lock.acquire(blocking=False):             # a person is running it on the page right now
+        with _LOCK:
+            a["tried"][alert_id] = a["tried"].get(alert_id, 0) + 1
+        return {"did": f"left \"{title}\" to the person investigating it", "ok": True}
+    point, final = genai.mark(), None
+    try:
+        for event in investigator.run(case, earlier=earlier):
+            if event["type"] == "result":
+                final = event["result"]
+    finally:
+        lock.release()
+    usd = genai.cost_since(point)[1]
+    if not final or not final.get("usable"):
+        with _LOCK:
+            _arrival_spent("usd_investigate", usd)
+            _arrival_failed([alert_id])
+        audit.record("second opinion on arrival gave no reading", ARRIVAL_NAME, alert_id=alert_id, cost_usd=usd,
+                     error=genai.STATUS.get("error") if genai.STATUS.get("ok") is False else None)
+        return {"did": f"no reading on \"{title}\"", "ok": False}
+    rec = _agent_record(final, alert, verdict, ARRIVAL_NAME, earlier)
+    rec["auto"] = True
+    with _LOCK:
+        a = _arrival_spent("usd_investigate", usd)
+        a["investigated"] += 1
+        a["done"][alert_id] = 1
+        if rec["effect"] == "raise":
+            a["raised"] += 1
+        wait = _arrival_waited(a, [alert_id])
+        if wait is not None:
+            rec["after_s"] = wait
+    _keep_run(request, alert_id, rec, earlier)
+    audit.record("alert investigated by the model on arrival", ARRIVAL_NAME, alert_id=alert_id, view=rec["view"],
+                 effect=rec["effect"], agrees=rec["agrees"], checks=[s["tool"] for s in rec["steps"]],
+                 guards=[g["code"] for g in rec["guards"]], model_calls=rec["calls"], seconds=rec.get("seconds"),
+                 cost_usd=rec.get("cost_usd"))
+    if verdict.get("escalate") or rec["raised"]:
+        _arrival_account(alert_id)
+    return {"did": f"investigated \"{title}\": {investigator.VIEW_WORDS.get(rec['view'], 'Not settled').lower()}", "ok": True}
+
+
+def _arrival_read(client, alert_ids):
+    """One call: the model reads back over a batch of one customer's closures."""
+    with _LOCK:
+        result = _load_result()
+        by_id = {x["alert_id"]: x for x in result["alerts"]}
+        rows = [(by_id[i], result["verdicts"][i]) for i in alert_ids if i in by_id and i in result["verdicts"]]
+        house = _house(result, client)
+    if not rows:
+        return None
+    point = genai.mark()
+    found, provider, error = nightshift.second_read(rows, house, thinking_level=_arrival_thinking())
+    usd = genai.cost_since(point)[1]
+    at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    looks = sum(1 for v in found.values() if v["view"] == "look")
+    with _LOCK:
+        a = _arrival_spent("usd_read", usd)
+        for aid, view in found.items():
+            _CACHE["second"][aid] = {**view, "at": at, "by": provider or "Gemini", "auto": True}
+        missed = [al["alert_id"] for al, _v in rows if al["alert_id"] not in found]
+        if found:
+            a["reads"] += 1
+            a["read"] += len(found)
+            a["looks"] += looks
+            _arrival_waited(a, list(found))
+            for aid in missed:                       # asked about and not answered: once more, then left alone
+                a["tried"][aid] = a["tried"].get(aid, 0) + 1
+            _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+        else:
+            _arrival_failed(missed)
+    audit.record("closures read by the model on arrival", ARRIVAL_NAME, client=client, asked=len(rows),
+                 answered=len(found), would_look_again=looks, cost_usd=usd, error=error)
+    if not found:
+        return {"did": f"no reading of {len(rows)} closure{'' if len(rows) == 1 else 's'}", "ok": False}
+    words = f"read {len(found)} closure{'' if len(found) == 1 else 's'}"
+    return {"did": words + (f", would look again at {looks}" if looks else ""), "ok": True}
+
+
+def _arrival_step(request):
+    """Do the next piece of work. None when nothing is left to do, today's
+    budget is spent, or the model is not answering."""
+    with _LOCK:
+        result = _load_result()
+        a = _arrival()
+        if _arrival_day(a) >= _arrival_cap() or time.time() < a["pause_until"]:
+            return None
+        need, look, read, _mix = _arrival_pending(result)
+        tried = dict(a["tried"])
+    if need:
+        return _arrival_investigate(request, need[0])
+    if look:
+        return _arrival_investigate(request, look[0])
+    for client, ids in read.items():                 # the customer whose alert arrived last
+        fresh = [i for i in ids if not tried.get(i)]
+        # a batch whose answer could not be used is asked about again a few at a time,
+        # so one alert the model cannot answer for does not take nine others with it
+        return _arrival_read(client, fresh[:_arrival_batch()] if fresh else ids[:ARRIVAL_AGAIN])
+    return None
+
+
+def _arrival_tidy():
+    """Forget the bookkeeping for alerts that have aged out of the queue."""
+    held = {x["alert_id"] for x in _load_result()["alerts"]}
+    a = _arrival()
+    for name in ("tried", "done", "notes"):
+        a[name] = {k: v for k, v in a[name].items() if k in held}
+    if len(_CACHE.get("second", {})) > len(held):
+        _CACHE["second"] = {k: v for k, v in _CACHE["second"].items() if k in held}
+
+
+def arrival_work(request=None, seconds=None):
+    """Work until nothing is left, the time is up or today's budget is spent.
+    One caller at a time: a second one is told the work is already going on."""
+    if not _arrival_on():
+        return {"on": False, "did": []}
+    if not investigator.enabled():
+        return {**_arrival_view(), "did": []}
+    if not _ARRIVAL_BUSY.acquire(blocking=False):
+        return {**_arrival_view(), "did": [], "busy": True}
+    did = []
+    try:
+        with _LOCK:
+            _load_result()
+            a = _arrival()
+            a["since"] = a["since"] or _now_iso()
+        until = time.time() + (seconds if seconds is not None else _arrival_num("TRIAGLE_ARRIVAL_SECONDS", 45, 1, 240))
+        while time.time() < until:
+            step = _arrival_step(request)
+            if step is None:
+                break
+            did.append(step["did"])
+            if not step["ok"]:
+                break                                # a failure ends this round; the next call tries again
+        with _LOCK:
+            if did:
+                _arrival()["last"] = {"at": _now_iso(), "pieces": len(did)}
+            _arrival_tidy()
+            if did:
+                _changed(now=True)
+    finally:
+        _ARRIVAL_BUSY.release()
+    return {**_arrival_view(), "did": did}
+
+
+def _work_authorized(request: Request):
+    key = request.headers.get("x-triagle-key", "")
+    if len(WORK_KEY) >= 16 and hmac.compare_digest(key.encode(), WORK_KEY.encode()):
+        return "scheduler"
+    if INGEST_KEY and hmac.compare_digest(key.encode(), INGEST_KEY.encode()):
+        return "scheduler"
+    return None
+
+
+@app.post("/api/work")
+async def api_work(request: Request):
+    """Do the work that waits on arrival, for up to TRIAGLE_ARRIVAL_SECONDS.
+    A scheduler calls this every minute with the work key or the intake key;
+    a signed-in analyst can call it from the console."""
+    who = _work_authorized(request)
+    if not who:
+        user = current_user(request)
+        if not _keeps(user):
+            raise HTTPException(status_code=401, detail="Provide a valid X-Triagle-Key header or sign in as an analyst.")
+        body = await _json_body(request)
+        if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
+            raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+        who = user["name"]
+    out = await run_in_threadpool(arrival_work, request)
+    if out.get("did"):
+        audit.record("work done on arrival", who, pieces=len(out["did"]), ip=_client_ip(request))
+    return out
+
+
+@app.get("/api/arrival")
+def api_arrival(request: Request, user=Depends(require_user)):
+    """What the model has done on its own as alerts arrived, and what it cost."""
+    return _arrival_view()
+
+
+def _arrival_loop():
+    while True:
+        time.sleep(_arrival_num("TRIAGLE_ARRIVAL_EVERY", 30, 5, 3600))
+        try:
+            arrival_work()
+        except Exception as e:                       # the thread must outlive one bad round
+            print(f"[triagle] work on arrival: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+
+
+if _on("TRIAGLE_ARRIVAL_THREAD"):
+    threading.Thread(target=_arrival_loop, name="triagle-arrival", daemon=True).start()
 
 
 @app.post("/api/ask")

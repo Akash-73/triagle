@@ -12,6 +12,7 @@
     <a class="tile" href="/alerts?show=closed"><b>{{ "{:,}".format(metrics.closed_all) }}</b><span>closed, each with a reason</span></a>
     <a class="tile{{ ' crit' if metrics.open else '' }}" href="/alerts"><b>{{ "{:,}".format(metrics.open) }}</b><span>need{{ 's' if metrics.open == 1 else '' }} a decision</span></a>
     {% if metrics.resolved %}<a class="tile" href="/alerts?show=closed"><b>{{ metrics.resolved }}</b><span>decided by a person</span></a>{% endif %}
+    {% if arrival.on or arrival.covered %}<a class="tile" href="#unasked"><b>{{ "{:,}".format(arrival.covered) }}</b><span>read by {{ model_word() }} without being asked</span></a>{% endif %}
     {% if spot.checked %}<a class="tile" href="/checks"><b>{{ spot.agreed }} of {{ spot.checked }}</b><span>closures checked by a person, and agreed</span></a>{% endif %}
     {% if dues %}<a class="tile clock" href="/clock"><b data-due="{{ dues[0].row.due_iso }}">{{ dues[0].row.note }}</b><span>to the next report, for {{ dues[0].row.name }}. {{ dues|length }} due{% if overdue %}, {{ overdue }} overdue{% endif %}</span></a>{% endif %}
   </div>
@@ -85,6 +86,25 @@
       <div class="empty"><b>No report is due.</b>A clock starts when Triagle judges an alert to be an attack on its own evidence.</div>
       {% endif %}
     </section>
+
+    {% if arrival.on or arrival.covered %}
+    <section class="panel" id="unasked">
+      <header><h2>{{ model_word()|capitalize }} on every alert</h2>
+        {% if not arrival.on %}<span class="tag" style="margin-left:auto;">switched off</span>
+        {% elif arrival.paused %}<span class="tag warn" style="margin-left:auto;" title="{{ arrival.paused }}">paused</span>
+        {% else %}<span class="status ok" style="margin-left:auto; font-size:.9rem; color:var(--text-2);">{{ 'working, ' ~ arrival.last_ago if arrival.last_ago else 'on' }}</span>{% endif %}</header>
+      <div class="rows">
+        <div><span class="k">Closures read again</span><span class="v">{{ "{:,}".format(arrival.read) }}{% if arrival.looks %}, {{ arrival.looks }} to look at again{% endif %}</span></div>
+        <div><span class="k">Alerts investigated in full</span><span class="v">{{ "{:,}".format(arrival.investigated) }}{% if arrival.raised %}, {{ arrival.raised }} sent to a person{% endif %}</span></div>
+        <div><span class="k">Accounts written ahead</span><span class="v">{{ "{:,}".format(arrival.accounts) }}</span></div>
+        {% set w = arrival.waiting %}{% if w.read or w.need or w.look %}<div><span class="k">Still to do</span><span class="v">{% if w.read %}{{ "{:,}".format(w.read) }} to read{% endif %}{% if w.read and (w.need or w.look) %}, {% endif %}{% if w.need or w.look %}{{ w.need + w.look }} to investigate{% endif %}</span></div>{% endif %}
+        {% if arrival.typical_wait_s is not none %}<div><span class="k">Typical wait after an alert arrives</span><span class="v">{{ arrival.typical_wait_s }} s</span></div>{% endif %}
+        <div><span class="k">Spent</span><span class="v">${{ '%.2f'|format(arrival.usd) }} in all, ${{ '%.2f'|format(arrival.today_usd) }} of ${{ '%.2f'|format(arrival.cap_usd) }} today</span></div>
+        {% if arrival.per_1000_usd is not none %}<div><span class="k">For 1,000 alerts of this mix</span><span class="v">${{ '%.2f'|format(arrival.per_1000_usd) }}</span></div>{% endif %}
+      </div>
+      <div class="body note">{% if arrival.paused %}{{ arrival.paused }} {% endif %}{{ model_word()|capitalize }} reads every closure Triagle makes on its own and investigates every alert that goes to a person, without waiting for anyone to open it. It can send an alert to a person. It can never close one.</div>
+    </section>
+    {% endif %}
 
     <section class="panel">
       <header><h2>Sources</h2><a class="more" href="/connectors">Connect a source</a></header>

@@ -38,7 +38,7 @@
           {% if verdict.tuning_recommendation %}<dt>Fix the noise</dt><dd>{{ verdict.tuning_recommendation }}</dd>{% endif %}
           {% if verdict.instruction %}<dt>Taught rule</dt><dd><a href="/taught#{{ verdict.instruction }}">{{ verdict.instruction }}</a>, under Your rules</dd>{% endif %}
           {% if check and check.ok %}<dt>Checked</dt><dd>{{ check.by }} checked this closure and agreed, {{ check.at|ist_short }}</dd>{% endif %}
-          {% if second and not verdict.escalate and not agent %}<dt>Quick read</dt><dd>{{ second.by }} {{ 'would look at this closure again' if second.view == 'look' else 'agrees with the closure' }}. {{ second.why }}</dd>{% endif %}
+          {% if second and not verdict.escalate and not agent %}<dt>Quick read</dt><dd>{{ second.by }} {{ 'would look at this closure again' if second.view == 'look' else 'agrees with the closure' }}. {{ second.why }}{% if second.auto %} <span style="color:var(--text-3)">Read without being asked, {{ second.at|ist_short }}.</span>{% endif %}</dd>{% endif %}
           {% if verdict.escalate %}<dt>Question to answer</dt><dd>{{ uc.question }}</dd>{% endif %}
         </dl>
         <p class="by" style="margin-top:12px;">{% if verdict.overruled and verdict.overruled.kind == 'investigator' %}Triagle closed this alert by rule. Its second opinion disagreed, so the alert is with a person. A model can raise an alert. It can never close one.{% else %}Decided by rule, the same way every time.{% endif %}</p>
@@ -282,7 +282,7 @@
           else { dd.textContent = line; }
           dl.appendChild(dt); dl.appendChild(dd);
         });
-        by.textContent = j.by_model ? 'Written by ' + j.provider : 'Summary built by rules. The model did not answer.';
+        by.textContent = j.by_model ? 'Written by ' + j.provider + (j.unasked ? ' without being asked, ' + j.unasked : '') : 'Summary built by rules. The model did not answer.';
         if (!j.by_model && j.error) by.title = j.error;
       })
       .catch(function () { say('The account could not be loaded. The verdict above is the decision.'); })
@@ -334,7 +334,8 @@
     outcome.className = 'callout' + (r.effect === 'raise' || r.effect === 'overruled' ? ' warn' : ''); outcome.hidden = false;
     status.hidden = true;
     by.textContent = 'Investigated by ' + MODEL + ', not told the verdict';
-    foot.textContent = (kept ? 'Asked by ' + r.by + '. ' : 'Shown to you only; nothing was kept. ') + r.steps.length + ' checks, ' + r.calls + ' model calls' + (r.seconds ? ', ' + r.seconds + ' s' : '') + (r.cost_usd ? ', about $' + r.cost_usd.toFixed(3) : '') + '.';
+    var unasked = 'Triagle ran this without being asked' + (r.after_s != null ? ', ' + (r.after_s < 120 ? r.after_s + ' s' : Math.round(r.after_s / 60) + ' min') + ' after the alert arrived' : '') + '. ';
+    foot.textContent = (kept ? (r.auto ? unasked : 'Asked by ' + r.by + '. ') : 'Shown to you only; nothing was kept. ') + r.steps.length + ' checks, ' + r.calls + ' model calls' + (r.seconds ? ', ' + r.seconds + ' s' : '') + (r.cost_usd ? ', about $' + r.cost_usd.toFixed(3) : '') + '.';
     go.textContent = 'Ask again';
   }
   function say(t) { status.textContent = t; status.hidden = false; }

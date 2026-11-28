@@ -112,6 +112,20 @@ def usage():
             "per_call_usd": round(cost / USAGE["calls"], 4) if USAGE["calls"] else 0.0}
 
 
+def mark():
+    """A point in the running totals, for cost_since()."""
+    return (USAGE["calls"], USAGE["input"], USAGE["output"] + USAGE["thinking"])
+
+
+def cost_since(point):
+    """(calls, US dollars) used since mark(), at the published price. Another
+    call made at the same moment is counted in, so a caller says "about"."""
+    price = usage()
+    usd = ((USAGE["input"] - point[1]) * price["price_in"]
+           + (USAGE["output"] + USAGE["thinking"] - point[2]) * price["price_out"]) / 1_000_000
+    return USAGE["calls"] - point[0], round(max(0.0, usd), 6)
+
+
 def load_usage(saved):
     """Carry the totals over a restart."""
     if not isinstance(saved, dict):
