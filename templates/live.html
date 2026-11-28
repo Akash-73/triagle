@@ -46,7 +46,7 @@
   </div>
   {% endif %}
   <div class="scroll-x" id="feed-wrap"><table class="tbl fixed feed">
-    <thead><tr><th style="width:96px">Arrived</th><th style="width:22%">From</th><th style="width:27%">What the tool said</th><th>What Triagle decided</th></tr></thead>
+    <thead><tr><th style="width:96px">Arrived</th><th style="width:17%">From</th><th style="width:22%">What the tool said</th><th>What Triagle decided</th><th class="made" style="width:24%">What {{ model_word() }} made of it</th></tr></thead>
     <tbody id="feed"></tbody>
   </table></div>
   <div class="empty" id="feed-empty" hidden><b>Nothing has arrived yet.</b>An alert shows here within seconds of a connected tool sending it. <a href="/connectors">Connect a source</a>{% if can_test %}, or send a test stream{% endif %}.</div>
@@ -80,6 +80,7 @@
     function part(n, cls, words) { p.appendChild(el('b', cls, n)); p.appendChild(document.createTextNode(' ' + words + ' ')); }
     part(c.received, '', plural(c.received, 'alert received.', 'alerts received.'));
     part(c.closed, '', 'closed, each with a reason.');
+    if (c.by_model) part(c.by_model, '', 'read by ' + state.model_word + ' without being asked.');
     if (c.by_person) part(c.by_person, '', 'decided by a person.');
     if (c.open) part(c.open, 'n-crit', plural(c.open, 'needs a decision.', 'need a decision.'));
     else p.appendChild(document.createTextNode('None need a decision.'));
@@ -121,34 +122,48 @@
     reason.title = r.reason;
     decided.appendChild(reason);
 
+    // what the model made of it: a second opinion, a reading of the closure, or still waiting
+    var made = el('td', 'made');
+    if (r.model) {
+      if (r.model.words) made.appendChild(el('span', 'tag ' + r.model.tag, r.model.words));
+      var note = el('span', 'sub', r.model.sub);
+      note.title = r.model.sub;
+      if (!r.model.words) note.style.marginTop = '0';
+      made.appendChild(note);
+    }
+
     tr.appendChild(el('td', 'stripe when', r.when));
     tr.appendChild(from);
     tr.appendChild(said);
     tr.appendChild(decided);
+    tr.appendChild(made);
   }
 
   function sync(rows) {
     var body = $('feed'), here = {};
     rows.forEach(function (r, i) {
       here[r.id] = true;
-      var sig = JSON.stringify(r), cur = rowEls.get(r.id);
+      var sig = JSON.stringify(r), cur = rowEls.get(r.id), read = r.model ? r.model.state + r.model.words : '';
       if (!cur) {
-        cur = { tr: el('tr'), sig: sig, open: r.open };
+        cur = { tr: el('tr'), sig: sig, open: r.open, read: read };
         if (!first) cur.tr.classList.add('new');
         fill(cur.tr, r);
         rowEls.set(r.id, cur);
       } else if (cur.sig !== sig) {
-        var flipped = cur.open !== r.open;
+        var flipped = cur.open !== r.open, landed = cur.read !== read && r.model && (r.model.state === 'run' || r.model.state === 'read');
         cur.tr.classList.remove('changed');
         fill(cur.tr, r);
         cur.sig = sig;
         cur.open = r.open;
+        cur.read = read;
         if (flipped) { void cur.tr.offsetWidth; cur.tr.classList.add('changed'); }
+        else if (landed) { void cur.tr.offsetWidth; cur.tr.lastElementChild.classList.add('landed'); }   // the model's reading has just arrived
       }
       if (body.children[i] !== cur.tr) body.insertBefore(cur.tr, body.children[i] || null);
     });
     rowEls.forEach(function (cur, id) { if (!here[id]) { cur.tr.remove(); rowEls.delete(id); } });
     first = false;
+    $('feed-wrap').classList.toggle('no-made', !state.model_column);
     $('feed-wrap').hidden = rows.length === 0;
     $('feed-empty').hidden = rows.length > 0;
     $('shown').textContent = rows.length ? 'the latest ' + rows.length : '';

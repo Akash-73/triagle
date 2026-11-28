@@ -81,7 +81,8 @@
     <section class="panel">
       <header><h2>Reports due</h2><span class="n">{{ dues|length }}</span><a class="more" href="/clock">Reporting</a></header>
       {% if dues %}
-      <div class="dues">{% for d in dues[:6] %}{{ parts.due_item(d.row, d.inc) }}{% endfor %}</div>
+      <div class="dues">{% for d in dues[:3] %}{{ parts.due_item(d.row, d.inc) }}{% endfor %}</div>
+      {% if dues|length > 3 %}<div class="body note"><a href="/clock">Show all {{ dues|length }}</a></div>{% endif %}
       {% else %}
       <div class="empty"><b>No report is due.</b>A clock starts when Triagle judges an alert to be an attack on its own evidence.</div>
       {% endif %}

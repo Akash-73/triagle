@@ -42,7 +42,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.11.1", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.11.2", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -569,7 +569,8 @@ def _tell(request, event, by, alert_id="", client="", **fields):
     result = _CACHE.get("result") or {}
     alert = next((a for a in result.get("alerts", []) if a["alert_id"] == alert_id), None) if alert_id else None
     verdict = (result.get("verdicts") or {}).get(alert_id) or {}
-    base = _base_url(request) if request is not None else os.environ.get("TRIAGLE_PUBLIC_URL", "").rstrip("/")
+    # the address people use, where one is set: work started by a scheduler arrives under the platform's own name
+    base = os.environ.get("TRIAGLE_PUBLIC_URL", "").strip().rstrip("/") or (_base_url(request) if request is not None else "")
     box = _outbox()
     box["seq"] += 1
     entry = {
@@ -3911,6 +3912,43 @@ def _short_reason(verdict):
     return first if not first or first.endswith((".", "!", "?")) else first + "."
 
 
+def _model_made(aid, alert, verdict, working, tests):
+    """What the model made of one alert, for the Live page: its second opinion
+    if it investigated, its reading of the closure if it read one, or that the
+    alert is still waiting. None where the model has no part."""
+    run = _CACHE.get("agent", {}).get(aid)
+    if run:
+        if run.get("raised") or run.get("effect") == "raise":
+            tag, words = "warn", "Sent to a person"
+        elif run.get("effect") == "overruled":
+            tag, words = "warn", "Overruled by rule"
+        elif run.get("effect") == "recommend":
+            tag, words = "", "Advice only"
+        elif run.get("agrees"):
+            tag, words = "ok", "Agrees"
+        else:
+            tag, words = "", "Not settled"
+        sub = investigator.VIEW_WORDS.get(run.get("view"), "Not settled") if run.get("usable") else "No reading"
+        if run.get("usable") and run.get("view") != "unsure" and run.get("confidence"):
+            sub += f", {run['confidence']}%"
+        if run.get("after_s") is not None:
+            wait = run["after_s"]
+            sub += f". {wait} s after arrival" if wait < 120 else f". {round(wait / 60)} min after arrival"
+        return {"state": "run", "tag": tag, "words": words, "sub": sub}
+    second = _CACHE.get("second", {}).get(aid)
+    if second and not verdict.get("escalate"):
+        look = second.get("view") == "look"
+        return {"state": "read", "tag": "warn" if look else "ok", "words": "Would look again" if look else "Agrees",
+                "sub": second.get("why") or ""}
+    if not working or alert.get("client") in tests:
+        return None
+    if verdict.get("closure_code") in spotcheck.SKIP_CODES:
+        return {"state": "under", "tag": "", "words": "", "sub": "Counted under the alert it repeats"}
+    if _is_open(verdict) or spotcheck.eligible(alert, verdict, tests):
+        return {"state": "waiting", "tag": "", "words": "", "sub": "Waiting to be read"}
+    return None
+
+
 def _live_rows(result, limit=LIVE_ROWS):
     """The alerts that arrived most recently, newest first: what the tool
     said, and what Triagle decided. It is the decision as it stands now, so a
@@ -3918,6 +3956,7 @@ def _live_rows(result, limit=LIVE_ROWS):
     by_id = {a["alert_id"]: a for a in result["alerts"]}
     arrived = _CACHE.get("arrived_at", {})
     tests = _test_clients()
+    working = _arrival_on() and investigator.enabled()
     rows = []
     for aid, _ in reversed(_CACHE.get("live_meta", [])):
         a, v = by_id.get(aid), result["verdicts"].get(aid)
@@ -3940,6 +3979,7 @@ def _live_rows(result, limit=LIVE_ROWS):
             "severity": v.get("severity") if still_open else "", "what": uc["name"], "why": why,
             "reason": _short_reason(v),
             "stands_for": (v.get("burst") or {}).get("count") or 0, "test": a.get("client") in tests,
+            "model": _model_made(aid, a, v, working, tests),
         })
         if len(rows) >= limit:
             break
@@ -3984,8 +4024,11 @@ def _live_state(result):
     return {
         "rev": _CACHE.get("rev", 0), "now": _now_iso(),
         "counts": {"received": m.get("received", 0), "closed": m.get("closed_all", 0), "open": m.get("open", 0),
-                   "by_person": m.get("resolved", 0), "cases": m.get("incident_count", 0)},
-        "rows": rows,
+                   "by_person": m.get("resolved", 0), "cases": m.get("incident_count", 0),
+                   "by_model": _arrival()["read"] + _arrival()["investigated"]},
+        "rows": rows, "model_word": genai.word(),
+        # the column for what the model made of each alert: shown once the model has a part in any of them
+        "model_column": (_arrival_on() and investigator.enabled()) or any(r["model"] for r in rows),
         "last": next((r["arrived"] for r in rows if r["arrived"]), ""),
         "test_alerts": sum(1 for a in result["alerts"] if a.get("client") in tests),
         "run": _run_summary(result, run) if run else None,

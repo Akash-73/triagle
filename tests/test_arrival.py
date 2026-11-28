@@ -417,6 +417,37 @@ def test_the_public_page_on_data_handling_says_what_the_model_reads_on_this_depl
     assert "No model is called to sort the alerts that nobody opens." in anyone.get("/security").text
 
 
+def test_the_live_page_shows_what_the_model_made_of_each_alert_as_it_lands(monkeypatch):
+    a_model(monkeypatch, reading=SUSPICIOUS, doubt=("cmd shell",))
+    c = signed_in()
+    assert send(*[e["raw"] for e in examples.EXAMPLES["wazuh"]]) == 3
+    before = c.get("/api/live").json()
+    assert before["model_column"] and before["model_word"] == "Gemini"
+    assert [r["model"]["state"] for r in before["rows"]] == ["waiting"] * 3, "arrived, decided by rule, not yet read"
+    work_until_done()
+    after = c.get("/api/live").json()
+    assert after["rev"] != before["rev"], "the page is told there is something new to draw"
+    made = {r["said"]: r["model"] for r in after["rows"]}
+    raised = made["Powershell.exe spawned a powershell process which executed a base64 encoded command"]
+    assert raised["state"] == "run" and raised["words"] == "Agrees" and raised["sub"].startswith("Suspicious, 85%. ")
+    assert raised["sub"].endswith("s after arrival")
+    agreed = made["Executable file dropped in folder commonly used by malware"]
+    assert (agreed["state"], agreed["words"], agreed["tag"]) == ("read", "Agrees", "ok") and agreed["sub"]
+    doubted = made["Suspicious Windows cmd shell execution"]
+    assert doubted["state"] == "run" and doubted["words"] == "Sent to a person" and doubted["tag"] == "warn", \
+        "the reading doubted the closure, the investigation disagreed with it, and a person now decides"
+    assert after["counts"]["by_model"] == main._arrival()["read"] + main._arrival()["investigated"] > 0
+    page = c.get("/live").text
+    assert "What Gemini made of it" in page and "read by ' + state.model_word + ' without being asked.'" in page
+    # with the work switched off and nothing read, the column is not drawn at all
+    for store in (main._CACHE, main._WORKNOTES):
+        store.clear()
+    monkeypatch.delenv("TRIAGLE_ARRIVAL")
+    send(examples.EXAMPLES["wazuh"][1]["raw"])
+    off = c.get("/api/live").json()
+    assert off["model_column"] is False and off["rows"][0]["model"] is None
+
+
 def test_an_alert_that_arrives_after_the_work_began_has_its_wait_measured(monkeypatch):
     a_model(monkeypatch)
     work_until_done()
