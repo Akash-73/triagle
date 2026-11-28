@@ -40,29 +40,34 @@ done inside a request: a Cloud Scheduler job calls `/api/work` every minute.
 One call works for up to 45 seconds and a second call that arrives meanwhile
 is told the work is already going on.
 
+One script sets it up. Run it in Cloud Shell, from the repository, after the
+deploy:
+
 ```bash
-URL=$(gcloud run services describe triagle --region us-central1 --format='value(status.url)')
-WORK_KEY=$(openssl rand -hex 24)
+bash scripts/arrival_cloud.sh                 # switch it on, with the limit that is set, else $1 a day
+DAILY_USD=3 bash scripts/arrival_cloud.sh     # the same, with a different limit for the day
+bash scripts/arrival_cloud.sh status          # what the service says about the work. Changes nothing
+bash scripts/arrival_cloud.sh off             # stop the work. What was read and investigated stays
+```
 
+It makes a key for the work and keeps it in Secret Manager, sets the three
+settings on the service as one new revision, makes the scheduler job, and
+then asks the service to work once and prints what it answered. Each step is
+safe to run again, and the key is never printed. By hand it is:
+
+```bash
 gcloud run services update triagle --region us-central1 \
-  --update-env-vars "TRIAGLE_ARRIVAL=on,TRIAGLE_ARRIVAL_DAILY_USD=1.00,TRIAGLE_WORK_KEY=$WORK_KEY"
-
-gcloud services enable cloudscheduler.googleapis.com
+  --update-env-vars "TRIAGLE_ARRIVAL=on,TRIAGLE_ARRIVAL_DAILY_USD=1.00" \
+  --update-secrets "TRIAGLE_WORK_KEY=triagle-work-key:latest"
 gcloud scheduler jobs create http triagle-work --location us-central1 \
   --schedule "* * * * *" --uri "$URL/api/work" --http-method POST \
   --headers "X-Triagle-Key=$WORK_KEY" --attempt-deadline 180s
 ```
 
-The key is made and used in one shell and is never printed. To change it, run
-the two commands again with `jobs update http` and `--update-headers`.
-
 What it costs is on the Overview, counted by job from the token counts the
 API reports. As a guide, a batch of ten closures is one short call and an
 investigation is four to six calls. The first day is the most expensive,
 because every alert already in the queue is read once.
-
-To stop it: `gcloud scheduler jobs pause triagle-work --location us-central1`,
-or set `TRIAGLE_ARRIVAL=off`. What was read and investigated stays.
 
 On a host that does not throttle (a VM, a laptop) no scheduler is needed:
 `TRIAGLE_ARRIVAL_THREAD=on` does the same work from a thread every
