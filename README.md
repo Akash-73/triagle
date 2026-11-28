@@ -484,6 +484,30 @@ author, so it is a regression check on known attack shapes, not evidence of
 accuracy in a real environment. The measurement that matters is a live feed. The model backends are covered by stubbed
 tests only; no live model run is included in these numbers.
 
+### Speed
+
+```bash
+python -m eval.replay_speed         # about a minute; no model and no network
+```
+
+A replay of the Wazuh-shaped set under new ids, on a two-core container, one process:
+
+| | |
+|---|---|
+| The rules alone | about 3,500 to 4,400 alerts a second, under a third of a millisecond each |
+| The console's intake, batches of 20 into a queue at its limit | 60 alerts a second, about 5 million a day |
+| One alert at a time into a full queue | about 400 ms each, about 220,000 a day |
+| Memory | about 100 MB |
+
+What limits intake is that the queue is worked out again from everything held whenever
+a batch arrives, so that a later alert can change an earlier verdict. That is one
+process's ceiling, and one deployment is one process today. For scale: 100,000 alerts
+a month from one customer is about two a minute. No verdict waits on the model; the
+model's work is queued behind the verdict and has its own budget.
+
+What this does not show: the figures are for the machine the replay ran on, not for a
+deployment, and a replay of 68 alert shapes is kinder to caches than a real feed.
+
 ## Quick start
 
 ```bash
