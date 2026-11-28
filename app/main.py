@@ -3670,16 +3670,23 @@ def _arrival_step(request):
         if spent >= cap or time.time() < a["pause_until"]:
             return None
         need, look, read, _mix = _arrival_pending(result)
-        if spent >= cap * ARRIVAL_BACKLOG_SHARE:     # what is left of today is for alerts that arrive today
-            is_new = _arrival_new(a)
-            need, look = [i for i in need if is_new(i)], [i for i in look if is_new(i)]
-            read = {c: ids for c, ids in ((c, [i for i in ids if is_new(i)]) for c, ids in read.items()) if ids}
+        is_new = _arrival_new(a)
+        only = lambda ids, new: [i for i in ids if is_new(i) == new]
+        # Alerts that arrived since the work began come first: those for a person, then the closures.
+        run = only(need, True) + only(look, True)
+        batch = {c: ids for c, ids in ((c, only(ids, True)) for c, ids in read.items()) if ids}
+        if not run and not batch and spent < cap * ARRIVAL_BACKLOG_SHARE:
+            # Then the alerts that were already here, within their share of the day: an investigation
+            # and a batch of closures in turn, so neither waits for the other to finish.
+            run = only(need, False) + only(look, False)
+            batch = {c: ids for c, ids in ((c, only(ids, False)) for c, ids in read.items()) if ids}
+            if run and batch:
+                a["turn"] = a.get("turn", 0) + 1
+                run, batch = (run, {}) if a["turn"] % 2 else ([], batch)
         tried = dict(a["tried"])
-    if need:
-        return _arrival_investigate(request, need[0])
-    if look:
-        return _arrival_investigate(request, look[0])
-    for client, ids in read.items():                 # the customer whose alert arrived last
+    if run:
+        return _arrival_investigate(request, run[0])
+    for client, ids in batch.items():                # the customer whose alert arrived last
         fresh = [i for i in ids if not tried.get(i)]
         # a batch whose answer could not be used is asked about again a few at a time,
         # so one alert the model cannot answer for does not take nine others with it

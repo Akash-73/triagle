@@ -251,13 +251,28 @@ def test_the_days_budget_stops_the_work_and_midnight_in_india_starts_it_again(mo
     assert "paused" in page and "budget is spent" in page
     main._arrival()["day"] = "2026-11-27"                                    # yesterday, in India
     out = main.arrival_work()
-    assert len(out["did"]) == 1 and len(calls["seen"]) > asked
+    assert len(out["did"]) >= 1 and len(calls["seen"]) > asked
     assert out["usd"] > out["today_usd"], "the running total is kept; the day starts again"
+
+
+def test_the_alerts_that_were_already_here_are_investigated_and_read_in_turn(monkeypatch):
+    """Switched on over a week of alerts on 28 November, the work spent its first
+    hour on investigations alone, and nothing said what reading a closure cost."""
+    a_model(monkeypatch)
+    did = []
+    for _ in range(6):
+        out = main.arrival_work(seconds=0.001)                               # one piece a round
+        did += out["did"]
+    kinds = ["read" if d.startswith("read") else "investigated" for d in did]
+    assert kinds[:4] == ["investigated", "read", "investigated", "read"], kinds
+    # an alert that arrives now goes ahead of both
+    assert send(examples.EXAMPLES["wazuh"][0]["raw"]) == 1
+    assert "Powershell.exe" in main.arrival_work(seconds=0.001)["did"][0]
 
 
 def test_a_backlog_never_takes_the_whole_day_so_a_new_alert_does_not_wait(monkeypatch):
     calls = a_model(monkeypatch)
-    monkeypatch.setenv("TRIAGLE_ARRIVAL_DAILY_USD", str(ONE_CALL * 10))       # six calls' worth for what was already here
+    monkeypatch.setenv("TRIAGLE_ARRIVAL_DAILY_USD", str(ONE_CALL * 12))       # seven calls' worth for what was already here
     out = work_until_done()
     assert 0 < out["investigated"] < len(sorted_queue()[1]), "the backlog stopped part of the way"
     assert out["cap_usd"] * main.ARRIVAL_BACKLOG_SHARE <= out["today_usd"] < out["cap_usd"]
