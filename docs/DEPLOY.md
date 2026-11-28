@@ -33,6 +33,7 @@ close one.
 | `TRIAGLE_ARRIVAL=on` | Switches the work on. |
 | `TRIAGLE_ARRIVAL_DAILY_USD` | What this work may spend in a day, India time. Default `1.00`. At the limit it stops until midnight. The alerts that were already in the queue when the work began may use six tenths of it; the rest is kept for alerts that arrive that day, so a backlog never makes a new alert wait. |
 | `TRIAGLE_WORK_KEY` | A key for `/api/work`, at least 16 characters. The intake key works too; a key of its own means the scheduler does not hold the key that can send alerts in. |
+| `TRIAGLE_ARRIVAL_TESTS=on` | Test streams sent from the Live page are read and investigated too, so a demonstration shows the model at work. What that costs is counted apart and is in no measured figure. Off by default. |
 | `TRIAGLE_ARRIVAL_BATCH` | Closures read in one call. Default `10`. |
 | `TRIAGLE_ARRIVAL_THINKING` | How long the model thinks on a batch of closures: `minimal`, `low` (default), `medium`, `high`. |
 | `TRIAGLE_ARRIVAL_SECONDS` | How long one call to `/api/work` keeps starting new pieces of work. Default `45`. |
@@ -40,7 +41,9 @@ close one.
 Cloud Run gives a service CPU only while it answers a request, so the work is
 done inside a request: a Cloud Scheduler job calls `/api/work` every minute.
 One call works for up to 45 seconds and a second call that arrives meanwhile
-is told the work is already going on.
+is told the work is already going on. While a signed-in analyst has the Live
+page open, that page starts the work at once, so an alert they are watching
+does not wait for the scheduler's next minute.
 
 One script sets it up. Run it in Cloud Shell, from the repository, after the
 deploy:

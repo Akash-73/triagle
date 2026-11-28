@@ -448,6 +448,47 @@ def test_the_live_page_shows_what_the_model_made_of_each_alert_as_it_lands(monke
     assert off["model_column"] is False and off["rows"][0]["model"] is None
 
 
+def test_a_test_stream_is_read_too_when_asked_and_what_it_costs_is_in_no_measured_figure(monkeypatch):
+    calls = a_model(monkeypatch)
+    monkeypatch.setenv("TRIAGLE_DEMO", "true")
+    before = work_until_done()                                               # the samples, read and investigated
+    stream = demo_attack.fresh_benign() + demo_attack.fresh_attack()
+    assert send(*[i["raw"] for i in stream[:1]], client=demo_attack.DEFAULT_CLIENT, source=stream[0]["source"]) == 1
+    c = signed_in()
+    assert c.get("/api/live").json()["rows"][0]["model"] is None, "a test stream is left alone unless asked"
+    assert work_until_done()["did"] == []
+    monkeypatch.setenv("TRIAGLE_ARRIVAL_TESTS", "on")
+    for item in stream[1:]:
+        assert send(item["raw"], client=demo_attack.DEFAULT_CLIENT, source=item["source"]) == 1
+    rows = c.get("/api/live").json()["rows"]
+    assert all(r["test"] for r in rows) and "waiting" in {(r["model"] or {}).get("state") for r in rows}
+    asked = len(calls["seen"])
+    out = work_until_done()
+    assert len(calls["seen"]) > asked and out["tests"] >= len(stream) - 1 and out["usd_tests"] > 0
+    # nothing measured moved: not the counts, not the cost of a closure or an investigation, not the mix
+    for k in ("read", "reads", "investigated", "accounts", "raised", "usd_read", "usd_investigate", "usd_account",
+              "usd_one_investigation", "covered", "mix", "stream", "typical_wait_s"):
+        assert out[k] == before[k], k
+    assert out["usd"] == pytest.approx(before["usd"] + out["usd_tests"], abs=1e-3), "the total spent says all of it"
+    assert main._arrival()["waits"] == [], "a test stream's wait is not a feed's"
+    rows = c.get("/api/live").json()["rows"]
+    states = {(r["model"] or {}).get("state") for r in rows}
+    assert states <= {"run", "read", "under"} and "run" in states, states
+    assert any("after arrival" in r["model"]["sub"] for r in rows if r["model"]["state"] == "run")
+    # an analyst's Live page starts the work at once; a guest's does not, and a guest could not
+    assert "var canNudge = true" in c.get("/live").text
+    monkeypatch.setenv("TRIAGLE_GUEST", "view")
+    guest = TestClient(main.app)
+    assert "var canNudge = false" in guest.get("/live").text and guest.post("/api/work", json={}).status_code == 401
+    # clearing the test alerts takes what the model made of them along
+    ids = {r["id"] for r in rows}
+    assert ids & (set(main._CACHE["agent"]) | set(main._CACHE["second"]))
+    token = re.search(r'name="csrf" value="([0-9a-f]+)"', c.get("/live").text).group(1)
+    assert c.post("/demo/reset", data={"csrf": token, "next": "live"}, follow_redirects=False).status_code == 303
+    kept = set(main._CACHE["agent"]) | set(main._CACHE["second"]) | set(main._arrival()["done"]) | set(main._arrival()["notes"])
+    assert not ids & kept and kept, "the customers' own records stay"
+
+
 def test_an_alert_that_arrives_after_the_work_began_has_its_wait_measured(monkeypatch):
     a_model(monkeypatch)
     work_until_done()

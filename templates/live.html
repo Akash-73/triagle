@@ -257,6 +257,23 @@
   setInterval(poll, 2000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
 
+  // ---- while an analyst watches, the model's work starts at once ---------------------------
+  // A scheduler starts it every minute whether or not anyone is looking. With this page open in
+  // front of a signed-in analyst, an alert that is waiting to be read does not wait for that minute.
+  var canNudge = {{ can_nudge|tojson }}, nudging = false, notBefore = 0;
+  function nudge() {
+    if (!canNudge || nudging || document.hidden || Date.now() < notBefore) return;
+    if (!state.rows.some(function (r) { return r.model && r.model.state === 'waiting'; })) return;
+    nudging = true;
+    fetch('/api/work', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csrf: csrf }) })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      // nothing was done: the day's budget is spent, the model is not answering, or a round is already going on. Ask again in half a minute.
+      .then(function (j) { if (!j || !j.did || !j.did.length) notBefore = Date.now() + 30000; })
+      .catch(function () { notBefore = Date.now() + 30000; })
+      .then(function () { nudging = false; });
+  }
+  setInterval(nudge, 3000);
+
   // ---- sending a test stream ------------------------------------------------------------
   var form = $('send');
   if (!form || !canTest) return;

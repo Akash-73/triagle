@@ -42,7 +42,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.11.2", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.11.3", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -811,6 +811,12 @@ def _drop_live(keep=lambda item: False):
             if not keep(x):
                 _CACHE["seen_ids"].discard(m[0])
                 removed_from.add(x.get("client"))
+                # what the model made of a removed alert goes with it: a test stream sent again
+                # at the same second of another day would otherwise look already read
+                for name in ("second", "agent", "bare"):
+                    _CACHE.get(name, {}).pop(m[0], None)
+                for name in ("tried", "done", "notes"):
+                    (_CACHE.get("arrival") or {}).get(name, {}).pop(m[0], None)
         _CACHE["live"] = [x for x, _ in pairs]
         _CACHE["live_meta"] = [m for _, m in pairs]
         still = {m[0] for _, m in pairs}
@@ -3280,6 +3286,8 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
 #   TRIAGLE_ARRIVAL_SECONDS    how long one /api/work call keeps starting new pieces (default 45)
 #   TRIAGLE_ARRIVAL_THINKING   how long the model thinks on a batch read: minimal | low | medium | high (default low)
 #   TRIAGLE_WORK_KEY           a key for /api/work, at least 16 characters. The intake key works too.
+#   TRIAGLE_ARRIVAL_TESTS      on = test streams are read and investigated too, so a demonstration shows the
+#                              model at work. What that costs is counted apart and is in no measured figure.
 #   TRIAGLE_ARRIVAL_THREAD     on = also work from a thread, every TRIAGLE_ARRIVAL_EVERY seconds (default 30)
 #   TRIAGLE_PUBLIC_URL         this console's address, for links in what the work writes back to the SIEM
 
@@ -3294,8 +3302,8 @@ ARRIVAL_NOTES_KEEP = 300        # accounts written on arrival that are kept acro
 ARRIVAL_WAITS_KEEP = 200        # recent waits the typical wait is taken from
 WORK_KEY = os.environ.get("TRIAGLE_WORK_KEY", "")
 _ARRIVAL_BUSY = threading.Lock()
-_ARRIVAL_COUNTS = ("reads", "read", "looks", "investigated", "raised", "accounts", "failed")
-_ARRIVAL_MONEY = ("usd_read", "usd_investigate", "usd_account")
+_ARRIVAL_COUNTS = ("reads", "read", "looks", "investigated", "raised", "accounts", "failed", "tests")
+_ARRIVAL_MONEY = ("usd_read", "usd_investigate", "usd_account", "usd_tests")
 
 
 def _on(name):
@@ -3315,6 +3323,12 @@ def _arrival_num(name, default, low, high):
 
 def _arrival_cap():
     return _arrival_num("TRIAGLE_ARRIVAL_DAILY_USD", 1.0, 0.0, 100.0)
+
+
+def _arrival_left_out():
+    """Customers whose alerts this work leaves alone: the test streams, unless
+    TRIAGLE_ARRIVAL_TESTS=on asks for them to be shown the same care."""
+    return set() if _on("TRIAGLE_ARRIVAL_TESTS") else _test_clients()
 
 
 def _arrival_batch():
@@ -3387,9 +3401,11 @@ def _arrival_pending(result):
     that of the alerts it sent; the samples loaded with the product are read
     and investigated like any other alert, and are not counted in the mix."""
     a = _arrival()
-    skip, tried, done = _test_clients(), a["tried"], a["done"]
+    skip, tests, tried, done = _arrival_left_out(), _test_clients(), a["tried"], a["done"]
     second, runs = _CACHE.get("second", {}), _CACHE.get("agent", {})
     order = {m[0]: i for i, m in enumerate(_CACHE.get("live_meta", []))}
+    # the alerts a connected tool sent; a test stream is not a connected tool
+    sent = {al["alert_id"] for al in result["alerts"] if al["alert_id"] in order and al.get("client") not in tests}
     need, look, read = [], [], {}
     mix = {"total": 0, "own": 0, "raised": 0, "repeats": 0, "by_people": 0, "gave_up": 0}
     for al in sorted(result["alerts"], key=lambda x: order.get(x["alert_id"], -1), reverse=True):
@@ -3397,7 +3413,8 @@ def _arrival_pending(result):
         if al.get("client") in skip:
             continue
         v = result["verdicts"].get(aid) or {}
-        n = 1 if (aid in order or not order) else 0   # counted in the mix?
+        # counted in the mix? What the tools sent; with no tool connected, the samples
+        n = 1 if aid in sent or (not sent and aid not in order) else 0
         mix["total"] += n
         if v.get("escalate"):
             mix["raised"] += n
@@ -3442,7 +3459,7 @@ def _arrival_view(result=None):
         a = _arrival()
         today, cap = _arrival_day(a), _arrival_cap()
         need, look, read, mix = _arrival_pending(result)
-        usd = sum(a[k] for k in _ARRIVAL_MONEY)
+        usd = sum(a[k] for k in _ARRIVAL_MONEY)             # everything this work spent, test streams included
         on, model = _arrival_on(), investigator.enabled()
         is_new = _arrival_new(a)
         to_do = need + look + [i for ids in read.values() for i in ids]
@@ -3496,10 +3513,11 @@ def _arrival_spent(kind, usd):
     return a
 
 
-def _arrival_waited(a, alert_ids):
+def _arrival_waited(a, alert_ids, keep=True):
     """Note how long these alerts waited between arriving and being read.
     Only an alert that arrived after this work began says anything about it.
-    Returns the wait of the last one, in seconds, or None."""
+    Returns the wait of the last one, in seconds, or None. keep=False works
+    it out without counting it: a test stream's wait is not a feed's."""
     arrived, now, wait = _CACHE.get("arrived_at", {}), datetime.datetime.now(datetime.timezone.utc), None
     for aid in alert_ids:
         at = arrived.get(aid)
@@ -3510,7 +3528,8 @@ def _arrival_waited(a, alert_ids):
         except ValueError:
             continue
         wait = max(0, int((now - then).total_seconds()))
-        a["waits"].append(wait)
+        if keep:
+            a["waits"].append(wait)
     del a["waits"][:-ARRIVAL_WAITS_KEEP]
     return wait
 
@@ -3560,10 +3579,11 @@ def _arrival_account(alert_id):
         notes = worknotes.alert_notes(alert, verdict, steps, house=house, intel=osint.lines(_addresses([alert])))
         _WORKNOTES[key] = notes
         _NOTES_AT[key] = time.time()
+    test = alert.get("client") in _test_clients()
     with _LOCK:
-        a = _arrival_spent("usd_account", genai.cost_since(point)[1])
+        a = _arrival_spent("usd_tests" if test else "usd_account", genai.cost_since(point)[1])
         if notes[1]:
-            a["accounts"] += 1
+            a["accounts"] += 0 if test else 1
             a["notes"][alert_id] = {"k": [key[2], key[3]], "text": notes[0], "provider": notes[2], "at": _now_iso()}
             for old in list(a["notes"])[:-ARRIVAL_NOTES_KEEP]:
                 a["notes"].pop(old, None)
@@ -3582,7 +3602,7 @@ def _arrival_investigate(request, alert_id):
         verdict = dict(result["verdicts"].get(alert_id) or {})
         earlier = _CACHE.get("agent", {}).get(alert_id)
         case = investigator.Case(alert, result["alerts"], house=_house(result, alert.get("client")))
-    title = alert.get("title") or alert_id
+    title, test = alert.get("title") or alert_id, alert.get("client") in _test_clients()
     lock = _notes_lock(("agent", alert_id))
     if not lock.acquire(blocking=False):             # a person is running it on the page right now
         with _LOCK:
@@ -3598,7 +3618,7 @@ def _arrival_investigate(request, alert_id):
     usd = genai.cost_since(point)[1]
     if not final or not final.get("usable"):
         with _LOCK:
-            _arrival_spent("usd_investigate", usd)
+            _arrival_spent("usd_tests" if test else "usd_investigate", usd)
             _arrival_failed([alert_id])
         audit.record("second opinion on arrival gave no reading", ARRIVAL_NAME, alert_id=alert_id, cost_usd=usd,
                      error=genai.STATUS.get("error") if genai.STATUS.get("ok") is False else None)
@@ -3606,12 +3626,14 @@ def _arrival_investigate(request, alert_id):
     rec = _agent_record(final, alert, verdict, ARRIVAL_NAME, earlier)
     rec["auto"] = True
     with _LOCK:
-        a = _arrival_spent("usd_investigate", usd)
-        a["investigated"] += 1
+        a = _arrival_spent("usd_tests" if test else "usd_investigate", usd)
         a["done"][alert_id] = 1
-        if rec["effect"] == "raise":
-            a["raised"] += 1
-        wait = _arrival_waited(a, [alert_id])
+        if test:
+            a["tests"] += 1
+        else:
+            a["investigated"] += 1
+            a["raised"] += 1 if rec["effect"] == "raise" else 0
+        wait = _arrival_waited(a, [alert_id], keep=not test)
         if wait is not None:
             rec["after_s"] = wait
     _keep_run(request, alert_id, rec, earlier)
@@ -3638,16 +3660,20 @@ def _arrival_read(client, alert_ids):
     usd = genai.cost_since(point)[1]
     at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     looks = sum(1 for v in found.values() if v["view"] == "look")
+    test = client in _test_clients()
     with _LOCK:
-        a = _arrival_spent("usd_read", usd)
+        a = _arrival_spent("usd_tests" if test else "usd_read", usd)
         for aid, view in found.items():
             _CACHE["second"][aid] = {**view, "at": at, "by": provider or "Gemini", "auto": True}
         missed = [al["alert_id"] for al, _v in rows if al["alert_id"] not in found]
-        if found:
+        if found and test:
+            a["tests"] += len(found)
+        elif found:
             a["reads"] += 1
             a["read"] += len(found)
             a["looks"] += looks
             _arrival_waited(a, list(found))
+        if found:
             for aid in missed:                       # asked about and not answered: once more, then left alone
                 a["tried"][aid] = a["tried"].get(aid, 0) + 1
             _CACHE["rev"] = _CACHE.get("rev", 0) + 1
@@ -3672,18 +3698,21 @@ def _arrival_step(request):
             return None
         need, look, read, _mix = _arrival_pending(result)
         is_new = _arrival_new(a)
-        only = lambda ids, new: [i for i in ids if is_new(i) == new]
-        # Alerts that arrived since the work began come first: those for a person, then the closures.
-        run = only(need, True) + only(look, True)
-        batch = {c: ids for c, ids in ((c, only(ids, True)) for c, ids in read.items()) if ids}
-        if not run and not batch and spent < cap * ARRIVAL_BACKLOG_SHARE:
-            # Then the alerts that were already here, within their share of the day: an investigation
-            # and a batch of closures in turn, so neither waits for the other to finish.
-            run = only(need, False) + only(look, False)
-            batch = {c: ids for c, ids in ((c, only(ids, False)) for c, ids in read.items()) if ids}
+
+        def waiting(new):
+            """(alerts to investigate, closures to read) among the new alerts or the old ones. Where
+            there are both, an investigation and a batch of closures take turns: an investigation is
+            the more urgent, and a batch is ten alerts answered in the time of a quarter of one."""
+            run = [i for i in need + look if is_new(i) == new]
+            batch = {c: ids for c, ids in ((c, [i for i in ids if is_new(i) == new]) for c, ids in read.items()) if ids}
             if run and batch:
                 a["turn"] = a.get("turn", 0) + 1
-                run, batch = (run, {}) if a["turn"] % 2 else ([], batch)
+                return (run, {}) if a["turn"] % 2 else ([], batch)
+            return run, batch
+
+        run, batch = waiting(True)                   # alerts that arrived since the work began come first
+        if not run and not batch and spent < cap * ARRIVAL_BACKLOG_SHARE:
+            run, batch = waiting(False)              # then the ones that were already here, within their share of the day
         tried = dict(a["tried"])
     if run:
         return _arrival_investigate(request, run[0])
@@ -3940,11 +3969,11 @@ def _model_made(aid, alert, verdict, working, tests):
         look = second.get("view") == "look"
         return {"state": "read", "tag": "warn" if look else "ok", "words": "Would look again" if look else "Agrees",
                 "sub": second.get("why") or ""}
-    if not working or alert.get("client") in tests:
+    if not working or alert.get("client") in _arrival_left_out():
         return None
     if verdict.get("closure_code") in spotcheck.SKIP_CODES:
         return {"state": "under", "tag": "", "words": "", "sub": "Counted under the alert it repeats"}
-    if _is_open(verdict) or spotcheck.eligible(alert, verdict, tests):
+    if _is_open(verdict) or spotcheck.eligible(alert, verdict, ()):
         return {"state": "waiting", "tag": "", "words": "", "sub": "Waiting to be read"}
     return None
 
@@ -4046,6 +4075,8 @@ def live_page(request: Request, user=Depends(require_user)):
     return templates.TemplateResponse(request, "live.html", _ctx(
         request, user, active="live", state=_live_state(result), demo_on=_demo_on(),
         can_test=_demo_on() and user["role"] == "analyst", streams=TEST_STREAMS, stream_counts=counts,
+        # while an analyst watches, the model's work is started at once and not at the scheduler's next minute
+        can_nudge=_keeps(user) and _arrival_on() and investigator.enabled(),
         scenarios={k: demo_attack.SCENARIOS[k] for k in keep}, default_scenario=_scenario(""),
         sources=_source_strip(result), poll=False))
 
