@@ -255,6 +255,25 @@ def test_the_days_budget_stops_the_work_and_midnight_in_india_starts_it_again(mo
     assert out["usd"] > out["today_usd"], "the running total is kept; the day starts again"
 
 
+def test_a_backlog_never_takes_the_whole_day_so_a_new_alert_does_not_wait(monkeypatch):
+    calls = a_model(monkeypatch)
+    monkeypatch.setenv("TRIAGLE_ARRIVAL_DAILY_USD", str(ONE_CALL * 10))       # six calls' worth for what was already here
+    out = work_until_done()
+    assert 0 < out["investigated"] < len(sorted_queue()[1]), "the backlog stopped part of the way"
+    assert out["cap_usd"] * main.ARRIVAL_BACKLOG_SHARE <= out["today_usd"] < out["cap_usd"]
+    assert "already here" in out["paused"] and "New alerts are still read" in out["paused"]
+    asked = len(calls["seen"])
+    assert send(examples.EXAMPLES["wazuh"][1]["raw"]) == 1                    # a closure arrives now
+    out = main.arrival_work()
+    assert out["did"] == ["read 1 closure"] and len(calls["seen"]) == asked + 1
+    r = main._load_result()
+    new = next(a for a in r["alerts"] if a["client"] == BANK)
+    assert main._CACHE["second"][new["alert_id"]]["auto"], "the new alert was read out of the share kept for today"
+    assert out["waiting"]["need"] > 0 and "already here" in out["paused"], "the backlog still waits for tomorrow"
+    main._arrival()["day"] = "2026-11-27"
+    assert len(main.arrival_work()["did"]) >= 1, "and goes on the next day"
+
+
 def test_a_model_that_does_not_answer_pauses_the_work_and_no_alert_is_blamed(monkeypatch):
     a_model(monkeypatch, answers=False)
     out = main.arrival_work()

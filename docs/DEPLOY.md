@@ -29,7 +29,7 @@ close one.
 | Setting | What it does |
 |---|---|
 | `TRIAGLE_ARRIVAL=on` | Switches the work on. |
-| `TRIAGLE_ARRIVAL_DAILY_USD` | What this work may spend in a day, India time. Default `1.00`. At the limit it stops until midnight. |
+| `TRIAGLE_ARRIVAL_DAILY_USD` | What this work may spend in a day, India time. Default `1.00`. At the limit it stops until midnight. The alerts that were already in the queue when the work began may use six tenths of it; the rest is kept for alerts that arrive that day, so a backlog never makes a new alert wait. |
 | `TRIAGLE_WORK_KEY` | A key for `/api/work`, at least 16 characters. The intake key works too; a key of its own means the scheduler does not hold the key that can send alerts in. |
 | `TRIAGLE_ARRIVAL_BATCH` | Closures read in one call. Default `10`. |
 | `TRIAGLE_ARRIVAL_THINKING` | How long the model thinks on a batch of closures: `minimal`, `low` (default), `medium`, `high`. |

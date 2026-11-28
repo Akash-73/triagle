@@ -237,8 +237,10 @@ The Overview shows what was done and what it cost, by job, from the token counts
 API reports: closures read, alerts investigated, the typical wait after an alert
 arrives, the spend so far and today, and the cost of 1,000 alerts of the feed's own
 mix. The work stops for the day at `TRIAGLE_ARRIVAL_DAILY_USD` (default 1 US dollar)
-and starts again at midnight, India time. If the model does not answer, Triagle waits
-ten minutes; verdicts never wait on it.
+and starts again at midnight, India time. Alerts that were already in the queue when
+the work began may use six tenths of a day's budget; the rest is kept for alerts that
+arrive that day. If the model does not answer, Triagle waits ten minutes; verdicts
+never wait on it.
 
 On Cloud Run the work is done inside `POST /api/work`, which a Cloud Scheduler job
 calls every minute ([docs/DEPLOY.md](docs/DEPLOY.md)). Nothing here changes how a
@@ -424,7 +426,7 @@ each client, and an Indian hosting region. To report a problem, see
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 494 tests, no network or key needed
+python -m pytest -q                 # 495 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```

@@ -2909,7 +2909,9 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
 #
 # Settings
 #   TRIAGLE_ARRIVAL            on | off (default off)
-#   TRIAGLE_ARRIVAL_DAILY_USD  what this work may spend in a day, India time (default 1.00)
+#   TRIAGLE_ARRIVAL_DAILY_USD  what this work may spend in a day, India time (default 1.00). The alerts that
+#                              were in the queue before the work began may use six tenths of it; the rest is
+#                              kept for alerts that arrive that day, so a backlog never makes a new alert wait
 #   TRIAGLE_ARRIVAL_BATCH      closures read in one call (default 10)
 #   TRIAGLE_ARRIVAL_SECONDS    how long one /api/work call keeps starting new pieces (default 45)
 #   TRIAGLE_ARRIVAL_THINKING   how long the model thinks on a batch read: minimal | low | medium | high (default low)
@@ -2920,6 +2922,7 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
 ARRIVAL_NAME = "Triagle, on arrival"
 ARRIVAL_TRIES = 2               # answers that could not be used, before an alert is left alone
 ARRIVAL_AGAIN = 3               # closures to a call when a batch is asked about a second time
+ARRIVAL_BACKLOG_SHARE = 0.6     # of a day's budget, the most the alerts that were already here may use
 ARRIVAL_PAUSE = 600             # seconds to wait after the model did not answer at all
 ARRIVAL_READS_ENOUGH = 20       # closures read before a cost for one is shown
 ARRIVAL_RUNS_ENOUGH = 5         # investigations before a cost for one is shown
@@ -3061,6 +3064,13 @@ def _arrival_pending(result):
     return need, look, read, mix
 
 
+def _arrival_new(a):
+    """A test for alert ids: did this alert arrive after the work began? The
+    ones that were already here are the backlog."""
+    arrived, since = _CACHE.get("arrived_at", {}), a["since"]
+    return lambda aid: bool(since and arrived.get(aid, "") >= since)
+
+
 def _arrival_view(result=None):
     """What the pages and /api/arrival say about the work done on arrival."""
     with _LOCK:
@@ -3070,6 +3080,8 @@ def _arrival_view(result=None):
         need, look, read, mix = _arrival_pending(result)
         usd = sum(a[k] for k in _ARRIVAL_MONEY)
         on, model = _arrival_on(), investigator.enabled()
+        is_new = _arrival_new(a)
+        to_do = need + look + [i for ids in read.values() for i in ids]
         paused = None
         if on and not model:
             paused = "No model is connected."
@@ -3077,6 +3089,9 @@ def _arrival_view(result=None):
             paused = "Today's budget is spent. The work starts again at midnight, India time."
         elif on and time.time() < a["pause_until"]:
             paused = "The model did not answer. Triagle waits ten minutes before it asks again."
+        elif on and to_do and today >= cap * ARRIVAL_BACKLOG_SHARE and not any(is_new(i) for i in to_do):
+            paused = ("The alerts that were already here have used their share of today's budget and go on at "
+                      "midnight, India time. New alerts are still read as they arrive.")
         # what one closure and one investigation cost, from what was spent on them, failures included
         one_read = a["usd_read"] / a["read"] if a["read"] >= ARRIVAL_READS_ENOUGH else None
         one_run = ((a["usd_investigate"] + a["usd_account"]) / a["investigated"]
@@ -3279,9 +3294,14 @@ def _arrival_step(request):
     with _LOCK:
         result = _load_result()
         a = _arrival()
-        if _arrival_day(a) >= _arrival_cap() or time.time() < a["pause_until"]:
+        spent, cap = _arrival_day(a), _arrival_cap()
+        if spent >= cap or time.time() < a["pause_until"]:
             return None
         need, look, read, _mix = _arrival_pending(result)
+        if spent >= cap * ARRIVAL_BACKLOG_SHARE:     # what is left of today is for alerts that arrive today
+            is_new = _arrival_new(a)
+            need, look = [i for i in need if is_new(i)], [i for i in look if is_new(i)]
+            read = {c: ids for c, ids in ((c, [i for i in ids if is_new(i)]) for c, ids in read.items()) if ids}
         tried = dict(a["tried"])
     if need:
         return _arrival_investigate(request, need[0])
