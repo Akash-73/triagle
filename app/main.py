@@ -10,6 +10,7 @@ Triagle — triage, decided.
 """
 import atexit
 import contextvars
+import hashlib
 import os
 import json
 import time
@@ -42,7 +43,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.11.3", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.11.4", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -3295,6 +3296,8 @@ ARRIVAL_NAME = "Triagle, on arrival"
 ARRIVAL_TRIES = 2               # answers that could not be used, before an alert is left alone
 ARRIVAL_AGAIN = 3               # closures to a call when a batch is asked about a second time
 ARRIVAL_BACKLOG_SHARE = 0.6     # of a day's budget, the most the alerts that were already here may use
+ARRIVAL_SAME_DAYS = 7           # how long an investigation that agreed with a closure stands for others of its kind
+ARRIVAL_KINDS_KEEP = 500        # kinds of closure remembered
 ARRIVAL_PAUSE = 600             # seconds to wait after the model did not answer at all
 ARRIVAL_READS_ENOUGH = 20       # closures read before a cost for one is shown
 ARRIVAL_RUNS_ENOUGH = 5         # investigations before a cost for one is shown
@@ -3302,7 +3305,7 @@ ARRIVAL_NOTES_KEEP = 300        # accounts written on arrival that are kept acro
 ARRIVAL_WAITS_KEEP = 200        # recent waits the typical wait is taken from
 WORK_KEY = os.environ.get("TRIAGLE_WORK_KEY", "")
 _ARRIVAL_BUSY = threading.Lock()
-_ARRIVAL_COUNTS = ("reads", "read", "looks", "investigated", "raised", "accounts", "failed", "tests")
+_ARRIVAL_COUNTS = ("reads", "read", "looks", "same", "investigated", "raised", "accounts", "failed", "tests")
 _ARRIVAL_MONEY = ("usd_read", "usd_investigate", "usd_account", "usd_tests")
 
 
@@ -3351,6 +3354,7 @@ def _arrival():
     a.setdefault("tried", {})       # alert id -> answers that could not be used
     a.setdefault("done", {})        # alert id -> 1, investigated here (a kept run can age out; this does not)
     a.setdefault("notes", {})       # alert id -> the account written here
+    a.setdefault("kinds", {})       # a kind of closure -> the investigation that agreed with one of them
     a.setdefault("waits", [])       # seconds between an alert arriving and the model reading it
     a.setdefault("since", None)
     a.setdefault("last", None)
@@ -3373,11 +3377,13 @@ def _arrival_restore(saved):
         notes = {str(k): {"k": [bool(v["k"][0]), v["k"][1]], "text": str(v["text"]), "provider": str(v["provider"]),
                           "at": str(v["at"])}
                  for k, v in list((saved.get("notes") or {}).items())[-ARRIVAL_NOTES_KEEP:]}
+        kinds = {str(k): {"alert": str(v["alert"]), "at": str(v["at"])}
+                 for k, v in list((saved.get("kinds") or {}).items())[-ARRIVAL_KINDS_KEEP:]}
     except (TypeError, ValueError, AttributeError, KeyError, IndexError):
         return
     a.update(counts)
     a.update(money)
-    a.update(tried=tried, done=done, waits=waits, notes=notes, day=str(saved.get("day") or ""),
+    a.update(tried=tried, done=done, waits=waits, notes=notes, kinds=kinds, day=str(saved.get("day") or ""),
              since=str(saved["since"]) if saved.get("since") else None,
              last=saved["last"] if isinstance(saved.get("last"), dict) else None)
 
@@ -3439,7 +3445,8 @@ def _arrival_pending(result):
         if tried.get(aid, 0) >= ARRIVAL_TRIES:
             mix["gave_up"] += n
         elif (second.get(aid) or {}).get("view") == "look":
-            look.append(aid)
+            if not second[aid].get("same_as"):
+                look.append(aid)
         elif aid not in second:
             read.setdefault(al.get("client") or "", []).append(aid)
     return need, look, read, mix
@@ -3490,7 +3497,7 @@ def _arrival_view(result=None):
         if one_read is not None and one_run is not None and stream["total"]:
             # a thousand alerts of this mix: every own closure is read, and every alert that goes
             # to a person, plus the closures the reading would look at again, is investigated
-            again = a["looks"] / a["read"]
+            again = max(0, a["looks"] - a["same"]) / a["read"]
             per_1000 = 1000 * (stream["own"] * one_read + (stream["raised"] + stream["own"] * again) * one_run) / stream["total"]
         waits = sorted(a["waits"])
         return {"on": on, "model": model, "paused": paused, "cap_usd": cap, "today_usd": round(today, 4),
@@ -3503,6 +3510,47 @@ def _arrival_view(result=None):
                 "waiting": {"need": len(need), "look": len(look), "read": sum(len(v) for v in read.values())},
                 "mix": mix, "stream": stream, "since": a["since"], "last": a["last"],
                 "last_ago": _ago(a["last"]["at"]) if a["last"] else ""}
+
+
+def _arrival_kind(alert, verdict):
+    """What makes two closures the same kind: the same customer, tool and
+    detection, on the same machine, for the same account and program, closed
+    for the same reason in the same words."""
+    parts = (alert.get("client"), alert.get("source"), alert.get("title"), alert.get("host") or alert.get("entity"),
+             alert.get("user"), (alert.get("indicators") or {}).get("image"), verdict.get("closure_code"),
+             verdict.get("summary"))
+    return hashlib.sha1("|".join(str(p or "") for p in parts).encode(), usedforsecurity=False).hexdigest()[:16]   # a label, not a secret
+
+
+def _arrival_fold(result, look):
+    """A closure the reading would look at again is investigated once for its
+    kind. While an investigation that agreed with one of them stands
+    (ARRIVAL_SAME_DAYS), the others of that kind are counted under it: the
+    same routine event on the same machine is not investigated a hundred
+    times. Returns the ones that still need an investigation of their own."""
+    a = _arrival()
+    kinds, second = a["kinds"], _CACHE.get("second", {})
+    by_id = {x["alert_id"]: x for x in result["alerts"]}
+    if look and not _CACHE.get("kinds_seeded"):
+        # once after a start: the investigations already kept that agreed with a closure stand for their kind too
+        _CACHE["kinds_seeded"] = True
+        for aid, run in _CACHE.get("agent", {}).items():
+            v = result["verdicts"].get(aid) or {}
+            if aid in by_id and not v.get("escalate") and run.get("agrees") is True and not run.get("raised"):
+                kinds.setdefault(_arrival_kind(by_id[aid], v), {"alert": aid, "at": str(run.get("at") or "")[:19] + "Z"})
+    if not kinds or not look:
+        return look
+    oldest = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=ARRIVAL_SAME_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    left = []
+    for aid in look:
+        stands = kinds.get(_arrival_kind(by_id[aid], result["verdicts"].get(aid) or {})) if aid in by_id else None
+        if stands and stands["at"] >= oldest and stands["alert"] != aid and aid in second:
+            second[aid]["same_as"] = stands["alert"]
+            a["same"] += 1
+            _CACHE["rev"] = _CACHE.get("rev", 0) + 1
+        else:
+            left.append(aid)
+    return left
 
 
 def _arrival_spent(kind, usd):
@@ -3636,6 +3684,10 @@ def _arrival_investigate(request, alert_id):
         wait = _arrival_waited(a, [alert_id], keep=not test)
         if wait is not None:
             rec["after_s"] = wait
+        if not verdict.get("escalate") and rec["agrees"] is True and not rec["raised"]:
+            a["kinds"][_arrival_kind(alert, verdict)] = {"alert": alert_id, "at": _now_iso()}
+            for old in list(a["kinds"])[:-ARRIVAL_KINDS_KEEP]:
+                a["kinds"].pop(old, None)
     _keep_run(request, alert_id, rec, earlier)
     audit.record("alert investigated by the model on arrival", ARRIVAL_NAME, alert_id=alert_id, view=rec["view"],
                  effect=rec["effect"], agrees=rec["agrees"], checks=[s["tool"] for s in rec["steps"]],
@@ -3697,6 +3749,7 @@ def _arrival_step(request):
         if spent >= cap or time.time() < a["pause_until"]:
             return None
         need, look, read, _mix = _arrival_pending(result)
+        look = _arrival_fold(result, look)
         is_new = _arrival_new(a)
 
         def waiting(new):
@@ -3967,6 +4020,9 @@ def _model_made(aid, alert, verdict, working, tests):
     second = _CACHE.get("second", {}).get(aid)
     if second and not verdict.get("escalate"):
         look = second.get("view") == "look"
+        if look and second.get("same_as"):
+            return {"state": "read", "tag": "ok", "words": "Agrees, by its kind",
+                    "sub": "It investigated an alert of the same kind and agreed with that closure."}
         return {"state": "read", "tag": "warn" if look else "ok", "words": "Would look again" if look else "Agrees",
                 "sub": second.get("why") or ""}
     if not working or alert.get("client") in _arrival_left_out():

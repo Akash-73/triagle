@@ -227,6 +227,9 @@ With `TRIAGLE_ARRIVAL=on` the model does not wait for somebody to open an alert.
 - **Every alert that goes to a person is investigated in full**, and so is every
   closure the reading would look at again. This is the second opinion: the model
   chooses its checks and is not told the verdict, and rules settle any difference.
+  A doubted closure is investigated once for its kind: while an investigation that
+  agreed with a closure stands (seven days), the same detection on the same machine,
+  account and program, closed for the same reason, is counted under it.
 - **The account is written ahead**, so it is on the page when the analyst opens it.
 
 It can send an alert to a person. It can never close one. A repeat counted under an
@@ -453,7 +456,7 @@ each client, and an Indian hosting region. To report a problem, see
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 512 tests, no network or key needed
+python -m pytest -q                 # 516 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```

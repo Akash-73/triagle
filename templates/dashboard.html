@@ -96,11 +96,14 @@
         {% else %}<span class="status ok" style="margin-left:auto; font-size:.9rem; color:var(--text-2);">{{ 'working, ' ~ arrival.last_ago if arrival.last_ago else 'on' }}</span>{% endif %}</header>
       <div class="rows">
         <div><span class="k">Closures read again</span><span class="v">{{ "{:,}".format(arrival.read) }}{% if arrival.looks %}, {{ arrival.looks }} to look at again{% endif %}</span></div>
+        {% if arrival.same %}<div><span class="k">Counted under an investigation of their kind</span><span class="v">{{ "{:,}".format(arrival.same) }}</span></div>{% endif %}
         <div><span class="k">Alerts investigated in full</span><span class="v">{{ "{:,}".format(arrival.investigated) }}{% if arrival.raised %}, {{ arrival.raised }} sent to a person{% endif %}</span></div>
         <div><span class="k">Accounts written ahead</span><span class="v">{{ "{:,}".format(arrival.accounts) }}</span></div>
         {% set w = arrival.waiting %}{% if w.read or w.need or w.look %}<div><span class="k">Still to do</span><span class="v">{% if w.read %}{{ "{:,}".format(w.read) }} to read{% endif %}{% if w.read and (w.need or w.look) %}, {% endif %}{% if w.need or w.look %}{{ w.need + w.look }} to investigate{% endif %}</span></div>{% endif %}
         {% if arrival.typical_wait_s is not none %}<div><span class="k">Typical wait after an alert arrives</span><span class="v">{{ arrival.typical_wait_s }} s</span></div>{% endif %}
         <div><span class="k">Spent</span><span class="v">${{ '%.2f'|format(arrival.usd) }} in all, ${{ '%.2f'|format(arrival.today_usd) }} of ${{ '%.2f'|format(arrival.cap_usd) }} today</span></div>
+        {% if arrival.usd_one_investigation is not none %}<div><span class="k">One investigation, with its account</span><span class="v">{{ '%.1f'|format(arrival.usd_one_investigation * 100) }} cents</span></div>{% endif %}
+        {% if arrival.usd_one_read is not none %}<div><span class="k">Ten closures read</span><span class="v">{{ '%.1f'|format(arrival.usd_one_read * 1000) }} cents</span></div>{% endif %}
         {% if arrival.per_1000_usd is not none %}<div><span class="k">For 1,000 alerts of this mix</span><span class="v">${{ '%.2f'|format(arrival.per_1000_usd) }}</span></div>{% endif %}
       </div>
       <div class="body note">{% if arrival.paused %}{{ arrival.paused }} {% endif %}{{ model_word()|capitalize }} reads every closure Triagle makes on its own and investigates every alert that goes to a person, without waiting for anyone to open it. It can send an alert to a person. It can never close one.</div>

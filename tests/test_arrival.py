@@ -217,6 +217,85 @@ def test_test_streams_repeats_and_closures_people_made_are_left_out(monkeypatch)
     assert out["read"] == len(own) and out["investigated"] == len(raised) - 1, "the samples are read and investigated all the same"
 
 
+def test_a_doubted_closure_is_investigated_once_for_its_kind_and_the_rest_are_counted_under_it(monkeypatch):
+    """Found on the live feed on 28 November: of the first 82 closures read, 33
+    were flagged, most for the tool's rating alone, and the same routine event
+    on the same laptop was being investigated again each time it fired. At
+    2.8 cents an investigation, a thousand alerts would have cost nine dollars."""
+    policy = examples.EXAMPLES["wazuh"][1]["raw"]                            # a probe file Wazuh rates critical: closed
+    title = main.normalize("wazuh", policy, BANK).title
+    calls = a_model(monkeypatch, reading=BENIGN, doubt=(title,))
+    work_until_done()                                                        # the samples first, out of the way
+    same = [dict(policy, id=f"1795900{n}.1") for n in range(4)]
+    assert send(*same) == 4
+    r = main._load_result()
+    mine = [a["alert_id"] for a in r["alerts"] if a["client"] == BANK]
+    assert len(mine) == 4 and not any(r["verdicts"][i].get("escalate") for i in mine), "four closures of one kind"
+    before, asked = main._arrival_view(), calls["reading"]
+    out = work_until_done()
+    assert out["looks"] - before["looks"] == 4, "the reading doubted all four"
+    assert out["investigated"] - before["investigated"] == 1 and out["same"] == 3, "one investigation stands for the kind"
+    assert calls["reading"] - asked == 2, "the evidence was read twice, for one alert"
+    second = main._CACHE["second"]
+    first = next(i for i in mine if i in main._CACHE["agent"])
+    assert all(second[i]["same_as"] == first for i in mine if i != first) and "same_as" not in second[first]
+    assert out["waiting"] == {"need": 0, "look": 0, "read": 0}
+    c = signed_in()
+    other = next(i for i in mine if i != first)
+    page = c.get(f"/alert/{other}").text
+    assert "an alert of the same kind" in page and f'/alert/{first}#agent' in page
+    made = {row["id"]: row["model"] for row in c.get("/api/live").json()["rows"]}
+    assert made[other]["words"] == "Agrees, by its kind" and made[first]["state"] == "run"
+    assert "Counted under an investigation of their kind" in c.get("/").text
+    # a different machine is a different kind
+    elsewhere = json.loads(json.dumps(policy))
+    elsewhere["id"], elsewhere["agent"]["name"] = "17959009.1", "OTHER-LAPTOP"
+    assert send(elsewhere) == 1
+    out2 = work_until_done()
+    assert out2["investigated"] - out["investigated"] == 1 and out2["same"] == 3
+    # and an agreement stands for a week, not for ever
+    for k in main._arrival()["kinds"].values():
+        k["at"] = "2026-11-01T00:00:00Z"
+    assert send(dict(policy, id="17959010.1")) == 1
+    out3 = work_until_done()
+    assert out3["investigated"] - out2["investigated"] == 1 and out3["same"] == 3
+
+
+def test_investigations_kept_before_this_was_built_stand_for_their_kind_too(monkeypatch):
+    policy = examples.EXAMPLES["wazuh"][1]["raw"]
+    title = main.normalize("wazuh", policy, BANK).title
+    a_model(monkeypatch, reading=BENIGN, doubt=(title,))
+    work_until_done()
+    assert send(dict(policy, id="17959020.1")) == 1
+    work_until_done()                                                        # read, doubted, investigated, agreed
+    first = next(a["alert_id"] for a in main._load_result()["alerts"] if a["client"] == BANK)
+    assert first in main._CACHE["agent"]
+    main._arrival()["kinds"].clear()                                         # as on a deployment that kept runs before 0.11.4
+    main._CACHE.pop("kinds_seeded", None)
+    assert send(dict(policy, id="17959021.1"), dict(policy, id="17959022.1")) == 2
+    before = main._arrival_view()
+    out = work_until_done()
+    assert out["investigated"] == before["investigated"] and out["same"] - before["same"] == 2
+
+
+def test_an_investigation_that_disagreed_stands_for_nothing_so_each_of_its_kind_is_investigated(monkeypatch):
+    policy = examples.EXAMPLES["wazuh"][1]["raw"]
+    title = main.normalize("wazuh", policy, BANK).title
+    a_model(monkeypatch, reading=SUSPICIOUS, doubt=(title,))
+    assert send(*[dict(policy, id=f"1795901{n}.1") for n in range(3)]) == 3
+    out = work_until_done()
+    r = main._load_result()
+    mine = [a["alert_id"] for a in r["alerts"] if a["client"] == BANK]
+    assert out["same"] == 0 and main._arrival()["kinds"] == {}
+    assert all(i in main._CACHE["agent"] and r["verdicts"][i]["escalate"] for i in mine), "all three went to a person"
+
+
+def test_the_second_reader_is_told_that_a_tools_rating_is_not_a_reason_by_itself():
+    assert "The tool's own rating is not such a reason by itself" in nightshift.SECOND_SYSTEM
+    assert "an outside address the reason does not account for" in nightshift.SECOND_SYSTEM
+    assert "tool rating of high or critical" not in nightshift.SECOND_SYSTEM
+
+
 # ---- what it costs, and where it stops ---------------------------------------------
 
 def test_the_cost_is_counted_by_job_from_the_token_counts(monkeypatch):
