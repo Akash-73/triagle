@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+{% block title %}Try an alert · Triagle{% endblock %}
+{% block heading %}Try an alert{% endblock %}
+{% block content %}
+<p class="note" style="max-width:88ch; margin-bottom:16px;">Paste one security alert from your own tool, or load an example. Triagle judges it by rule in milliseconds{% if model_on %}, {{ model_word() }} writes the account{% endif %}{% if agent_on %}, and if you ask, {{ model_word() }} investigates it again without being told the verdict{% endif %}. Then say whether Triagle was right. <b>Nothing you paste is kept</b> unless you choose to send it with your answer. Take names and addresses out of a real alert first.</p>
+
+<div class="try-grid" id="try-grid">
+  <section class="panel" id="alert">
+    <header><h2>The alert</h2></header>
+    <div class="body">
+      <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px;">
+        <label for="try-source">Format</label>
+        <select id="try-source">{% for f in formats %}<option value="{{ f.key }}">{{ f.name }}</option>{% endfor %}</select>
+        <span id="try-examples" class="inline-forms" style="gap:6px;"></span>
+      </div>
+      <textarea id="try-raw" rows="18" spellcheck="false" aria-label="The alert, as JSON"></textarea>
+      <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; align-items:center;">
+        <button class="btn primary" type="button" id="try-go">Judge this alert</button>
+        <span class="by" id="try-note" role="status"></span>
+      </div>
+    </div>
+  </section>
+
+  <div class="stack">
+    <section class="panel" id="verdict">
+      <header><h2>Triagle's verdict</h2><span class="by" id="verdict-by" style="margin-left:auto;"></span></header>
+      <div class="body" id="verdict-out">
+        <div class="empty" style="padding:6px 0;"><b>The verdict appears here.</b>Pick a format, load an example or paste your own alert, then choose Judge this alert.</div>
+      </div>
+    </section>
+
+    {% if model_on %}
+    <section class="panel" id="account" hidden>
+      <header><h2>Triagle's account</h2><span class="by" id="account-by" style="margin-left:auto;"></span></header>
+      <div class="body">
+        <dl class="notes" id="account-notes"></dl>
+        <p class="by" style="margin-top:10px;">Written from the verdict and the evidence. It cannot change the verdict.</p>
+      </div>
+    </section>
+    {% endif %}
+
+    {% if agent_on %}
+    <section class="panel" id="opinion" hidden>
+      <header><h2>Triagle's second opinion</h2><span class="by" id="opinion-by" style="margin-left:auto;">{{ model_word()|capitalize }} investigates, not told the verdict</span></header>
+      <div class="body">
+        <p class="note" id="opinion-intro">{{ model_word()|capitalize }} investigates this alert again from the start, without being told the verdict. If the two differ, a person decides: a model can send an alert to a person and can never close one.</p>
+        <details class="work" id="opinion-work" style="margin-top:12px;" hidden>
+          <summary id="opinion-work-sum">The checks</summary>
+          <ol class="steps" id="opinion-steps" style="margin-top:10px;"></ol>
+        </details>
+        <p class="by waiting" id="opinion-status" style="margin-top:10px;" role="status" hidden></p>
+        <dl class="notes" id="opinion-reading" style="margin-top:14px;" hidden></dl>
+        <div class="callout" id="opinion-outcome" style="margin-top:14px;" hidden></div>
+        <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; align-items:center;">
+          <button class="btn small" type="button" id="opinion-go">Get a second opinion</button>
+          <span class="by" id="opinion-foot"></span>
+        </div>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="panel" id="said" hidden>
+      <header><h2>Was Triagle right?</h2></header>
+      <div class="body" id="said-form">
+        <p class="note" style="margin-bottom:10px;">You know this alert better than Triagle does. Your answer is kept and counted. Triagle is changed by answers like yours.</p>
+        <div class="said-choice" role="group" aria-label="Was the verdict right?">
+          <button class="btn" type="button" data-right="yes" aria-pressed="false">Yes, right</button>
+          <button class="btn" type="button" data-right="partly" aria-pressed="false">Partly</button>
+          <button class="btn" type="button" data-right="no" aria-pressed="false">No, wrong</button>
+        </div>
+        <label for="said-comment" class="said-label">What would you have done, or what is missing? <span>Optional</span></label>
+        <textarea id="said-comment" rows="3" maxlength="1000" style="font-family:inherit; font-size:1rem;"></textarea>
+        <div class="said-two">
+          <div>
+            <label for="said-role" class="said-label">Your role <span>Optional</span></label>
+            <select id="said-role" style="width:100%;"><option value="">Choose one</option>{% for r in roles %}<option>{{ r }}</option>{% endfor %}</select>
+          </div>
+          <div>
+            <label for="said-contact" class="said-label">Email, for a reply <span>Optional</span></label>
+            <input type="text" id="said-contact" maxlength="120" autocomplete="off" style="width:100%;">
+          </div>
+        </div>
+        <label class="said-check"><input type="checkbox" id="said-keep"> <span>Send this alert along, so a wrong verdict can be fixed. Without this only your answer is kept.</span></label>
+        <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; align-items:center;">
+          <button class="btn primary" type="button" id="said-go" disabled>Send my answer</button>
+          <span class="by" id="said-note" role="status">Choose an answer first.</span>
+        </div>
+      </div>
+      <div class="body" id="said-done" hidden>
+        <p style="font-weight:600;">Thank you. Your answer is kept and counted.</p>
+        <p class="note" style="margin-top:6px;">Try another alert whenever you like. {% if user.guest %}The rest of the console is open to look around: start with <a href="/">Overview</a> or watch alerts arrive under <a href="/live">Live</a>.{% endif %}</p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<p class="by" id="tally" style="margin-top:18px; max-width:88ch;"{% if not tally.tried and not tally.answers %} hidden{% endif %}></p>
+{% if tally.changes %}
+<section class="panel" style="margin-top:14px; max-width:88ch;">
+  <header><h2>Changed because someone here said so</h2><span class="n">{{ tally.changes|length }}</span></header>
+  <div class="rows">{% for c in tally.changes|reverse %}<div><span>{{ c.what }}</span><span class="v">{{ c.at|ist_short }}</span></div>{% endfor %}</div>
+</section>
+{% endif %}
+<style>
+  .try-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 1000px) { .try-grid { grid-template-columns: minmax(0, 1fr); } }
+  .said-choice { display: flex; flex-wrap: wrap; gap: 8px; }
+  .said-choice .btn[aria-pressed="true"] { background: var(--invert-bg); color: var(--invert-text); border-color: var(--invert-bg); font-weight: 600; }
+  .said-label { display: block; margin: 14px 0 5px; font-weight: 500; }
+  .said-label span { color: var(--text-3); font-weight: 400; font-size: .9rem; margin-left: 4px; }
+  .said-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 14px; align-items: end; }
+  @media (max-width: 1000px) { #try-raw { height: 15em; } }
+  @media (max-width: 560px) { .said-two { grid-template-columns: minmax(0, 1fr); } }
+  .said-check { display: flex; gap: 9px; align-items: flex-start; margin-top: 14px; color: var(--text-2); }
+  .said-check input { margin-top: 4px; flex: none; }
+</style>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  var CSRF = {{ csrf|tojson }}, EX = {{ examples|tojson }}, LOADED = {{ loaded|tojson }}, MODEL = {{ model_word()|tojson }},
+      TALLY = {{ tally|tojson }};
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function post(path, body) {
+    body.csrf = CSRF;
+    return fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+
+  // ---- the alert: a format, its examples, the text ----
+  var sel = $('try-source'), ta = $('try-raw'), go = $('try-go'), note = $('try-note'), exBox = $('try-examples');
+  function loadExamples() {
+    exBox.textContent = '';
+    (EX[sel.value] || []).forEach(function (e, i) {
+      var b = el('button', 'btn small', e.label); b.type = 'button';
+      b.addEventListener('click', function () { ta.value = JSON.stringify(e.raw, null, 2); delete ta.dataset.touched; });
+      exBox.appendChild(b);
+      if (i === 0 && !ta.dataset.touched) ta.value = JSON.stringify(e.raw, null, 2);
+    });
+  }
+  sel.addEventListener('change', function () { delete ta.dataset.touched; loadExamples(); });
+  ta.addEventListener('input', function () { ta.dataset.touched = '1'; });
+  if (LOADED) { sel.value = LOADED.source; ta.value = JSON.stringify(LOADED.raw, null, 2); ta.dataset.touched = '1'; }
+  loadExamples();
+
+  // ---- what visitors have said so far ----
+  function tally(t) {
+    var p = $('tally'), parts = [];
+    if (t.tried) parts.push('Visitors have tried ' + plural(t.tried, 'alert', 'alerts') + ' here.');
+    if (t.answers) parts.push(plural(t.answers, 'answer', 'answers') + ' on whether Triagle was right: ' + t.yes + ' right, ' + t.partly + ' partly right, ' + t.no + ' wrong.');
+    p.textContent = parts.join(' '); p.hidden = !parts.length;
+  }
+  tally(TALLY);
+
+  // ---- the verdict, by rule ----
+  var out = $('verdict-out'), verdictBy = $('verdict-by'), current = null;
+  function showVerdict(j) {
+    out.textContent = '';
+    var v = j.verdict, head = el('div'); head.style.cssText = 'display:flex; flex-wrap:wrap; align-items:center; gap:10px;';
+    head.appendChild(el('span', 'sev ' + (v.escalate ? v.severity : 'none'), v.escalate ? v.severity.charAt(0).toUpperCase() + v.severity.slice(1) : 'Closed'));
+    var h = el('b', null, j.usecase.name); h.style.fontSize = '1.2rem'; head.appendChild(h);
+    if (j.usecase.technique) head.appendChild(el('span', 'technique', j.usecase.technique));
+    out.appendChild(head);
+    var sum = el('p', null, v.summary); sum.style.cssText = 'margin-top:10px; font-weight:600;'; out.appendChild(sum);
+    var why = el('p', null, v.reasoning); why.style.cssText = 'margin-top:6px; color:var(--text-2);'; out.appendChild(why);
+    var dl = el('dl', 'notes'); dl.style.marginTop = '14px';
+    function row(k, val) { if (!val) return; dl.appendChild(el('dt', null, k)); dl.appendChild(el('dd', null, val)); }
+    row('Outcome', v.escalate ? v.words + ', ' + v.confidence + '% confident. Sent to a person.' : 'Closed with a reason: ' + v.words + ', ' + v.confidence + '% confident.');
+    row('Asset', [j.alert.asset, j.alert.user].filter(Boolean).join(', '));
+    row('The tool rated it', j.alert.tool_severity);
+    row('Do next', v.next.join(' '));
+    row('Proposed action', j.actions.map(function (a) { return a.label + ' on ' + a.target + ' (needs ' + a.needs + ')'; }).join('; '));
+    row('Fix the noise', v.tuning);
+    if (v.escalate) row('Question to answer', j.usecase.question);
+    out.appendChild(dl);
+    verdictBy.textContent = 'Decided by rule in ' + j.ms + ' ms';
+  }
+  function fail(text) { out.textContent = ''; out.appendChild(el('div', 'callout warn', text)); verdictBy.textContent = ''; }
+
+  // ---- the account, written by the model ----
+  var account = $('account'), accountNotes = $('account-notes'), accountBy = $('account-by');
+  function loadAccount(mine) {
+    if (!account) return;
+    account.hidden = false; accountNotes.textContent = ''; accountBy.textContent = '';
+    accountNotes.appendChild(el('dt')); accountNotes.appendChild(el('dd', 'waiting', 'Writing the account from the verdict and the evidence…'));
+    post('/api/try/account', { source: mine.source, raw: mine.raw })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (mine !== current) return;                      // another alert was judged meanwhile
+        accountNotes.textContent = '';
+        if (!res.ok) { accountNotes.appendChild(el('dt')); accountNotes.appendChild(el('dd', null, res.j.detail || 'The account could not be written. The verdict above is the decision.')); return; }
+        res.j.text.split('\n').forEach(function (line) {
+          line = line.trim(); if (!line) return;
+          var i = line.indexOf(':'), dt = el('dt'), dd = el('dd');
+          if (i > 0 && i < 28) { dt.textContent = line.slice(0, i); dd.textContent = line.slice(i + 1).trim(); } else { dd.textContent = line; }
+          accountNotes.appendChild(dt); accountNotes.appendChild(dd);
+        });
+        accountBy.textContent = res.j.by_model ? 'Written by ' + res.j.provider : 'Summary built by rules. The model did not answer.';
+      })
+      .catch(function () { if (mine === current) { accountNotes.textContent = ''; accountNotes.appendChild(el('dt')); accountNotes.appendChild(el('dd', null, 'The account could not be loaded. The verdict above is the decision.')); } });
+  }
+
+  // ---- the second opinion: the model investigates, not told the verdict ----
+  var opinion = $('opinion'), oGo = $('opinion-go'), oSteps = $('opinion-steps'), oStatus = $('opinion-status'), oReading = $('opinion-reading'),
+      oOutcome = $('opinion-outcome'), oWork = $('opinion-work'), oWorkSum = $('opinion-work-sum'), oFoot = $('opinion-foot'),
+      oIntro = $('opinion-intro'), oBusy = false;
+  var LABEL = { overruled: 'Overruled by rule. ', recommend: 'Advice only. ', look: 'Not settled. ' };
+  var WORDS = { attack: 'A real attack', suspicious: 'Suspicious', benign: 'Harmless', unsure: 'Not settled' };
+  // The model marks its reasons with the check they rest on, "(CHECK 2)". The checks are listed, so the mark is noise.
+  function plain(t) { return String(t).replace(/\s*\((?:CHECKS?\s*\d+(?:\s*(?:,|and|&)\s*(?:CHECKS?\s*)?\d+)*)\)/gi, ''); }
+  function oSay(t) { oStatus.textContent = t; oStatus.hidden = false; }
+  function oStep(s) {
+    var li = el('li', '', s.did + (s.by_rule ? ' (by rule)' : ''));
+    if (s.why && !s.by_rule) li.appendChild(el('span', 'found', 'Why: ' + s.why));
+    var f = el('span', 'found', s.found.length > 520 ? s.found.slice(0, 520) + '…' : s.found); f.style.whiteSpace = 'pre-line'; li.appendChild(f);
+    oSteps.appendChild(li); oWork.hidden = false;
+  }
+  function oPair(dt, items) { oReading.appendChild(el('dt', '', dt)); var d = el('dd'); items.forEach(function (x) { d.appendChild(el('div', '', x)); }); oReading.appendChild(d); }
+  function oShow(r) {
+    var rule = r.steps.filter(function (s) { return s.by_rule; }).length, chosen = r.steps.length - rule;
+    oWorkSum.textContent = plural(r.steps.length, 'check', 'checks') + ': ' + rule + ' by rule' + (chosen ? ', ' + chosen + ' chosen by ' + MODEL : '');
+    oWork.open = false; oReading.textContent = '';
+    if (r.usable) {
+      oPair('Reading', [WORDS[r.view] + (r.view !== 'unsure' && r.confidence ? ', ' + r.confidence + '% confident' : '') + (r.summary ? '. ' + plain(r.summary) : '')]);
+      if (r.reasons && r.reasons.length) oPair('Because', r.reasons.map(plain));
+      if (r.next && r.next.length) oPair('Do next', r.next.map(plain));
+    } else { oPair('Reading', ['None.']); }
+    if (r.guards && r.guards.length) oPair('Guardrails', r.guards.map(function (g) { return g.words; }));
+    oReading.hidden = false; oIntro.hidden = true;
+    oOutcome.textContent = '';   // nothing is kept here, so it says what would happen, not what did
+    oOutcome.appendChild(el('b', '', r.addressed ? 'An attempt to mislead. ' : (r.effect === 'raise' ? 'Would go to a person. '
+      : (LABEL[r.effect] || (r.agrees === true ? 'Agrees with the verdict. ' : 'Not settled. ')))));
+    oOutcome.appendChild(document.createTextNode(r.outcome));
+    oOutcome.className = 'callout' + (r.effect === 'raise' || r.effect === 'overruled' ? ' warn' : ''); oOutcome.hidden = false;
+    oStatus.hidden = true;
+    oFoot.textContent = 'Shown to you only; nothing was kept. ' + plural(r.steps.length, 'check', 'checks') + ', ' + plural(r.calls, 'model call', 'model calls') + (r.seconds ? ', ' + r.seconds + ' s' : '') + (r.cost_usd ? ', about $' + r.cost_usd.toFixed(3) : '') + '.';
+    oGo.textContent = 'Ask again';
+  }
+  function oReset() {
+    if (!opinion) return;
+    opinion.hidden = false; oSteps.textContent = ''; oWork.hidden = true; oReading.hidden = true; oOutcome.hidden = true; oStatus.hidden = true;
+    oIntro.hidden = false; oFoot.textContent = ''; oGo.textContent = 'Get a second opinion';
+  }
+  function oRun() {
+    if (oBusy || !current) return;
+    var mine = current; oBusy = true; oGo.disabled = true;
+    oSteps.textContent = ''; oWork.hidden = true; oWork.open = true; oWorkSum.textContent = 'The checks, as they are run';
+    oReading.hidden = true; oOutcome.hidden = true; oFoot.textContent = '';
+    oSay(MODEL.charAt(0).toUpperCase() + MODEL.slice(1) + ' is choosing its first check…');
+    post('/api/try/opinion', { source: mine.source, raw: mine.raw })
+      .then(function (r) {
+        if (!r.ok) return r.json().then(function (j) { throw new Error(j.detail || 'The second opinion could not start.'); });
+        var reader = r.body.getReader(), dec = new TextDecoder(), buf = '';
+        function on(ev) {
+          if (mine !== current) return;
+          if (ev.type === 'step') { oStep(ev); oSay(MODEL.charAt(0).toUpperCase() + MODEL.slice(1) + ' is choosing its next check…'); }
+          else if (ev.type === 'reading') { oSay('The evidence was read twice. Checking the two readings against each other and against the evidence…'); }
+          else if (ev.type === 'result') { oShow(ev.result); }
+          else if (ev.type === 'error') { oSay(ev.detail); }
+        }
+        function pump() {
+          return reader.read().then(function (x) {
+            if (x.value) { buf += dec.decode(x.value, { stream: true }); var lines = buf.split('\n'); buf = lines.pop(); lines.forEach(function (l) { if (l.trim()) on(JSON.parse(l)); }); }
+            if (x.done) { if (buf.trim()) on(JSON.parse(buf)); return; }
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function (e) { if (mine === current) oSay(e.message || 'The second opinion could not finish. The verdict above stands.'); })
+      .then(function () { oBusy = false; oGo.disabled = false; });
+  }
+  if (oGo) oGo.addEventListener('click', oRun);
+
+  // ---- was it right? ----
+  var said = $('said'), saidForm = $('said-form'), saidDone = $('said-done'), saidGo = $('said-go'), saidNote = $('said-note'), right = '';
+  var choices = Array.prototype.slice.call(document.querySelectorAll('.said-choice .btn'));
+  function saidReset() {
+    said.hidden = false; saidForm.hidden = false; saidDone.hidden = true; right = '';
+    choices.forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
+    saidGo.disabled = true; saidNote.textContent = 'Choose an answer first.';
+    $('said-comment').value = ''; $('said-keep').checked = false;
+  }
+  choices.forEach(function (b) {
+    b.addEventListener('click', function () {
+      right = b.getAttribute('data-right');
+      choices.forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      saidGo.disabled = false; saidNote.textContent = '';
+    });
+  });
+  saidGo.addEventListener('click', function () {
+    if (!right || !current) return;
+    saidGo.disabled = true; saidNote.textContent = 'Sending…';
+    post('/api/try/feedback', { source: current.source, raw: current.raw, right: right, comment: $('said-comment').value,
+                                role: $('said-role').value, contact: $('said-contact').value, keep_alert: $('said-keep').checked })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) { saidNote.textContent = res.j.detail || 'That did not go through. Try again.'; saidGo.disabled = false; return; }
+        saidForm.hidden = true; saidDone.hidden = false; tally(res.j);
+      })
+      .catch(function () { saidNote.textContent = 'Could not reach Triagle. Check the connection and try again.'; saidGo.disabled = false; });
+  });
+
+  // ---- judge ----
+  go.addEventListener('click', function () {
+    go.disabled = true; note.textContent = 'Working…';
+    var mine = { source: sel.value, raw: ta.value };
+    post('/api/try', mine)
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        note.textContent = '';
+        if (!res.ok) { fail(res.j.detail || 'That did not work.'); return; }
+        current = mine; showVerdict(res.j); loadAccount(mine); oReset(); saidReset();
+        if (window.matchMedia('(max-width: 1000px)').matches) $('verdict').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      })
+      .catch(function () { note.textContent = 'Could not reach Triagle. Check the connection and try again.'; })
+      .then(function () { go.disabled = false; });
+  });
+})();
+</script>
+{% endblock %}

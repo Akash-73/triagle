@@ -42,7 +42,7 @@ from app.engine.correlate import GENERIC_ENTITIES
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SAMPLE_PATH = os.path.join(BASE_DIR, "samples", "incoming_alerts.json")
 
-app = FastAPI(title="Triagle", version="0.11.0", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Triagle", version="0.11.1", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 def _asset_version():
@@ -216,7 +216,8 @@ def _nav(result):
     m = result["metrics"]
     return {"escalated": m.get("open", m.get("escalated", 0)), "cases": len(result["incidents"]), "due": due,
             "overdue": overdue, "rules": m.get("flagged_rules", 0),
-            "taught": sum(1 for r in _CACHE.get("taught", []) if instructions.state(r) == "on")}
+            "taught": sum(1 for r in _CACHE.get("taught", []) if instructions.state(r) == "on"),
+            "feedback": sum(1 for f in _CACHE.get("feedback", []) if f.get("by") == "visitor")}
 
 
 def _ctx(request: Request, user, **extra):
@@ -354,6 +355,7 @@ def trust_page(request: Request):
     return templates.TemplateResponse(request, "trust.html", {
         "asset_v": ASSET_V, "contact": os.environ.get("TRIAGLE_CONTACT", "").strip()[:120],
         "customer_keys": bool(INGEST_KEYS), "unprivileged": os.geteuid() != 0, "platform_log": audit._to_stdout(),
+        "arrival_on": _arrival_on() and investigator.enabled(),
         "as_of": datetime.datetime.now(_IST).strftime("%d %B %Y").lstrip("0")})
 
 
@@ -432,6 +434,9 @@ def _ensure_state():
     _CACHE["agent"] = {}                             # alert id -> the investigator's own run on that alert
     _CACHE["bare"] = {}                              # alert id -> the same model's reading without Triagle, kept for comparison
     _CACHE["arrival"] = {}                           # the work the model did on its own as alerts arrived, and what it cost
+    _CACHE["visitors"] = {}                          # what visitors' requests have cost the model today
+    _CACHE["feedback"] = []                          # what people said on the Try page about a verdict
+    _CACHE["tries"] = {"visitors": 0, "since": None}  # alerts visitors have tried
     _CACHE.pop("result", None)
     _restore()
 
@@ -447,7 +452,8 @@ def _snapshot():
             "arrived_at": _CACHE.get("arrived_at", {}),
             "taught": _CACHE.get("taught", []), "checks": _CACHE.get("checks", {}),
             "second": _CACHE.get("second", {}), "agent": _CACHE.get("agent", {}), "bare": _CACHE.get("bare", {}),
-            "arrival": _CACHE.get("arrival", {}),
+            "arrival": _CACHE.get("arrival", {}), "visitors": _CACHE.get("visitors", {}),
+            "feedback": _CACHE.get("feedback", []), "tries": _CACHE.get("tries", {}),
             "model_use": {k: genai.USAGE[k] for k in ("calls", "input", "output", "thinking", "since")}}
 
 
@@ -500,6 +506,7 @@ def _restore():
     _CACHE["bare"] = {str(k): v for k, v in (state.get("bare") or {}).items()
                       if isinstance(v, dict) and v.get("bare") is True and v.get("view") in investigator.VIEWS}
     _arrival_restore(state.get("arrival"))
+    _try_restore(state)
     for rec in _CACHE["agent"].values():             # a kept run follows today's wording
         _reword(rec)
     for rec in _CACHE["second"].values():
@@ -1344,10 +1351,12 @@ def api_notes(request: Request, case: str = "", alert: str = "", user=Depends(re
             if not _ask_allowed(_client_ip(request), trusted=_trusted(user)) and cached:
                 pass                                # keep the fallback rather than hammer a failing model
             else:
+                point = genai.mark()
                 _WORKNOTES[key] = worknotes.work_notes(incident, members,
                                                        house=_house(result, incident.get("client")),
                                                        intel=osint.lines(_addresses([m["alert"] for m in members])))
                 _NOTES_AT[key] = time.time()
+                _visitor_paid(user, point)
         text, by_model, provider = _WORKNOTES[key]
     return {"text": text, "by_model": by_model, "provider": provider,
             "error": None if by_model else genai.STATUS.get("error")}
@@ -1375,9 +1384,11 @@ def _alert_account(request, result, alert_id, user):
                             "provider": "automated summary", "error": "Too many requests to the model just now."}
             else:
                 steps = [f"{st.get('tool')}: {st.get('result_summary')}" for st in result.get("trails", {}).get(alert_id, [])]
+                point = genai.mark()
                 _WORKNOTES[key] = worknotes.alert_notes(alert, verdict, steps, house=_house(result, alert.get("client")),
                                                         intel=osint.lines(_addresses([alert])))
                 _NOTES_AT[key] = time.time()
+                _visitor_paid(user, point)
                 if len(_WORKNOTES) > 4000:                  # a long-running console: keep the newest
                     for old in list(_WORKNOTES)[:1000]:
                         _WORKNOTES.pop(old, None)
@@ -2497,16 +2508,50 @@ def connectors_page(request: Request, user=Depends(require_user)):
         examples=examples.EXAMPLES, can_test=user["role"] == "analyst", poll=False))
 
 
-@app.post("/api/try")
-async def api_try(request: Request, user=Depends(require_user)):
-    """Triage one pasted alert and return what Triagle would do with it.
-    Nothing is stored and nothing joins the queue: the alert is judged on its
-    own, the way the first alert from a new customer would be."""
-    body = await _json_body(request)
-    if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
-        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
-    if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
-        raise HTTPException(status_code=429, detail="Too many tries. Wait a minute.")
+# ---- try an alert: anyone pastes one, sees what Triagle makes of it, and says if it was right ------
+#
+# The Try page is for an analyst who has never seen Triagle. They paste one
+# alert from their own tool (or load an example) and see the verdict the rules
+# reach, the account the model writes and, if they ask, the model's second
+# opinion. Then they say whether the verdict was right. That answer is the one
+# thing kept: it is counted on the page, and an analyst here reads the comments
+# under Feedback and notes what was changed because of each.
+#
+# Nothing a visitor does here touches the queue, a verdict or an action. The
+# pasted alert is judged on its own and forgotten, unless the visitor ticks
+# the box that sends it along with their answer.
+
+FEEDBACK_KEEP = 2000            # answers kept
+FEEDBACK_RAW_KEEP = 50          # of those, how many keep the alert that was sent with them
+FEEDBACK_PER_ADDRESS = 6        # answers one address may leave in ten minutes
+FEEDBACK_PER_DAY = 300          # answers from all visitors in a day
+FEEDBACK_ANSWERS = {"yes": "Right", "partly": "Partly right", "no": "Wrong"}
+FEEDBACK_ROLES = ("SOC analyst", "SOC lead or manager", "Incident responder", "Security engineer", "Other")
+_FEEDBACK_TIMES = {}            # address -> recent answer times
+_FEEDBACK_ALL = []
+
+
+def _try_restore(state):
+    """Read back what visitors spent today, what people said and how many alerts were tried."""
+    v = state.get("visitors")
+    if isinstance(v, dict):
+        try:
+            _CACHE["visitors"] = {"day": str(v.get("day") or ""), "usd": max(0.0, float(v.get("usd") or 0))}
+        except (TypeError, ValueError):
+            pass
+    _CACHE["feedback"] = [f for f in state.get("feedback") or []
+                          if isinstance(f, dict) and f.get("id") and f.get("right") in FEEDBACK_ANSWERS][-FEEDBACK_KEEP:]
+    t = state.get("tries")
+    if isinstance(t, dict):
+        try:
+            _CACHE["tries"] = {"visitors": max(0, int(t.get("visitors") or 0)), "since": t.get("since") or None}
+        except (TypeError, ValueError):
+            pass
+
+
+def _try_read(body):
+    """(source, raw) from what the page sent, or an HTTP error that says what
+    is wrong with it in words a person can act on."""
     source = str(body.get("source", ""))
     raw = body.get("raw")
     if isinstance(raw, str):
@@ -2523,6 +2568,13 @@ async def api_try(request: Request, user=Depends(require_user)):
     # an envelope {source, client, raw} pasted whole is accepted too
     if isinstance(raw.get("raw"), dict) and raw.get("source"):
         source, raw = str(raw["source"]), raw["raw"]
+    return source, raw
+
+
+def _try_judge(body):
+    """Judge one pasted alert on its own, the way the first alert from a new
+    customer would be. Nothing is stored and nothing joins the queue."""
+    source, raw = _try_read(body)
     client = " ".join(str(body.get("client") or "Trial").split())[:60] or "Trial"
     try:
         normalize(source, raw, client)
@@ -2532,16 +2584,43 @@ async def api_try(request: Request, user=Depends(require_user)):
     result = process_batch([{"source": source, "client": client, "raw": raw}])
     took_ms = round((time.perf_counter() - started) * 1000, 1)
     alert = result["alerts"][0]
-    verdict = result["verdicts"][alert["alert_id"]]
+    return {"source": source, "raw": raw, "result": result, "alert": alert, "ms": took_ms,
+            "verdict": result["verdicts"][alert["alert_id"]]}
+
+
+def _try_words(verdict):
+    return (sources_meta.verdict_words(verdict.get("disposition")) if verdict.get("escalate")
+            else sources_meta.closure_words(verdict.get("closure_code")))
+
+
+@app.post("/api/try")
+async def api_try(request: Request, user=Depends(require_user)):
+    """Triage one pasted alert and return what Triagle would do with it.
+    Nothing is stored and nothing joins the queue: the alert is judged on its
+    own, the way the first alert from a new customer would be."""
+    body = await _json_body(request)
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    if not _try_allowed(_client_ip(request), user):
+        raise HTTPException(status_code=429, detail="Too many tries. Wait a minute.")
+    j = _try_judge(body)
+    alert, verdict, source = j["alert"], j["verdict"], j["source"]
     uc = usecases.for_alert(alert, verdict)
-    acts = result.get("actions", {}).get(alert["alert_id"], [])
-    audit.record("alert tried on the connectors page", user["name"], source=source,
-                 escalated=bool(verdict.get("escalate")), ip=_client_ip(request))
+    acts = j["result"].get("actions", {}).get(alert["alert_id"], [])
+    if not _keeps(user):
+        with _LOCK:
+            _ensure_state()
+            tries = _CACHE.setdefault("tries", {"visitors": 0, "since": None})
+            tries["visitors"] = tries.get("visitors", 0) + 1
+            tries["since"] = tries.get("since") or _now_iso()
+            if store.enabled():
+                _CACHE["dirty"] = True
+    audit.record("alert tried", user["name"], source=source, escalated=bool(verdict.get("escalate")),
+                 ip=_client_ip(request))
     return {
         "alert": {"title": alert["title"], "asset": alert.get("host") or alert.get("entity"), "user": alert.get("user"),
                   "tool_severity": alert.get("raw_severity"), "source": sources_meta.source_name(source)},
-        "verdict": {"escalate": bool(verdict.get("escalate")), "words": sources_meta.verdict_words(verdict.get("disposition"))
-                    if verdict.get("escalate") else sources_meta.closure_words(verdict.get("closure_code")),
+        "verdict": {"escalate": bool(verdict.get("escalate")), "words": _try_words(verdict),
                     "severity": verdict.get("severity"), "confidence": verdict.get("confidence"),
                     "summary": verdict.get("summary"), "reasoning": verdict.get("reasoning"),
                     "closure_code": verdict.get("closure_code"), "next": verdict.get("recommended_actions") or [],
@@ -2551,8 +2630,236 @@ async def api_try(request: Request, user=Depends(require_user)):
         "actions": [{"label": a["label"], "target": a["target"],
                      "needs": "a person's approval" if a.get("policy") != "auto" else "nothing, it runs automatically"}
                     for a in acts],
-        "ms": took_ms,
+        "ms": j["ms"],
     }
+
+
+_TRY_TIMES = {}
+
+
+def _try_allowed(ip, user, now=None):
+    """A verdict by rule costs nothing, so the limit only stops a script: 30 a
+    minute from one address. It is not held to the model's budget."""
+    if _trusted(user):
+        return True
+    now = now or time.time()
+    mine = [t for t in _TRY_TIMES.get(ip, []) if now - t < 60]
+    if len(_TRY_TIMES) > 5000:
+        _TRY_TIMES.clear()
+    if len(mine) >= 30:
+        _TRY_TIMES[ip] = mine
+        return False
+    mine.append(now)
+    _TRY_TIMES[ip] = mine
+    return True
+
+
+@app.post("/api/try/account")
+async def api_try_account(request: Request, user=Depends(require_user)):
+    """The model's account of one pasted alert. The verdict goes to the model
+    as final: it explains the alert, it does not judge it. Nothing is kept."""
+    body = await _json_body(request)
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    if not genai.configured():
+        raise HTTPException(status_code=503, detail="No model is connected, so there is no written account.")
+    j = _try_judge(body)
+    if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
+        raise HTTPException(status_code=429, detail=_busy_words(user))
+    alert, verdict = j["alert"], j["verdict"]
+    steps = [f"{st.get('tool')}: {st.get('result_summary')}" for st in j["result"].get("trails", {}).get(alert["alert_id"], [])]
+    point = genai.mark()
+    text, by_model, provider = worknotes.alert_notes(alert, verdict, steps, intel=osint.lines(_addresses([alert])))
+    _visitor_paid(user, point)
+    audit.record("account written for a tried alert", user["name"], source=j["source"], by_model=by_model,
+                 ip=_client_ip(request))
+    return {"text": text, "by_model": by_model, "provider": provider,
+            "error": None if by_model else genai.STATUS.get("error")}
+
+
+@app.post("/api/try/opinion")
+async def api_try_opinion(request: Request, user=Depends(require_user)):
+    """The second opinion on one pasted alert: the model investigates it from
+    the start, not told the verdict, and its steps are sent as they happen.
+    It sees this alert alone. Nothing is kept and nothing changes."""
+    body = await _json_body(request)
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    if not investigator.enabled():
+        raise HTTPException(status_code=503, detail="No model is connected, so there is no second opinion.")
+    j = _try_judge(body)
+    alert, verdict, ip, now = j["alert"], dict(j["verdict"]), _client_ip(request), time.time()
+    if _trusted(user):
+        if not _ask_allowed(ip, trusted=True):
+            raise HTTPException(status_code=429, detail="Too many requests. Wait a minute.")
+    else:
+        _AGENT_VISITOR_TIMES[:] = [t for t in _AGENT_VISITOR_TIMES if now - t < 3600]
+        if len(_AGENT_VISITOR_TIMES) >= _visitor_runs() or not _ask_allowed(ip):
+            raise HTTPException(status_code=429, detail=_busy_words(user, "Visitors have used this hour's second opinions. "
+                                                                          "The verdict above is decided by rule and stands."))
+    lock = _notes_lock(("try", ip))
+    if not lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="A second opinion is already running for you. Wait for it to finish.")
+    if not _trusted(user):
+        _AGENT_VISITOR_TIMES.append(now)
+    case = investigator.Case(alert, [alert])
+    point = genai.mark()
+
+    def stream():
+        try:
+            final = None
+            for event in investigator.run(case):
+                if event["type"] == "result":
+                    final = event["result"]
+                else:
+                    yield json.dumps(event) + "\n"
+            rec = _agent_record(final, alert, verdict, user["name"], None)
+            audit.record("second opinion on a tried alert", user["name"], source=j["source"], view=rec["view"],
+                         effect=rec["effect"], agrees=rec["agrees"], checks=[s["tool"] for s in rec["steps"]],
+                         model_calls=rec["calls"], seconds=rec.get("seconds"), cost_usd=rec.get("cost_usd"), ip=ip)
+            yield json.dumps({"type": "result", "result": rec, "kept": False, "reload": False}) + "\n"
+        except Exception as e:                      # the page must always get an ending
+            audit.record("second opinion on a tried alert stopped", user["name"], error=f"{type(e).__name__}: {e}"[:200], ip=ip)
+            yield json.dumps({"type": "error", "detail": "The second opinion stopped before it finished. The verdict stands."}) + "\n"
+        finally:
+            lock.release()
+            _visitor_paid(user, point)
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+def _feedback_allowed(ip, now=None):
+    now = now or time.time()
+    mine = [t for t in _FEEDBACK_TIMES.get(ip, []) if now - t < 600]
+    _FEEDBACK_ALL[:] = [t for t in _FEEDBACK_ALL if now - t < 86400]
+    if len(_FEEDBACK_TIMES) > 5000:
+        _FEEDBACK_TIMES.clear()
+    if len(mine) >= FEEDBACK_PER_ADDRESS or len(_FEEDBACK_ALL) >= FEEDBACK_PER_DAY:
+        _FEEDBACK_TIMES[ip] = mine
+        return False
+    mine.append(now)
+    _FEEDBACK_TIMES[ip] = mine
+    _FEEDBACK_ALL.append(now)
+    return True
+
+
+def _line(value, limit):
+    """One line of plain text a person typed, cut to a length."""
+    return " ".join(str(value or "").split())[:limit]
+
+
+@app.post("/api/try/feedback")
+async def api_try_feedback(request: Request, user=Depends(require_user)):
+    """A person says whether the verdict on the alert they tried was right.
+    The answer is kept and counted. The alert itself is kept only if they ask
+    for it to be sent along. Triagle's verdict is worked out again here, so
+    what is recorded is what Triagle said, not what the page claims it said."""
+    body = await _json_body(request)
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), str(body.get("csrf", ""))):
+        raise HTTPException(status_code=403, detail="Form expired. Reload and try again.")
+    right = str(body.get("right", ""))
+    if right not in FEEDBACK_ANSWERS:
+        raise HTTPException(status_code=400, detail="Say whether the verdict was right: yes, partly or no.")
+    j = _try_judge(body)
+    if not _trusted(user) and not _feedback_allowed(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="That is a lot of answers from one place. Try again in a few minutes.")
+    alert, verdict = j["alert"], j["verdict"]
+    role = _line(body.get("role"), 60)
+    entry = {"id": secrets.token_hex(5), "at": _now_iso(), "right": right,
+             "comment": str(body.get("comment") or "").strip()[:1000], "role": role if role in FEEDBACK_ROLES else "",
+             "contact": _line(body.get("contact"), 120), "source": j["source"],
+             "title": _line(alert.get("title"), 160), "escalated": bool(verdict.get("escalate")),
+             "words": _try_words(verdict), "summary": _line(verdict.get("summary"), 300),
+             "code": verdict.get("closure_code") or "", "raw": j["raw"] if body.get("keep_alert") is True else None,
+             # a signed-in analyst here is trying their own product: kept, shown apart, never counted
+             "by": user["name"] if _keeps(user) else "visitor", "change": "", "changed_at": None}
+    with _LOCK:
+        _ensure_state()
+        box = _CACHE.setdefault("feedback", [])
+        box.append(entry)
+        del box[:-FEEDBACK_KEEP]
+        for old in [f for f in box if f.get("raw")][:-FEEDBACK_RAW_KEEP]:
+            old["raw"] = None                        # the answer stays; the oldest alerts sent along do not
+        _changed(now=True)
+    audit.record("answer left on the try page", entry["by"], answer=right, source=j["source"],
+                 escalated=entry["escalated"], with_alert=entry["raw"] is not None, ip=_client_ip(request))
+    return {"ok": True, **_feedback_tally()}
+
+
+def _feedback_tally():
+    """What visitors said, counted. What a signed-in analyst said while trying
+    their own product is left out."""
+    box = [f for f in _CACHE.get("feedback", []) if f.get("by") == "visitor"]
+    out = {"answers": len(box), **{k: sum(1 for f in box if f["right"] == k) for k in FEEDBACK_ANSWERS}}
+    out["changes"] = [{"what": f["change"], "at": f.get("changed_at") or f["at"]}
+                      for f in _CACHE.get("feedback", []) if f.get("change") and f.get("by") == "visitor"]
+    out["tried"] = (_CACHE.get("tries") or {}).get("visitors", 0)
+    return out
+
+
+@app.get("/try", response_class=HTMLResponse)
+def try_page(request: Request, fb: str = "", user=Depends(require_user)):
+    """Paste one alert and see what Triagle makes of it."""
+    from app.connectors import examples
+    _load_result()
+    loaded = None
+    if fb and _keeps(user):                          # an analyst opens an alert that was sent along with an answer
+        f = next((x for x in _CACHE.get("feedback", []) if x["id"] == fb and x.get("raw")), None)
+        if f:
+            loaded = {"source": f["source"], "raw": f["raw"]}
+    return templates.TemplateResponse(request, "try.html", _ctx(
+        request, user, active="try", formats=[{"key": c["key"], "name": c["name"]} for c in examples.CATALOGUE],
+        examples=examples.EXAMPLES, model_on=genai.configured(), agent_on=investigator.enabled(),
+        tally=_feedback_tally(), roles=FEEDBACK_ROLES, loaded=loaded, poll=False))
+
+
+@app.get("/feedback", response_class=HTMLResponse)
+def feedback_page(request: Request, user=Depends(require_analyst)):
+    """What people said on the Try page. For the analysts here: it holds
+    comments and, where given, a way to reach the person."""
+    _load_result()
+    rows = sorted(_CACHE.get("feedback", []), key=lambda f: f.get("at") or "", reverse=True)
+    return templates.TemplateResponse(request, "feedback.html", _ctx(
+        request, user, active="feedback", rows=rows, tally=_feedback_tally(), answers=FEEDBACK_ANSWERS, poll=False))
+
+
+@app.post("/feedback/change")
+def feedback_change(request: Request, id: str = Form(...), change: str = Form(default=""),
+                    csrf: str = Form(default=""), user=Depends(require_analyst)):
+    """Note what was changed because of one answer. The note, not the answer
+    or who gave it, is shown on the Try page."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload the page and try again.")
+    with _LOCK:
+        _ensure_state()
+        f = next((x for x in _CACHE.get("feedback", []) if x["id"] == id), None)
+        if f is None:
+            raise HTTPException(status_code=404, detail="No such answer.")
+        f["change"] = _line(change, 300)
+        f["changed_at"] = _now_iso() if f["change"] else None
+        _changed(now=True)
+    audit.record("change noted against an answer" if f["change"] else "change note removed", user["name"], answer_id=id,
+                 ip=_client_ip(request))
+    return RedirectResponse(url="/feedback#" + id, status_code=303)
+
+
+@app.post("/feedback/remove")
+def feedback_remove(request: Request, id: str = Form(...), csrf: str = Form(default=""), user=Depends(require_analyst)):
+    """Remove one answer: spam, or a test. Written to the audit log."""
+    if auth.enabled() and not auth.csrf_ok(_session_token(request), csrf):
+        raise HTTPException(status_code=403, detail="Form expired. Reload the page and try again.")
+    with _LOCK:
+        _ensure_state()
+        box = _CACHE.get("feedback", [])
+        f = next((x for x in box if x["id"] == id), None)
+        if f is None:
+            raise HTTPException(status_code=404, detail="No such answer.")
+        box.remove(f)
+        _changed(now=True)
+    audit.record("answer removed from the try page's record", user["name"], answer_id=id, answer=f["right"],
+                 was_by=f.get("by"), ip=_client_ip(request))
+    return RedirectResponse(url="/feedback", status_code=303)
 
 
 # ---- the model: status, a connection test, and questions about a case --------
@@ -2570,8 +2877,52 @@ def _trusted(user):
     return bool(auth.enabled() and user and user.get("role") == "analyst" and not user.get("guest"))
 
 
+def _visitor_cap():
+    """What visitors' requests may cost the model in a day (TRIAGLE_VISITOR_DAILY_USD)."""
+    try:
+        return min(100.0, max(0.0, float(os.environ.get("TRIAGLE_VISITOR_DAILY_USD", ""))))
+    except ValueError:
+        return 1.0
+
+
+def _visitors():
+    """What visitors' requests have cost the model today. The day starts at midnight in India."""
+    v = _CACHE.setdefault("visitors", {})
+    day = datetime.datetime.now(_IST).strftime("%Y-%m-%d")
+    if v.get("day") != day:
+        v.update(day=day, usd=0.0)
+    return v
+
+
+def _visitors_over():
+    """Have visitors used today's budget for the model? Only where there is a
+    sign-in: without one, the person at the keyboard is the owner."""
+    return auth.enabled() and _visitors()["usd"] >= _visitor_cap()
+
+
+def _visitor_paid(user, point):
+    """Count what the model was asked since genai.mark() against the visitors'
+    day, if a visitor asked. A call made by someone else at the same moment is
+    counted in, so the budget errs towards stopping early."""
+    if not auth.enabled() or _trusted(user):
+        return
+    with _LOCK:
+        _visitors()["usd"] += genai.cost_since(point)[1]
+        if store.enabled():
+            _CACHE["dirty"] = True
+
+
+def _busy_words(user, usual="Too many requests. Wait a minute."):
+    if not _trusted(user) and _visitors_over():
+        return ("Visitors have used today's budget for the model. It starts again at midnight, India time. "
+                "Verdicts are decided by rule and still work.")
+    return usual
+
+
 def _ask_allowed(ip, now=None, trusted=False):
     now = now or time.time()
+    if not trusted and _visitors_over():
+        return False
     key = ("analyst:" + ip) if trusted else ip
     mine = [t for t in _ASK_TIMES.get(key, []) if now - t < 60]
     _ASK_ALL[:] = [t for t in _ASK_ALL if now - t < 3600]
@@ -2691,6 +3042,14 @@ async def api_firewall_lift(request: Request, user=Depends(require_analyst)):
 
 AGENT_KEEP = 500              # the newest runs kept
 AGENT_VISITOR_RUNS = 10       # an hour, for all visitors together. Their runs are shown and not kept.
+
+
+def _visitor_runs():
+    """Second opinions an hour for all visitors together (TRIAGLE_VISITOR_RUNS)."""
+    try:
+        return min(600, max(0, int(os.environ.get("TRIAGLE_VISITOR_RUNS", ""))))
+    except ValueError:
+        return AGENT_VISITOR_RUNS
 _AGENT_VISITOR_TIMES = []
 
 
@@ -2810,14 +3169,16 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
             raise HTTPException(status_code=429, detail="Too many requests. Wait a minute.")
     else:
         _AGENT_VISITOR_TIMES[:] = [t for t in _AGENT_VISITOR_TIMES if now - t < 3600]
-        if len(_AGENT_VISITOR_TIMES) >= AGENT_VISITOR_RUNS or not _ask_allowed(ip):
-            raise HTTPException(status_code=429, detail="Visitors have used this hour's second opinions. "
-                                                        "A signed-in analyst can still ask for one.")
+        if len(_AGENT_VISITOR_TIMES) >= _visitor_runs() or not _ask_allowed(ip):
+            raise HTTPException(status_code=429, detail=_busy_words(user, "Visitors have used this hour's second opinions. "
+                                                                          "A signed-in analyst can still ask for one."))
     lock = _notes_lock(("agent-bare" if bare else "agent", alert_id))
     if not lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="This alert is already being investigated. Wait for it to finish.")
     if not _keeps(user):
         _AGENT_VISITOR_TIMES.append(now)
+
+    point = genai.mark()
 
     def stream_bare():
         try:
@@ -2850,6 +3211,7 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
             yield json.dumps({"type": "error", "detail": "The comparison stopped before it finished."}) + "\n"
         finally:
             lock.release()
+            _visitor_paid(user, point)
 
     if bare:
         return StreamingResponse(stream_bare(), media_type="application/x-ndjson",
@@ -2875,6 +3237,7 @@ async def api_agent_run(request: Request, user=Depends(require_user)):
             yield json.dumps({"type": "error", "detail": "The second opinion stopped before it finished. The verdict stands."}) + "\n"
         finally:
             lock.release()
+            _visitor_paid(user, point)
 
     return StreamingResponse(stream(), media_type="application/x-ndjson",
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
@@ -3096,12 +3459,21 @@ def _arrival_view(result=None):
         one_read = a["usd_read"] / a["read"] if a["read"] >= ARRIVAL_READS_ENOUGH else None
         one_run = ((a["usd_investigate"] + a["usd_account"]) / a["investigated"]
                    if a["investigated"] >= ARRIVAL_RUNS_ENOUGH else None)
+        # The mix of everything the tools sent, not only what is still held: closed alerts age out
+        # of the queue before raised ones do, so the queue alone holds too many alerts for a person.
+        stream, rolled = {k: mix[k] for k in ("total", "own", "raised", "repeats")}, _CACHE.get("rolled") or {}
+        if _CACHE.get("live_meta") and rolled.get("total"):
+            repeats = sum((rolled.get("codes") or {}).get(c, 0) for c in spotcheck.SKIP_CODES)
+            stream["total"] += rolled["total"]
+            stream["raised"] += rolled.get("escalated", 0)
+            stream["repeats"] += repeats
+            stream["own"] += max(0, rolled.get("closed", 0) - repeats)
         per_1000 = None
-        if one_read is not None and one_run is not None and mix["total"]:
-            # a thousand alerts of this queue's mix: every own closure is read, and every alert that
-            # goes to a person, plus the closures the reading would look at again, is investigated
+        if one_read is not None and one_run is not None and stream["total"]:
+            # a thousand alerts of this mix: every own closure is read, and every alert that goes
+            # to a person, plus the closures the reading would look at again, is investigated
             again = a["looks"] / a["read"]
-            per_1000 = 1000 * (mix["own"] * one_read + (mix["raised"] + mix["own"] * again) * one_run) / mix["total"]
+            per_1000 = 1000 * (stream["own"] * one_read + (stream["raised"] + stream["own"] * again) * one_run) / stream["total"]
         waits = sorted(a["waits"])
         return {"on": on, "model": model, "paused": paused, "cap_usd": cap, "today_usd": round(today, 4),
                 **{k: a[k] for k in _ARRIVAL_COUNTS}, **{k: round(a[k], 4) for k in _ARRIVAL_MONEY},
@@ -3111,7 +3483,7 @@ def _arrival_view(result=None):
                 "per_1000_usd": round(per_1000, 2) if per_1000 is not None else None,
                 "typical_wait_s": waits[len(waits) // 2] if len(waits) >= 5 else None,
                 "waiting": {"need": len(need), "look": len(look), "read": sum(len(v) for v in read.values())},
-                "mix": mix, "since": a["since"], "last": a["last"],
+                "mix": mix, "stream": stream, "since": a["since"], "last": a["last"],
                 "last_ago": _ago(a["last"]["at"]) if a["last"] else ""}
 
 
@@ -3419,10 +3791,12 @@ async def api_ask(request: Request, user=Depends(require_user)):
     if not found:
         raise HTTPException(status_code=404, detail="No such case.")
     if not _ask_allowed(_client_ip(request), trusted=_trusted(user)):
-        raise HTTPException(status_code=429, detail="Too many questions. Wait a minute and ask again.")
+        raise HTTPException(status_code=429, detail=_busy_words(user, "Too many questions. Wait a minute and ask again."))
     case, members, steps, actions, clock = found
+    point = genai.mark()
     out = analyst.ask(question, case, members, steps, actions, clock,
                       house=_house(_load_result(), case.get("client")))
+    _visitor_paid(user, point)
     audit.record("question asked about a case", user["name"], case=case.get("id") or case.get("key"),
                  answered=out["by_model"], ip=_client_ip(request))
     return out

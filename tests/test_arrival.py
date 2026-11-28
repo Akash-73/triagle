@@ -341,6 +341,26 @@ def test_the_work_is_started_by_a_key_or_by_a_signed_in_analyst_and_by_nobody_el
     assert c.get("/api/arrival").json()["on"] is True
 
 
+def test_the_cost_of_a_thousand_alerts_uses_everything_the_tools_sent_not_only_what_is_still_held(monkeypatch):
+    """Found on the live feed on 28 November: closed alerts age out of the queue
+    before raised ones do, so of 1,500 alerts held 90 were for a person, where
+    the tools had sent well over 3,000. Priced on the queue alone, a thousand
+    alerts would have looked about twice as dear as they are."""
+    a_model(monkeypatch)
+    monkeypatch.setattr(main, "ARRIVAL_READS_ENOUGH", 2)
+    monkeypatch.setattr(main, "ARRIVAL_RUNS_ENOUGH", 1)
+    assert send(*[e["raw"] for e in examples.EXAMPLES["wazuh"]]) == 3
+    held = work_until_done()
+    assert held["stream"] == {"total": 3, "own": 2, "raised": 1, "repeats": 0}
+    main._CACHE["rolled"] = {"total": 97, "closed": 96, "escalated": 1, "codes": {"BENIGN_DUPLICATE": 40, "BENIGN_EXPECTED": 56}}
+    out = main._arrival_view()
+    assert out["stream"] == {"total": 100, "own": 58, "raised": 2, "repeats": 40}
+    assert out["mix"]["total"] == 3, "what is held is still counted as what is held"
+    one_read, one_run = out["usd_read"] / out["read"], (out["usd_investigate"] + out["usd_account"]) / out["investigated"]
+    assert out["per_1000_usd"] == pytest.approx(1000 * (58 * one_read + 2 * one_run) / 100, abs=0.01)
+    assert out["per_1000_usd"] < held["per_1000_usd"] / 5
+
+
 # ---- what a person sees ------------------------------------------------------------
 
 def test_the_overview_and_the_alert_page_say_what_was_done_without_being_asked(monkeypatch):
@@ -364,6 +384,22 @@ def test_the_overview_and_the_alert_page_say_what_was_done_without_being_asked(m
     assert "Triagle, on arrival" in c.get("/checks").text
     report = c.get("/pilot").text
     assert "Read by the model without being asked" in report and f"{out['investigated']} alerts investigated in full" in report
+
+
+def test_the_public_page_on_data_handling_says_what_the_model_reads_on_this_deployment(monkeypatch):
+    anyone = TestClient(main.app)
+    monkeypatch.delenv("TRIAGLE_ARRIVAL")
+    a_model(monkeypatch)
+    off = anyone.get("/security").text
+    assert "No model is called to sort the alerts that nobody opens." in off and "It reads every alert" not in off
+    monkeypatch.setenv("TRIAGLE_ARRIVAL", "on")
+    on = anyone.get("/security").text
+    assert "No model is called to sort" not in on, "that would no longer be true here"
+    assert "It reads every alert, after the verdict" in on and "It can never close one." in on
+    assert "For every alert that needs a decision, and whenever an analyst asks," in on
+    assert "What a visitor says on the Try page" in on and "what guests may cost the model in a day is limited" in on
+    monkeypatch.setattr(genai, "configured", lambda: False)                  # switched on, but no model to do it
+    assert "No model is called to sort the alerts that nobody opens." in anyone.get("/security").text
 
 
 def test_an_alert_that_arrives_after_the_work_began_has_its_wait_measured(monkeypatch):

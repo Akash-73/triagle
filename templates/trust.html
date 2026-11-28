@@ -26,6 +26,7 @@
     <table class="tbl"><tbody>
       <tr><td style="width:34%">Alerts from the tools you connect</td><td>Each alert as the tool wrote it: machine names, account names, addresses and command lines. Triagle is not given raw logs, files, mailboxes or passwords.</td></tr>
       <tr><td>What your analysts decide</td><td>Closures, approvals, the rules they teach, and the spot checks they make.</td></tr>
+      <tr><td>What a visitor says on the Try page</td><td>Whether the verdict on the alert they tried was right, a comment, and a way to reach them if they give one. Only signed-in analysts read these. The alert a visitor pastes is judged and forgotten, unless they tick the box that sends it along with their answer.</td></tr>
     </tbody></table>
 
     <h2>Where it is kept</h2>
@@ -48,7 +49,7 @@
       <tr><td style="width:34%">Signing in</td><td>Single sign-on through your identity provider (OpenID Connect), or a password with a code from an authenticator app. Nobody gets in by having an account elsewhere: an administrator lists each person.</td></tr>
       <tr><td>Roles</td><td>An analyst can approve and close. A viewer can only read. Roles are checked on the server for every request.</td></tr>
       <tr><td>Guessing</td><td>Five wrong attempts lock the name and the address for five minutes. Sessions end after eight hours.</td></tr>
-      <tr><td>Guests</td><td>A deployment can be opened to read-only guests for a demonstration. That is off unless someone turns it on.</td></tr>
+      <tr><td>Guests</td><td>A deployment can be opened to read-only guests for a demonstration. That is off unless someone turns it on. A guest can read, try an alert of their own and say whether the verdict was right. A guest cannot change a verdict, a queue or an action, and what guests may cost the model in a day is limited.</td></tr>
     </tbody></table>
 
     <h2>Checking an address</h2>
@@ -60,8 +61,11 @@
     <h2>What the model sees</h2>
     <table class="tbl"><tbody>
       <tr><td style="width:34%">Verdicts are made without it</td><td>The verdict on an alert comes from rules, the same way every time. No model is called to decide.</td></tr>
-      <tr><td>Writing is where it is used</td><td>When someone opens an alert, a case, a morning report or a draft message, the text for that item is sent to {% if model_word() == 'Gemini' %}Google's Gemini through Google Cloud{% else %}the model this deployment runs itself, at the address set for it, and to nobody else{% endif %}. No model is called to sort the alerts that nobody opens.</td></tr>
-      <tr><td>A second opinion, inside rules</td><td>When an analyst opens an alert that needs a decision, or asks, the model investigates that alert again on its own. It starts from the alert's own record and Triagle's knowledge base, chooses among declared, read-only checks, and is not told the verdict. It cannot close an alert, lower one that was raised on evidence, or run an action. If it disagrees with a closure, the alert goes to a person.</td></tr>
+      {% set where %}{% if model_word() == 'Gemini' %}Google's Gemini through Google Cloud{% else %}the model this deployment runs itself, at the address set for it, and to nobody else{% endif %}{% endset %}
+      {% if arrival_on %}<tr><td>It reads every alert, after the verdict</td><td>On this deployment the model does not wait for someone to open an alert. It reads back over every closure Triagle made on its own, and it investigates every alert that goes to a person. The text of those alerts is sent to {{ where }}. It can send an alert to a person. It can never close one. The work has a spending limit for each day.</td></tr>
+      <tr><td>And it writes</td><td>The account of an alert, a case, a morning report or a draft message is written by the same model, from the text of that item.</td></tr>
+      {% else %}<tr><td>Writing is where it is used</td><td>When someone opens an alert, a case, a morning report or a draft message, the text for that item is sent to {{ where }}. No model is called to sort the alerts that nobody opens.</td></tr>{% endif %}
+      <tr><td>A second opinion, inside rules</td><td>{% if arrival_on %}For every alert that needs a decision, and whenever an analyst asks,{% else %}When an analyst opens an alert that needs a decision, or asks,{% endif %} the model investigates that alert again on its own. It starts from the alert's own record and Triagle's knowledge base, chooses among declared, read-only checks, and is not told the verdict. It cannot close an alert, lower one that was raised on evidence, or run an action. If it disagrees with a closure, the alert goes to a person.</td></tr>
       <tr><td>One model service, and no other</td><td>A deployment sends its prompts to one model service. If that service is slow or down, nothing is sent to another one: the page says the model did not answer, and the verdict stands.</td></tr>
       <tr><td>Masked first</td><td>Aadhaar numbers, PANs, UPI IDs, phone numbers and email addresses are replaced by placeholders before the text leaves, and put back in the answer. Names and street addresses are not recognised.</td></tr>
       <tr><td>Not used for training</td><td>Nothing is sent anywhere to train a model. {% if model_word() == 'Gemini' %}Google states that it does not use this data to train its models without permission.{% else %}This deployment uses a model on a server its owner chose, and makes no call to a model anywhere else.{% endif %}</td></tr>

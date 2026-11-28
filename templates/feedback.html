@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Feedback · Triagle{% endblock %}
+{% block heading %}Feedback{% endblock %}
+{% block top_actions %}<a class="btn small" href="/try">Try an alert</a>{% endblock %}
+{% block content %}
+<p class="note" style="max-width:88ch; margin-bottom:16px;">What people said on the <a href="/try">Try an alert</a> page about the verdict on the alert they tried. Only signed-in analysts see this page: it holds comments and, where someone gave one, a way to reach them. When an answer leads to a change, note the change beside it. The note is shown on the Try page; the answer and who gave it are not.</p>
+
+<section style="margin-bottom:20px;">
+  <p class="handover">
+    {% if tally.answers %}<b>{{ tally.answers }}</b> answer{{ '' if tally.answers == 1 else 's' }} from visitors.
+    <b>{{ tally.yes }}</b> right, <b>{{ tally.partly }}</b> partly right{% if tally.no %}, <b class="n-crit">{{ tally.no }}</b> wrong{% else %}, <b>0</b> wrong{% endif %}.
+    {% else %}No visitor has left an answer yet.{% endif %}
+    Visitors have tried <b>{{ tally.tried }}</b> alert{{ '' if tally.tried == 1 else 's' }}.
+    {% if tally.changes %}<b>{{ tally.changes|length }}</b> change{{ '' if tally.changes|length == 1 else 's' }} made because of an answer.{% endif %}
+  </p>
+</section>
+
+<section class="panel">
+  <header><h2>Answers</h2><span class="n">{{ rows|length }}</span></header>
+  {% if rows %}
+  <div class="scroll-x"><table class="tbl">
+    <thead><tr><th style="width:110px">Answer</th><th style="width:26%">The alert, and Triagle's verdict</th><th>What they said</th><th style="width:17%">Who</th><th style="width:26%">What changed because of it</th></tr></thead>
+    <tbody>{% for f in rows %}
+    <tr id="{{ f.id }}">
+      <td>{% if f.right == 'yes' %}<span class="tag ok">Right</span>{% elif f.right == 'partly' %}<span class="tag warn">Partly right</span>{% else %}<span class="tag bad">Wrong</span>{% endif %}
+        <span class="sub">{{ f.at|ist_short }}</span></td>
+      <td>{{ f.title }}<span class="sub" style="white-space:normal;">{{ source_name(f.source) }}. {{ 'Sent to a person' if f.escalated else 'Closed' }}: {{ f.words }}</span>
+        {% if f.raw %}<span class="sub"><a href="/try?fb={{ f.id }}">Open the alert they sent</a></span>{% endif %}</td>
+      <td style="white-space:pre-line; overflow-wrap:anywhere;">{% if f.comment %}{{ f.comment }}{% else %}<span style="color:var(--text-3)">No comment</span>{% endif %}</td>
+      <td>{% if f.by == 'visitor' %}{{ f.role or 'A visitor' }}{% else %}{{ f.by }}<span class="sub">signed in here, not counted</span>{% endif %}
+        {% if f.contact %}<span class="sub" style="white-space:normal; overflow-wrap:anywhere;">{{ f.contact }}</span>{% endif %}</td>
+      <td>
+        <form method="post" action="/feedback/change" style="display:flex; gap:6px; align-items:flex-start;">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ f.id }}">
+          <textarea name="change" rows="2" maxlength="300" placeholder="Nothing yet" aria-label="What changed because of this answer" style="flex:1 1 auto; min-width:0; font-family:inherit; font-size:1rem;">{{ f.change }}</textarea>
+          <button class="btn small" type="submit">Save</button>
+        </form>
+        <details class="work" style="margin-top:6px;"><summary>Remove this answer</summary>
+          <form method="post" action="/feedback/remove" style="margin-top:6px;">
+            <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ f.id }}">
+            <button class="btn small" type="submit" title="For spam or a test. Recorded in the audit log.">Remove, it is spam or a test</button>
+          </form>
+        </details>
+      </td>
+    </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}
+  <div class="empty"><b>No answers yet.</b>Send someone the address of the <a href="/try">Try an alert</a> page. What they say about the verdict appears here.</div>
+  {% endif %}
+</section>
+{% endblock %}

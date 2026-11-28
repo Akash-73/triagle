@@ -461,7 +461,10 @@ def test_no_template_has_an_inline_handler_or_a_bare_script():
 OPEN_TO_ALL = {"/login", "/logout", "/health", "/healthz", "/auth/start", "/auth/callback", "/security"}
 BY_KEY = {"/ingest", "/api/outbox"}                      # a tool's key, or a signed-in analyst
 # a viewer may ask about a case, try an alert and watch the investigator work; none of these stores anything
-READ_ONLY_POSTS = {"/api/ask", "/api/try", "/api/agent/run"}
+READ_ONLY_POSTS = {"/api/ask", "/api/try", "/api/agent/run", "/api/try/account", "/api/try/opinion"}
+# The one thing a visitor may leave: whether the verdict on an alert they tried was right. It is kept in a
+# record of its own. It joins no queue, changes no verdict and runs no action (tests/test_try.py).
+A_VISITOR_MAY_LEAVE = {"/api/try/feedback"}
 
 
 def _routes(method):
@@ -505,7 +508,7 @@ def test_a_viewer_and_a_guest_can_change_nothing(monkeypatch):
     before = json.dumps(main._load_result()["verdicts"], sort_keys=True, default=str)
     for who, c in (("viewer", viewer), ("guest", guest)):
         for path in _routes("POST"):
-            if path in OPEN_TO_ALL or path in READ_ONLY_POSTS:
+            if path in OPEN_TO_ALL or path in READ_ONLY_POSTS or path in A_VISITOR_MAY_LEAVE:
                 continue
             codes = set(_post(c, path))
             assert codes <= {401, 403}, (who, path, codes)

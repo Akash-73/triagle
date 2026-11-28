@@ -18,6 +18,8 @@ One service, one instance. Everything below is set with flags on
 | `TRIAGLE_DEMO=true` | Lets a signed-in analyst send a test stream from the Live page. |
 | `TRIAGLE_DEMO_SCENARIOS` | Which built-in customers the test stream offers, for example `bank`. Unset means all. |
 | `TRIAGLE_THINKING` | How long the model may think before writing: `minimal`, `low` (default), `medium`, `high`, or `default` to leave the model's own setting. |
+| `TRIAGLE_VISITOR_DAILY_USD` | What guests' requests may cost the model in a day, India time. Default `1.00`. At the limit guests get verdicts by rule and no more model answers until midnight. Analysts are not affected. |
+| `TRIAGLE_VISITOR_RUNS` | Second opinions an hour for all guests together. Default `10`. Raise it for a day on which many people will use the Try page. |
 
 ## The model on every alert
 
@@ -123,6 +125,7 @@ filed, and a customer's sector if an analyst changed it.
 
 Also saved: the model's readings and second opinions, the accounts it wrote
 ahead for alerts that need a person, and the record of what that work cost.
+What visitors said on the Try page, and what they have cost the model today.
 
 Not saved: the model's written account of a case (it is written again when the
 case is opened) and the audit log file. On Cloud Run every audit entry also

@@ -246,6 +246,33 @@ On Cloud Run the work is done inside `POST /api/work`, which a Cloud Scheduler j
 calls every minute ([docs/DEPLOY.md](docs/DEPLOY.md)). Nothing here changes how a
 verdict is reached: that is still plain code, the same every time.
 
+## Try it with an alert of your own
+
+`/try` is for an analyst who has never seen Triagle. Paste one alert from your own
+tool, or load an example, and see:
+
+- the verdict the rules reach, in milliseconds, with its reason
+- the account the model writes of it
+- if you ask, the model's second opinion: it investigates the alert from the start,
+  is not told the verdict, and the page says whether the two agree
+
+Then say whether Triagle was right: yes, partly or no, with a line on what you would
+have done. That answer is the one thing kept. It is counted on the page. The analysts
+of the deployment read the comments under **Feedback** and note beside an answer what
+was changed because of it; the note is shown on the Try page, the answer and who gave
+it are not.
+
+Nothing a visitor does there touches the queue, a verdict or an action. The pasted
+alert is judged on its own and forgotten, unless the visitor ticks the box that sends
+it along with the answer. What a signed-in analyst says while trying their own
+product is kept apart and never counted.
+
+Visitors cost money when they ask the model, so they have limits of their own: six
+requests a minute from one address, `TRIAGLE_VISITOR_RUNS` second opinions an hour for
+all of them together (default 10), and `TRIAGLE_VISITOR_DAILY_USD` a day (default 1
+US dollar). When the day's budget is spent the page says so; verdicts are decided by
+rule and keep working. A signed-in analyst is never held to a visitor's budget.
+
 ## The night analyst's paperwork
 
 One analyst on a night shift does four jobs: watches the queue, writes the report for
@@ -426,7 +453,7 @@ each client, and an Indian hosting region. To report a problem, see
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # 495 tests, no network or key needed
+python -m pytest -q                 # 509 tests, no network or key needed
 python eval/build_dataset.py        # regenerate the labelled set
 python -m eval.run_benchmark        # or open /benchmark in the app
 ```
